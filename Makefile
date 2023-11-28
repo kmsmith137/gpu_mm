@@ -17,7 +17,8 @@ HFILES = \
   include/gpu_mm.hpp
 
 OFILES = \
-  src_lib/map2tod.o
+  src_lib/map2tod.o \
+  src_lib/tod2map.o
 
 LIBFILES = \
   lib/libgpu_mm.a \
