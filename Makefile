@@ -17,8 +17,10 @@ HFILES = \
   include/gpu_mm.hpp
 
 OFILES = \
+  src_lib/ActPointing.o \
   src_lib/map2tod.o \
-  src_lib/tod2map.o
+  src_lib/tod2map.o \
+  src_lib/cnpy.o
 
 XFILES = \
   bin/scratch
@@ -47,7 +49,7 @@ clean:
 	$(NVCC) -c -o $@ $<
 
 bin/%: src_bin/%.o lib/libgpu_mm.a
-	mkdir -p bin && $(NVCC) -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a
+	mkdir -p bin && $(NVCC) -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
 
 lib/libgpu_mm.so: $(OFILES)
 	@mkdir -p lib

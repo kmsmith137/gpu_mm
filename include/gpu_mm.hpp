@@ -127,6 +127,28 @@ extern void reference_tod2map(
 );
 
 
+// -------------------------------------------------------------------------------------------------
+
+
+struct ActPointing
+{
+    ActPointing(const std::string &xpointing_npz_filename);
+
+    const std::string xpointing_npz_filename;
+
+    int ndet = 0;
+    int nt = 0;
+    int ndec = 0;
+    int nra = 0;
+
+    // On CPU by default.
+    // Shape (3, ndet, nt).
+    // First axis is { dec, ra, alpha }.
+    
+    gputils::Array<float> xpointing;
+};
+
+
 } // namespace gpu_mm
 
 #endif //  _GPU_MM_HPP
