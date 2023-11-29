@@ -20,15 +20,19 @@ OFILES = \
   src_lib/map2tod.o \
   src_lib/tod2map.o
 
+XFILES = \
+  bin/scratch
+
 LIBFILES = \
   lib/libgpu_mm.a \
   lib/libgpu_mm.so
 
 SRCDIRS = \
   include \
+  src_bin \
   src_lib
 
-all: $(LIBFILES)
+all: $(LIBFILES) $(XFILES)
 
 # Not part of 'make all', needs explicit 'make source_files.txt'
 source_files.txt: .FORCE
@@ -42,6 +46,9 @@ clean:
 %.o: %.cu $(HFILES)
 	$(NVCC) -c -o $@ $<
 
+bin/%: src_bin/%.o lib/libgpu_mm.a
+	mkdir -p bin && $(NVCC) -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a
+
 lib/libgpu_mm.so: $(OFILES)
 	@mkdir -p lib
 	rm -f $@
@@ -51,11 +58,3 @@ lib/libgpu_mm.a: $(OFILES)
 	@mkdir -p lib
 	rm -f $@
 	ar rcs $@ $^
-
-INSTALL_DIR ?= /usr/local
-
-install: $(LIBFILES)
-	mkdir -p $(INSTALL_DIR)/include
-	mkdir -p $(INSTALL_DIR)/lib
-	cp -rv lib $(INSTALL_DIR)/
-	cp -rv include $(INSTALL_DIR)/
