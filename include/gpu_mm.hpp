@@ -49,6 +49,26 @@ extern void launch_map2tod(
 );
 
 
+
+// Slow single-threaded CPU map2tod, for testing
+
+extern void launch_map2tod(
+    float *tod,              // shape (ndet, nt)
+    const float *map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const float *xpointing,  // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    int ndet,                // Number of detectors
+    int nt,                  // Number of time samples per detector
+    int ndec,                // Length of map declination axis
+    int nra                  // Length of map RA axis
+);
+
+extern void reference_map2tod(
+    gputils::Array<float> &tod,              // shape (ndet, nt)
+    const gputils::Array<float> &map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &xpointing   // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+);
+
+
 // -------------------------------------------------------------------------------------------------
 //
 // tod2map
