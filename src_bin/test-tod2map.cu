@@ -29,7 +29,7 @@ static float vdot(const Array<float> &x, const Array<float> &y)
 }
 
 
-static void test_adjointness(const ActPointing &ap)
+void test_adjointness(const ActPointing &ap)
 {
     gputils::Array<float> m({3,ap.ndec,ap.nra}, af_rhost | af_random);
     gputils::Array<float> t({ap.ndet,ap.nt}, af_rhost | af_random);
@@ -46,6 +46,20 @@ static void test_adjointness(const ActPointing &ap)
 }
 
 
+void test_tod2map_plan(const ActPointing &ap, const CpuPointingPlan &pp)
+{
+    gputils::Array<float> t({ap.ndet,ap.nt}, af_rhost | af_random);
+    gputils::Array<float> m1({3,ap.ndec,ap.nra}, af_rhost | af_random);
+    gputils::Array<float> m2({3,ap.ndec,ap.nra}, af_rhost | af_random);
+
+    reference_tod2map(m1, t, ap.xpointing);                                          // m1 = no plan
+    reference_tod2map(m2, t, ap.xpointing, pp.plan_cltod_list, pp.plan_quadruples);  // m2 = with plan
+
+    assert_arrays_equal(m1, m2, "tod2map_no_plan", "tod2map_with_plan", {"iqu","idec","ira"});
+    cout << "test_tod2map_plan(): pass" << endl;
+}
+
+
 int main(int argc, char **argv)
 {
     if (argc != 2) {
@@ -54,11 +68,12 @@ int main(int argc, char **argv)
     }
     
     ActPointing ap(argv[1]);
+    CpuPointingPlan pp(ap.xpointing, ap.ndec, ap.nra);
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < 10; i++) {
+	test_tod2map_plan(ap, pp);
 	test_adjointness(ap);
+    }
 
-    // cout << "test-tod2map: pass" << endl;
-    
     return 0;
 }
