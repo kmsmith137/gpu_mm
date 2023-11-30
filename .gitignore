@@ -2,3 +2,7 @@
 *.o
 lib/libgpu_mm.a
 lib/libgpu_mm.so
+bin/scratch
+bin/test-map2tod
+bin/time-map2tod
+bin/test-tod2map

@@ -17,7 +17,17 @@ HFILES = \
   include/gpu_mm.hpp
 
 OFILES = \
-  src_lib/map2tod.o
+  src_lib/ActPointing.o \
+  src_lib/CpuPointingPlan.o \
+  src_lib/map2tod.o \
+  src_lib/tod2map.o \
+  src_lib/cnpy.o
+
+XFILES = \
+  bin/test-map2tod \
+  bin/time-map2tod \
+  bin/test-tod2map \
+  bin/scratch
 
 LIBFILES = \
   lib/libgpu_mm.a \
@@ -25,9 +35,10 @@ LIBFILES = \
 
 SRCDIRS = \
   include \
+  src_bin \
   src_lib
 
-all: $(LIBFILES)
+all: $(LIBFILES) $(XFILES)
 
 # Not part of 'make all', needs explicit 'make source_files.txt'
 source_files.txt: .FORCE
@@ -41,6 +52,9 @@ clean:
 %.o: %.cu $(HFILES)
 	$(NVCC) -c -o $@ $<
 
+bin/%: src_bin/%.o lib/libgpu_mm.a
+	mkdir -p bin && $(NVCC) -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
+
 lib/libgpu_mm.so: $(OFILES)
 	@mkdir -p lib
 	rm -f $@
@@ -50,11 +64,3 @@ lib/libgpu_mm.a: $(OFILES)
 	@mkdir -p lib
 	rm -f $@
 	ar rcs $@ $^
-
-INSTALL_DIR ?= /usr/local
-
-install: $(LIBFILES)
-	mkdir -p $(INSTALL_DIR)/include
-	mkdir -p $(INSTALL_DIR)/lib
-	cp -rv lib $(INSTALL_DIR)/
-	cp -rv include $(INSTALL_DIR)/
