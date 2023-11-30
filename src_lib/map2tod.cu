@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <gputils/cuda_utils.hpp>
 
 using namespace std;
 using namespace gputils;
@@ -190,6 +191,8 @@ void launch_map2tod(float *tod, const float *map, const float *xpointing,
 
     map2tod_kernel<<< nblocks, nthreads_per_block, 0, stream >>>
 	(tod, map, xpointing, ndet, nt, ndec, nra, nt_per_block);
+
+    CUDA_PEEK("map2tod_kernel");
 }
 
 
