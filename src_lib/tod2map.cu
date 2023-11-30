@@ -11,7 +11,109 @@ namespace gpu_mm {
 
 // -------------------------------------------------------------------------------------------------
 //
-// reference_tod2map(): slow single-threaded CPU tod2map, for testing.
+// reference_tod2map(), take 1: without a plan.
+
+
+static void _check_tod2map_args(float *map, const float *tod, const float *xpointing, int ndet, int nt, int ndec, int nra)
+{
+    assert(tod != nullptr);
+    assert(map != nullptr);
+    assert(xpointing != nullptr);
+    
+    assert(ndet > 0);
+    assert(nt > 0);
+    assert(ndec > 0);
+    assert(nra > 0);
+
+    assert((nt % 32) == 0);
+    assert((ndec % 64) == 0);
+    assert((nra % 64) == 0);
+}
+
+
+static void _check_tod2map_args(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
+{
+    assert(tod.ndim == 2);
+    assert(tod.is_fully_contiguous());
+    
+    assert(map.ndim == 3);
+    assert(map.shape[0] == 3);
+    assert(map.is_fully_contiguous());
+    
+    assert(xpointing.ndim == 3);
+    assert(xpointing.shape[0] == 3);
+    assert(xpointing.shape[1] == tod.shape[0]);
+    assert(xpointing.shape[2] == tod.shape[1]);
+    assert(xpointing.is_fully_contiguous());
+}
+
+
+// Helper function called by reference_tod2map()
+inline void update_map(float *map, long ipix, long npix, float cos_2a, float sin_2a, float t)
+{
+    assert((ipix >= 0) && (ipix < npix));
+    
+    map[ipix] += t;
+    map[ipix+npix] += t * cos_2a;
+    map[ipix+2*npix] += t * sin_2a;
+}
+
+
+void reference_tod2map(float *map, const float *tod, const float *xpointing, int ndet, int nt, int ndec, int nra)
+{
+    _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
+
+    // A "sample" is a (detector, time) pair.
+    long ns = long(ndet) * long(nt);
+
+    // This version of tod2map() overwites the existing map.
+    long npix = long(ndec) * long(nra);
+    memset(map, 0, 3 * npix * sizeof(float));
+
+    for (long s = 0; s < ns; s++) {
+	float x = tod[s];
+	float px_dec = xpointing[s];
+	float px_ra = xpointing[s + ns];
+	float alpha = xpointing[s + 2*ns];
+	
+	float cos_2a = cosf(2*alpha);
+	float sin_2a = sinf(2*alpha);
+
+	int idec = int(px_dec);
+	int ira = int(px_ra);
+	float ddec = px_dec - float(idec);
+	float dra = px_ra - float(ira);
+	
+	assert(idec >= 0);
+	assert(idec < ndec-1);
+	assert(ira >= 0);
+	assert(ira < nra-1);
+	
+	long ipix = long(idec) * long(nra) + ira;
+
+	update_map(map, ipix,       npix, cos_2a, sin_2a, x * (1.0-ddec) * (1.0-dra));
+	update_map(map, ipix+1,     npix, cos_2a, sin_2a, x * (1.0-ddec) * (dra));
+	update_map(map, ipix+nra,   npix, cos_2a, sin_2a, x * (ddec) * (1.0-dra));
+	update_map(map, ipix+nra+1, npix, cos_2a, sin_2a, x * (ddec) * (dra));
+    }
+}
+
+
+void reference_tod2map(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
+{
+    assert(map.on_host());
+    assert(tod.on_host());
+    assert(xpointing.on_host());
+    
+    _check_tod2map_args(map, tod, xpointing);
+    
+    reference_tod2map(map.data, tod.data, xpointing.data, tod.shape[0], tod.shape[1], map.shape[1], map.shape[2]);
+}
+
+
+// -------------------------------------------------------------------------------------------------
+//
+// reference_tod2map(), take 2: with a plan.
 
 
 // Helper function called by reference_tod2map()
