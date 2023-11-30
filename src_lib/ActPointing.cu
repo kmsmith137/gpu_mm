@@ -93,7 +93,7 @@ ActPointing::ActPointing(const string &filename) :
 
     this->ndec = round_up(dec_stats.maxval + 2, 64);
     this->nra = round_up(ra_stats.maxval + 2, 64);
-    cout << "filename: ndet=" << ndet << ", nt=" << nt << ", ndec=" << ndec << ", nra=" << nra << endl;
+    cout << filename << ": ndet=" << ndet << ", nt=" << nt << ", ndec=" << ndec << ", nra=" << nra << endl;
 }
 
 
