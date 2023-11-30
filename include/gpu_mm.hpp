@@ -111,7 +111,37 @@ extern void reference_map2tod(
 //     which overlap with the given map cell.
 
 
+extern void launch_tod2map(
+    float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const float *tod,                        // Shape (ndet, nt)
+    const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    const int *plan_cltod_list,              // See long comment above. Shape (plan_ncltod,)
+    const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
+    int plan_ncltod,                         // See long comment above.
+    int plan_nquadruples,                    // See long comment above.
+    int ndet,                                // Number of detectors
+    int nt,                                  // Number of time samples per detector
+    int ndec,                                // Length of map declination axis
+    int nra,                                 // Length of map RA axis
+    cudaStream_t stream = nullptr,
+    int nthreads_per_block = 512
+);
+
+
+extern void launch_tod2map(
+    gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &tod,            // Shape (ndet, nt)
+    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const gputils::Array<int> &plan_quadruples,  // Shape (plan_nquadruples, 4)
+    cudaStream_t stream = nullptr,
+    int nthreads_per_block = 512
+);
+
+
 // Slow single-threaded CPU tod2map, for testing.
+// (There are 4 versions, depending on whether you want to use a plan,
+//  and whether you want to use gputils::Array<> versus bare pointers.)
 
 extern void reference_tod2map(
     float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
