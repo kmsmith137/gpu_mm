@@ -102,13 +102,13 @@ extern void reference_map2tod(
 //
 //         int cell_idec = plan_quadruples[4*q];
 //         int cell_ira = plan_quadruples[4*q+1];
-//         int cltod_list_istart = plan_quadruples[4*q+2];
-//         int cltod_list_iend = plan_quadruples[4*q+3];
+//         int icl_start = plan_quadruples[4*q+2];
+//         int icl_end = plan_quadruples[4*q+3];
 //
 //     The values of (cell_idec, cell_ira) must be multiples of 64, and specify a nonempty
-//     map cell. The values of (cltod_list_istart, cltod_list_iend) specify an index range
-//     in the plan_cltod_list[] array. This index range should contain the tod cache line
-//     indices which overlap with the given map cell.
+//     map cell. The values of (icl_start, icl_end) specify an index range in the
+//     plan_cltod_list[] array. This index range should correspond to the cache linex
+//     which overlap with the given map cell.
 
 
 // Slow single-threaded CPU tod2map, for testing.
@@ -133,8 +133,8 @@ extern void reference_tod2map(
     float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
     const float *tod,                        // Shape (ndet, nt)
     const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const unsigned int *plan_cltod_list,     // See long comment above. Shape (plan_ncltod,)
-    const unsigned int *plan_quadruples,     // See long comment above. Shape (plan_nquadruples, 4)
+    const int *plan_cltod_list,              // See long comment above. Shape (plan_ncltod,)
+    const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
     int plan_ncltod,                         // See long comment above.
     int plan_nquadruples,                    // See long comment above.
     int ndet,                                // Number of detectors
@@ -142,6 +142,32 @@ extern void reference_tod2map(
     int ndec,                                // Length of map declination axis
     int nra                                  // Length of map RA axis
 );
+
+
+extern void reference_tod2map(
+    gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &tod,            // Shape (ndet, nt)
+    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
+);
+
+
+// -------------------------------------------------------------------------------------------------
+
+
+// Temporary hack: construct pointing plans on CPU.
+struct CpuPointingPlan
+{
+    CpuPointingPlan(const gputils::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
+
+    long ncl_uninflated = 0;
+    long ncl_inflated = 0;     // same as 'plan_ncltod' argument to tod2map()
+    long num_quadruples = 0;   // same as 'plan_nquadruples' argument to tod2map()
+    
+    gputils::Array<int> plan_cltod_list;    // 1-d contiguous array of shape (ncl_inflated,)
+    gputils::Array<int> plan_quadruples;    // 2-d contiguous array of shape (num_quadruples,4)
+};
 
 
 // -------------------------------------------------------------------------------------------------
@@ -158,9 +184,10 @@ struct ActPointing
     int ndec = 0;
     int nra = 0;
 
-    // On CPU by default.
-    // Shape (3, ndet, nt).
-    // First axis is { dec, ra, alpha }.
+    // Shape (3, ndet, nt) array, located on CPU.
+    // The length-3 axis is ordered { dec, ra, alpha }.
+    // Note that we use axis ordering { ra, dec, alpha} in the npz files.
+    // The ActPointing constructor does the recordering when it reads the file.
     
     gputils::Array<float> xpointing;
 };

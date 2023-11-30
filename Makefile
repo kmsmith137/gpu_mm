@@ -18,6 +18,7 @@ HFILES = \
 
 OFILES = \
   src_lib/ActPointing.o \
+  src_lib/CpuPointingPlan.o \
   src_lib/map2tod.o \
   src_lib/tod2map.o \
   src_lib/cnpy.o
