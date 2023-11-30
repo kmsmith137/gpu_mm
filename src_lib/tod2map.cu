@@ -273,8 +273,8 @@ void reference_tod2map(Array<float> &map, const Array<float> &tod, const Array<f
 // Helper function called by tod2map_kernel()
 __device__ void update_shmem(float *shmem, int idec, int ira, int cell_idec, int cell_ira, float cos_2a, float sin_2a, float t)
 {
-    bool dec_in_cell = ((idec & 63) == cell_idec);
-    bool ra_in_cell = ((ira & 63) == cell_ira);
+    bool dec_in_cell = ((idec & ~63) == cell_idec);
+    bool ra_in_cell = ((ira & ~63) == cell_ira);
     int s = ((idec & 63) << 6) | (ira & 63);
 
     // Warp divergence here
