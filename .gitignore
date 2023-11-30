@@ -3,3 +3,4 @@
 lib/libgpu_mm.a
 lib/libgpu_mm.so
 bin/scratch
+bin/test-map2tod

@@ -23,6 +23,7 @@ OFILES = \
   src_lib/cnpy.o
 
 XFILES = \
+  bin/test-map2tod \
   bin/scratch
 
 LIBFILES = \
