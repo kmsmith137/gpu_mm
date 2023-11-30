@@ -19,13 +19,13 @@ int main(int argc, char **argv)
 
     gputils::Array<float> xpointing_cpu = ap.xpointing;
     gputils::Array<float> map_cpu({3,ap.ndec,ap.nra}, af_rhost | af_random);
-    gputils::Array<float> tod_cpu({ap.ndet,ap.nt}, af_rhost | af_zero);
+    gputils::Array<float> tod_cpu({ap.ndet,ap.nt}, af_rhost | af_random);
 
     reference_map2tod(tod_cpu, map_cpu, xpointing_cpu);
     
     gputils::Array<float> xpointing_gpu = xpointing_cpu.to_gpu();
     gputils::Array<float> map_gpu = map_cpu.to_gpu();
-    gputils::Array<float> tod_gpu({ap.ndet,ap.nt}, af_gpu | af_zero);
+    gputils::Array<float> tod_gpu({ap.ndet,ap.nt}, af_gpu | af_random);
 
     launch_map2tod(tod_gpu, map_gpu, xpointing_gpu);
     tod_gpu = tod_gpu.to_host();

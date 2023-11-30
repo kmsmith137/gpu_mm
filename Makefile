@@ -25,6 +25,7 @@ OFILES = \
 XFILES = \
   bin/test-map2tod \
   bin/time-map2tod \
+  bin/test-tod2map \
   bin/scratch
 
 LIBFILES = \
