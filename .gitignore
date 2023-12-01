@@ -1,5 +1,6 @@
 *~
 *.o
+scripts/__pycache__
 lib/libgpu_mm.a
 lib/libgpu_mm.so
 bin/scratch

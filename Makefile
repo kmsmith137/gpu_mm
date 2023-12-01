@@ -20,6 +20,7 @@ OFILES = \
   src_lib/ActPointing.o \
   src_lib/CpuPointingPlan.o \
   src_lib/map2tod.o \
+  src_lib/python_exports.o \
   src_lib/tod2map.o \
   src_lib/cnpy.o
 
@@ -56,10 +57,12 @@ clean:
 bin/%: src_bin/%.o lib/libgpu_mm.a
 	mkdir -p bin && $(NVCC) -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
 
+# FIXME currently linking static libraries -> shared.
+# Better to make everything shared?
 lib/libgpu_mm.so: $(OFILES)
 	@mkdir -p lib
 	rm -f $@
-	$(NVCC) -shared -o $@ $^
+	$(NVCC) -shared -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
 
 lib/libgpu_mm.a: $(OFILES)
 	@mkdir -p lib
