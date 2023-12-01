@@ -32,6 +32,7 @@ int main(int argc, char **argv)
 
     gputils::CudaStreamPool sp(callback, num_callbacks, 1, "map2tod");  // nstreams=1
     sp.monitor_throughput("Global memory BW (GB/s, map not included)", gb * launches_per_callback);
+    sp.monitor_time("Time per kernel (sec)", launches_per_callback);
     sp.run();
     
     return 0;
