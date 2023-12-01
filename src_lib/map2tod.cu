@@ -133,8 +133,8 @@ __global__ void map2tod_kernel(float *tod, const float *map, const float *xpoint
 	float px_dec = xpointing[i];
 	float px_ra = xpointing[i + ns];
 	float alpha = xpointing[i + 2*ns];
-	float cos_2a = cosf(2*alpha);
-	float sin_2a = sinf(2*alpha);
+	float cos_2a = cosf(2.0f * alpha);
+	float sin_2a = sinf(2.0f * alpha);
 
 	int idec = int(px_dec);
 	int ira = int(px_ra);
@@ -147,19 +147,19 @@ __global__ void map2tod_kernel(float *tod, const float *map, const float *xpoint
 	int ipix = idec*nra + ira;
 	float ddec = px_dec - float(idec);
 	float dra = px_ra - float(ira);
-	float out = 0.0;
+	float out = 0.0f;
 
-	float w = (1.0-ddec) * (1.0-dra);
+	float w = (1.0f - ddec) * (1.0f - dra);
 	out += w * map[ipix];
 	out += w * cos_2a * map[ipix+npix];
 	out += w * sin_2a * map[ipix+2*npix];
 
-	w = (1.0-ddec) * (dra);
+	w = (1.0f - ddec) * (dra);
 	out += w * map[ipix + 1];
 	out += w * cos_2a * map[ipix+npix + 1];
 	out += w * sin_2a * map[ipix+2*npix + 1];
 	
-	w = ddec * (1.0 - dra);
+	w = ddec * (1.0f - dra);
 	out += w * map[ipix + nra];
 	out += w * cos_2a * map[ipix+npix + nra];
 	out += w * sin_2a * map[ipix+2*npix + nra];

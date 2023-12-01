@@ -285,7 +285,7 @@ __device__ void update_shmem(float *shmem, int idec, int ira, int cell_idec, int
     }
 
     // FIXME is this a good idea?
-    __syncwarp();
+    // __syncwarp();
 }
 
 
@@ -354,8 +354,8 @@ __global__ void tod2map_kernel(
 	    float px_ra = xpointing[s + nsamp];
 	    float alpha = xpointing[s + 2*nsamp];
 
-	    float cos_2a = cosf(2*alpha);
-	    float sin_2a = sinf(2*alpha);
+	    float cos_2a = cosf(2.0f * alpha);
+	    float sin_2a = sinf(2.0f * alpha);
 
 	    int idec = int(px_dec);
 	    int ira = int(px_ra);
@@ -367,9 +367,9 @@ __global__ void tod2map_kernel(
 	    // assert(ira >= 0);
 	    // assert(ira < nra-1);	    
 
-	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0-ddec) * (1.0-dra));
-	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0-ddec) * (dra));
-	    update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0-dra));
+	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
+	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
+	    update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
 	    update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
 	}
     }
