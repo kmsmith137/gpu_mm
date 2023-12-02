@@ -65,16 +65,19 @@ inline void _add_triple(vector<Triple> &v, size_t prev_size, int idec, int ira, 
 }
 
 
-CpuPointingPlan::CpuPointingPlan(const Array<float> &xpointing, int ndec, int nra, bool verbose)
-{
-    assert(xpointing.on_host());
-    assert(xpointing.ndim == 3);
-    assert(xpointing.shape[0] == 3);
-    assert(xpointing.is_fully_contiguous());
 
-    const float *xp = xpointing.data;
-    int ndet = xpointing.shape[1];
-    int nt = xpointing.shape[2];
+CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, int nra, bool verbose)
+{
+    assert(ndet > 0);
+    assert(nt > 0);
+    assert(ndec > 0);
+    assert(nra > 0);
+
+    // Assumed by current implementation, but could be relaxed.
+    assert((nt % 32) == 0);
+    assert((ndec % 64) == 0);
+    assert((nra % 64) == 0);
+    
     long ns = long(ndet) * long(nt);
     
     // Step 1: Construct and sort a vector<Triple>.
@@ -186,6 +189,25 @@ CpuPointingPlan::CpuPointingPlan(const Array<float> &xpointing, int ndec, int nr
 	 << "    inflation factor = " << (double(ncl_inflated) / double(ncl_uninflated)) << "\n"
 	 << "    cache lines per nonempty cell = " << (double(ncl_inflated) / double(num_quadruples)) << endl;
 }
+
+
+// Helper for constructor delegation.
+const float *_get_xpointer(const Array<float> &xpointing)
+{
+    assert(xpointing.on_host());
+    assert(xpointing.ndim == 3);
+    assert(xpointing.shape[0] == 3);
+    assert(xpointing.is_fully_contiguous());
+    return xpointing.data;
+}
+
+
+CpuPointingPlan::CpuPointingPlan(const Array<float> &xpointing, int ndec, int nra, bool verbose)
+    : CpuPointingPlan(_get_xpointer(xpointing),  // const float *xp
+		      xpointing.shape[1],        // int ndet
+		      xpointing.shape[2],        // int nt
+		      ndec, nra, verbose)
+{ }
 
 
 }  // namespace gpu_mm

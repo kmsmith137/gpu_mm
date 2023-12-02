@@ -190,6 +190,7 @@ extern void reference_tod2map(
 struct CpuPointingPlan
 {
     CpuPointingPlan(const gputils::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
+    CpuPointingPlan(const float *xpointing, int ndet, int nt, int ndec, int nra, bool verbose=true);
 
     long ncl_uninflated = 0;
     long ncl_inflated = 0;     // same as 'plan_ncltod' argument to tod2map()
