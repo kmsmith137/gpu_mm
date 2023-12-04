@@ -91,11 +91,10 @@ void reference_tod2map(float *map, const float *tod, const float *xpointing, int
 
     // A "sample" is a (detector, time) pair.
     long ns = long(ndet) * long(nt);
-
-    // This version of tod2map() overwites the existing map.
     long npix = long(ndec) * long(nra);
-    memset(map, 0, 3 * npix * sizeof(float));
 
+    // No memset(out, ...) here, since we want to accumulate (not overwrite) output.
+    
     for (long s = 0; s < ns; s++) {
 	float x = tod[s];
 	float px_dec = xpointing[s];
@@ -180,9 +179,7 @@ void reference_tod2map(
     // A "sample" is a (detector, time) pair.
     long ns = long(ndet) * long(nt);
 
-    // This version of tod2map() overwites the existing map.
-    long npix = long(ndec) * long(nra);
-    memset(map, 0, 3 * npix * sizeof(float));
+    // No memset(out, ...) here, since we want to accumulate (not overwrite) output.
     
     for (int q = 0; q < plan_nquadruples; q++) {
 	int cell_idec = plan_quadruples[4*q];
@@ -299,7 +296,7 @@ __global__ void tod2map_kernel(
     int ndec,                                // Length of map declination axis
     int nra)                                 // Length of map RA axis
 {
-    const int laneId = threadIdx.x & 31;
+    __shared__ float shmem[3*64*64];
     
     // Read quadruple for this block.
     // (After this, we don't need the 'plan_quadruples' pointer any more.)
@@ -309,25 +306,41 @@ __global__ void tod2map_kernel(
     int cell_ira = plan_quadruples[1];   // divisible by 64
     int icl_start = plan_quadruples[2];
     int icl_end = plan_quadruples[3];
-    
-    // Initialize shared memory to zero.
-    
-    __shared__ float shmem[3*64*64];
-        
-    for (int ipix = threadIdx.x; ipix < 3*64*64; ipix += blockDim.x)
-        shmem[ipix] = 0.;
-
-    __syncthreads();
 
     // Shift values of (plan_cltod_list, icl_start, icl_end), so that 0 <= icl_start < 32.
-    
+    // The values of (icl_start, icl_end) are the same on all threads.
     int icl_sbase = icl_start & ~31;
     plan_cltod_list += icl_sbase;
     icl_start -= icl_sbase;
     icl_end -= icl_sbase;
 
+    // Shift map pointer to per-thread (not per-block) base location
+    const int idec_base = cell_idec + (threadIdx.x >> 6);
+    const int ira_base = cell_ira + (threadIdx.x & 63);
+    map += long(idec_base) * long(nra) + ira_base;
+        
+    // Read global memory -> shared.
+    // Assumes blockIdx.x is a multiple of 64.
+
+    const long npix = long(ndec) * long(nra);    
+    const int spix = (blockDim.x >> 6) * nra;  // Global memory "stride" in loop below
+    	
+    do {
+	const float *m = map;
+	for (int s = threadIdx.x; s < 64*64; s += blockDim.x) {
+	    shmem[s] = m[0];
+	    shmem[s + 64*64] = m[npix];
+	    shmem[s + 2*64*64] = m[2*npix];
+	    m += spix;
+	}
+    } while (0);
+    
+    __syncthreads();
+
     // Outer loop over batches of 32 TOD cache lines.
     // The value of 'icl_warp' is the same on each thread.
+    
+    const int laneId = threadIdx.x & 31;
     
     for (int icl_warp = (threadIdx.x & ~31); icl_warp < icl_end; icl_warp += blockDim.x) {
 	// Value of 'cltod_outer' is different on each thread.
@@ -376,25 +389,18 @@ __global__ void tod2map_kernel(
     
     __syncthreads();
 
-    // Write shared memory -> global.
+    // Write shared memory -> global
     // Assumes blockIdx.x is a multiple of 64.
-    // FIXME note that empty tiles are not zeroed!
-    // This is a bug, but will go away if we replace "overwriting" todmap() by "accumulating".
-
-    // Shift map pointer to per-thread (not per-block) base location
-    int idec_base = cell_idec + (threadIdx.x >> 6);
-    int ira_base = cell_ira + (threadIdx.x & 63);
-    map += long(idec_base) * long(nra) + ira_base;
     
-    long npix = long(ndec) * long(nra);    
-    int spix = (blockDim.x >> 6) * nra;  // Global memory "stride" in loop below
-
-    for (int s = threadIdx.x; s < 64*64; s += blockDim.x) {
-	map[0] = shmem[s];
-	map[npix] = shmem[s + 64*64];
-	map[2*npix] = shmem[s + 2*64*64];
-	map += spix;
-    }
+    do {
+	float *m = map;
+	for (int s = threadIdx.x; s < 64*64; s += blockDim.x) {
+	    m[0] = shmem[s];
+	    m[npix] = shmem[s + 64*64];
+	    m[2*npix] = shmem[s + 2*64*64];
+	    m += spix;
+	}
+    } while (0);
 }
 
 

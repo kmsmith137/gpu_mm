@@ -127,7 +127,6 @@ if __name__ == '__main__':
     #   - This step also needs to create a "plan" for the GPU tod2map() operation.
     #     Currently, plan creation is done on the CPU and is slow. I hope to move
     #     plan creation to the GPU soon!
-
     
     tod_cpu = np.random.uniform(size=(ndet,nt), low=-1.0, high=1.0)
     tod_cpu = np.array(tod_cpu, dtype=np.float32)   # float64 -> float32

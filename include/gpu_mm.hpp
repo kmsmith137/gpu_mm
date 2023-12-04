@@ -73,7 +73,7 @@ extern void reference_map2tod(
 //
 // tod2map
 //
-// FIXME currently overwrites its output. Should we accumulate instead?
+// Note: tod2map() accumulates its output! (rather than overwriting existing output array)
 //
 // The GPU version of tod2map() works like this:
 //
