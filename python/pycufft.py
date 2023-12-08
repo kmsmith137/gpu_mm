@@ -8,7 +8,7 @@ cufft_r2c_gpu.argtypes=(ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_in
 cufft_c2r_gpu=mylib.cufft_c2r_gpu
 cufft_c2r_gpu.argtypes=(ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_int)
 
-def rfft(dat,axis=1,out=None):
+def rfft(dat,out=None,axis=1):
     if not(dat.dtype=='float32'):
         print("warning - only float32 is supported in pycufft.rfft.  casting")
         x=cp.asarray(x,dtype='float32')
@@ -26,7 +26,7 @@ def rfft(dat,axis=1,out=None):
             out=cp.empty([n//2+1,m],dtype='complex64')
     cufft_r2c_gpu(out.data.ptr,dat.data.ptr,n,m,axis)
     return out
-def irfft(dat,axis=1,out=None,isodd=0):
+def irfft(dat,out=None,axis=1,sodd=0):
     n=dat.shape[0]
     m=dat.shape[1]
     isodd=isodd%2
