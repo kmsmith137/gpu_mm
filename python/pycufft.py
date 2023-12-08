@@ -26,7 +26,7 @@ def rfft(dat,out=None,axis=1):
             out=cp.empty([n//2+1,m],dtype='complex64')
     cufft_r2c_gpu(out.data.ptr,dat.data.ptr,n,m,axis)
     return out
-def irfft(dat,out=None,axis=1,sodd=0):
+def irfft(dat,out=None,axis=1,isodd=0):
     n=dat.shape[0]
     m=dat.shape[1]
     isodd=isodd%2
