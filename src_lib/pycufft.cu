@@ -1,4 +1,4 @@
-//nvcc -o libtime_cufft.so time_cufft.cu -shared -lcufft -Xcompiler -fPIC -lgomp
+//nvcc -o libpycufft.so pycufft.cu -shared -lcufft -Xcompiler -fPIC -lgomp
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +11,48 @@
 
 
 
+extern "C"
+{
+void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)
+{
+  size_t nb_max=0;
+  for (int i=0;i<nsize;i++)
+    {
+      cufftHandle plan;
+      if (i==0)
+	printf("plan size is %ld\n",sizeof(cufftHandle));
+      int n=sz[2*i];
+      int ntrans=sz[2*i+1];
+      int rank=1; //we're doing 1D transforms
+      int nn=(n/2)+1;
+      int istride=1;
+      int idist=nn;
+      int oembed=nn;
+      if (cufftPlanMany(&plan, rank, &n, &nn, istride, idist,&oembed, istride,oembed, CUFFT_R2C,ntrans)!=CUFFT_SUCCESS) {
+	fprintf(stderr,"Error in planning r2c with dimensions %d %d\n",n,ntrans);
+	*nbytes=-1;
+	return;
+	  
+      }
+      cufftSetAutoAllocation(plan,1);
+      size_t nb;
+      if (cufftGetSize(plan,&nb)!=CUFFT_SUCCESS) {
+	fprintf(stderr,"Error in querying size wth dimensions %d %d\n",n,ntrans);
+	*nbytes=-1;
+	return;
+      }
+      if (nb>nb_max)
+	nb_max=nb;
+      if (cufftDestroy(plan)!= CUFFT_SUCCESS) {
+	fprintf(stderr,"Error destroying plan.\n");
+	*nbytes=-1;
+	return;
+      }
+    }
+}
+}
+/*--------------------------------------------------------------------------------*/
+
 void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans, int isodd)
 {
   int nout=2*(len-1)-isodd;
@@ -20,15 +62,14 @@ void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans, int isodd)
   
   if (cufftPlan1d(&plan,nout,CUFFT_C2R, ntrans)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error planning dft\n");
-  for (int i=0;i<20;i++) {
-    cudaDeviceSynchronize();
-    double t1=omp_get_wtime();
-    if (cufftExecC2R(plan,data,out)!=CUFFT_SUCCESS)
-      fprintf(stderr,"Error executing dft\n");
-    cudaDeviceSynchronize();
-    double t2=omp_get_wtime();
-    printf("took %12.4g seconds to do fft.\n",t2-t1);
-  }
+  //cudaDeviceSynchronize();
+  //double t1=omp_get_wtime();
+  if (cufftExecC2R(plan,data,out)!=CUFFT_SUCCESS)
+    fprintf(stderr,"Error executing dft\n");
+  cudaDeviceSynchronize();
+  //double t2=omp_get_wtime();
+  //printf("took %12.4g seconds to do fft.\n",t2-t1);
+
   if (cufftDestroy(plan)!= CUFFT_SUCCESS)
     fprintf(stderr,"Error destroying plan.\n");
 }
@@ -98,16 +139,14 @@ void cufft_r2c(cufftComplex *out, float *data, int len, int ntrans)
   
   if (cufftPlan1d(&plan,len,CUFFT_R2C, ntrans)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error planning dft\n");
-  for (int i=0;i<20;i++)
-    {
-      cudaDeviceSynchronize();
-      double t1=omp_get_wtime();
-      if (cufftExecR2C(plan,data,out)!=CUFFT_SUCCESS)
-	fprintf(stderr,"Error executing dft\n");
-      cudaDeviceSynchronize();
-      double t2=omp_get_wtime();
-      printf("r2c took %12.4g\n",t2-t1);
-    }
+  //cudaDeviceSynchronize();
+  //double t1=omp_get_wtime();
+  if (cufftExecR2C(plan,data,out)!=CUFFT_SUCCESS)
+    fprintf(stderr,"Error executing dft\n");
+  cudaDeviceSynchronize();
+  //double t2=omp_get_wtime();
+  //printf("r2c took %12.4g\n",t2-t1);
+
   if (cufftDestroy(plan)!= CUFFT_SUCCESS)
     fprintf(stderr,"Error destroying plan.\n");
 }
@@ -138,6 +177,32 @@ void cufft_r2c_columns(cufftComplex *out, float *data, int len, int ntrans)
 }
 
 
+
+
+
+
+/*--------------------------------------------------------------------------------*/
+
+extern "C" {
+void cufft_r2c_gpu(cufftComplex *out, float *data, int n, int m, int axis)
+{
+  if (axis==1)
+    cufft_r2c(out,data,m,n);
+  else
+    cufft_r2c_columns(out,data,n,m);
+}
+}
+/*--------------------------------------------------------------------------------*/
+
+extern "C" {
+void cufft_c2r_gpu(float *out, cufftComplex *data, int n, int m, int axis,int isodd)
+{
+  if (axis==1)
+    cufft_c2r(out,data,m,n,isodd);
+  else
+    cufft_c2r_columns(out,data,n,m,isodd);
+}
+}
 /*--------------------------------------------------------------------------------*/
 
 extern "C" {
