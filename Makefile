@@ -7,7 +7,7 @@ ARCH += -gencode arch=compute_86,code=sm_86
 GPUTILS_INCDIR=../gputils/include
 GPUTILS_LIBDIR=../gputils/lib
 
-NVCC = nvcc -std=c++17 $(ARCH) -m64 -O3 -I$(GPUTILS_INCDIR) --compiler-options -Wall,-fPIC
+NVCC = nvcc -std=c++17 $(ARCH) -m64 -O3 -I$(GPUTILS_INCDIR) --compiler-options -Wall,-fPIC -lcufft
 SHELL := /bin/bash
 
 .DEFAULT_GOAL: all
@@ -22,7 +22,8 @@ OFILES = \
   src_lib/map2tod.o \
   src_lib/python_exports.o \
   src_lib/tod2map.o \
-  src_lib/cnpy.o
+  src_lib/cnpy.o \
+  src_lib/pycufft.o
 
 XFILES = \
   bin/test-map2tod \

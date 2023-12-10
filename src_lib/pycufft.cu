@@ -53,14 +53,12 @@ void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)
 }
 /*--------------------------------------------------------------------------------*/
 
-void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans, int isodd)
+void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans)
 {
-  int nout=2*(len-1)-isodd;
   //float *out;
-  //cudaMalloc(&out,sizeof(float)*nout*ntrans);
   cufftHandle plan;
   
-  if (cufftPlan1d(&plan,nout,CUFFT_C2R, ntrans)!=CUFFT_SUCCESS)
+  if (cufftPlan1d(&plan,len,CUFFT_C2R, ntrans)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error planning dft\n");
   //cudaDeviceSynchronize();
   //double t1=omp_get_wtime();
@@ -75,9 +73,8 @@ void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans, int isodd)
 }
 
 /*--------------------------------------------------------------------------------*/
-void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans, int isodd)
+void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans)
 {
-  int nout=2*(len-1)+isodd;
   cufftHandle plan;
   int rank=1;
   int inembed[rank] = {ntrans};
@@ -86,7 +83,7 @@ void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans, int i
   int idist=1;
   int ostride=ntrans;
   int odist=1;
-  if (cufftPlanMany(&plan,rank,&nout,inembed,istride,idist,onembed,ostride,odist,CUFFT_C2R,ntrans)!=CUFFT_SUCCESS)
+  if (cufftPlanMany(&plan,rank,&len,inembed,istride,idist,onembed,ostride,odist,CUFFT_C2R,ntrans)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error planning DFT in c2r_columns.\n");
   if (cufftExecC2R(plan,data,out)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error executing DFT in c2r_columns.\n");
@@ -97,33 +94,26 @@ void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans, int i
 
 /*--------------------------------------------------------------------------------*/
 extern "C" {
-void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int isodd,int axis)
+void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int axis)
 {
   float *dout;
   cufftComplex *din;
-  int nn;
-  if (axis==0)
-    nn=2*(n-1)+isodd;
-  else
-    nn=2*(m-1)+isodd;
   if (cudaMalloc((void **)&din,sizeof(cufftComplex)*n*m)!=cudaSuccess)
     fprintf(stderr,"error in cudaMalloc\n");
   if (cudaMemcpy(din,data,n*m*sizeof(cufftComplex),cudaMemcpyHostToDevice)!=cudaSuccess)
     fprintf(stderr,"Error copying data to device.\n");
   if (axis==0) {
-    if (cudaMalloc((void **)&dout,sizeof(float)*nn*m)!=cudaSuccess)
+    if (cudaMalloc((void **)&dout,sizeof(float)*n*m)!=cudaSuccess)
       fprintf(stderr,"error in cudaMalloc\n");
-    cufft_c2r_columns(dout,din,n,m,isodd);
-    //printf("copying %d %d\n",nn,m);
-    if (cudaMemcpy(out,dout,sizeof(float)*nn*m,cudaMemcpyDeviceToHost)!=cudaSuccess)
+    cufft_c2r_columns(dout,din,n,m);
+    if (cudaMemcpy(out,dout,sizeof(float)*n*m,cudaMemcpyDeviceToHost)!=cudaSuccess)
       fprintf(stderr,"Error copying result to host in c2r\n");
   }
   else {
-    if (cudaMalloc((void **)&dout,sizeof(float)*n*nn)!=cudaSuccess)
+    if (cudaMalloc((void **)&dout,sizeof(float)*n*m)!=cudaSuccess)
       fprintf(stderr,"error in cudaMalloc\n");
-    cufft_c2r(dout,din,m,n,isodd);
-    //printf("copying %d %d\n",n,nn);
-    if (cudaMemcpy(out,dout,sizeof(float)*nn*n,cudaMemcpyDeviceToHost)!=cudaSuccess)
+    cufft_c2r(dout,din,m,n);
+    if (cudaMemcpy(out,dout,sizeof(float)*m*n,cudaMemcpyDeviceToHost)!=cudaSuccess)
       fprintf(stderr,"Error copying result to host in c2r\n");
   
 
@@ -134,7 +124,6 @@ void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int isodd,int 
 /*--------------------------------------------------------------------------------*/
 void cufft_r2c(cufftComplex *out, float *data, int len, int ntrans)
 {
-  //int nout=len/2+1;
   cufftHandle plan;
   
   if (cufftPlan1d(&plan,len,CUFFT_R2C, ntrans)!=CUFFT_SUCCESS)
@@ -154,9 +143,6 @@ void cufft_r2c(cufftComplex *out, float *data, int len, int ntrans)
 /*--------------------------------------------------------------------------------*/
 void cufft_r2c_columns(cufftComplex *out, float *data, int len, int ntrans)
 {
-  //int nout=len/2+1;
-  //printf("performing %d transforms of length %d %d\n",ntrans,len,nout);
-
   cufftHandle plan;
   int rank=1;
   int inembed[rank] = {len};
@@ -165,8 +151,6 @@ void cufft_r2c_columns(cufftComplex *out, float *data, int len, int ntrans)
   int idist=1;
   int ostride=ntrans;
   int odist=1;
-  //if (cufftPlanMany(&plan,1,&nout,&one,len,1,&one,nout,1,CUFFT_R2C,ntrans)!=CUFFT_SUCCESS)
-  //if (cufftPlanMany(&plan,rank,&len,inembed,len,1,onembed,nout,1,CUFFT_R2C,ntrans)!=CUFFT_SUCCESS)
   if (cufftPlanMany(&plan,rank,&len,inembed,istride,idist,onembed,ostride,odist,CUFFT_R2C,ntrans)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error planning DFT in r2c_columns.\n");
   if (cufftExecR2C(plan,data,out)!=CUFFT_SUCCESS)
@@ -195,12 +179,12 @@ void cufft_r2c_gpu(cufftComplex *out, float *data, int n, int m, int axis)
 /*--------------------------------------------------------------------------------*/
 
 extern "C" {
-void cufft_c2r_gpu(float *out, cufftComplex *data, int n, int m, int axis,int isodd)
+void cufft_c2r_gpu(float *out, cufftComplex *data, int n, int m, int axis)
 {
   if (axis==1)
-    cufft_c2r(out,data,m,n,isodd);
+    cufft_c2r(out,data,m,n);
   else
-    cufft_c2r_columns(out,data,n,m,isodd);
+    cufft_c2r_columns(out,data,n,m);
 }
 }
 /*--------------------------------------------------------------------------------*/
