@@ -4,42 +4,46 @@
 # To use it, you'll need to build the C++ library ('make -j' from the toplevel gpu_mm dir),
 # and then do 'import gpu_mm' from the gpu_mm/scripts directory.
 
-import ctypes
+import ctypes, os
 import numpy as np
 import cupy as cp
 
+_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__),"..","lib", "libgpu_mm.so"))
 
 ####################################################################################################
-
-
-_libgpu_mm = ctypes.cdll.LoadLibrary("../lib/libgpu_mm.so")
-
-_reference_map2tod = _libgpu_mm.py_reference_map2tod
-_reference_tod2map = _libgpu_mm.py_reference_tod2map
-_gpu_map2tod = _libgpu_mm.py_gpu_map2tod
-_gpu_tod2map = _libgpu_mm.py_gpu_tod2map
-_construct_cpu_plan1 = _libgpu_mm.py_construct_cpu_plan1
-_construct_cpu_plan2 = _libgpu_mm.py_construct_cpu_plan2
 
 # All function arguments are pointers, ints, or longs
 _i = ctypes.c_int
 _l = ctypes.c_long
 _p = ctypes.c_void_p
+_f = ctypes.c_float
 
+_reference_map2tod = _libgpu_mm.py_reference_map2tod
+_reference_map2tod.argtypes = (_p, _p, _p, _i, _i, _i, _i)
 # _reference_map2tod(tod, map, xpointing, ndet, nt, ndec, nra)
+
+_reference_tod2map = _libgpu_mm.py_reference_tod2map
+_reference_tod2map.argtypes = (_p, _p, _p, _i, _i, _i, _i)
 # _reference_tod2map(map, tod, xpointing, ndet, nt, ndec, nra)
+
+_gpu_map2tod = _libgpu_mm.py_gpu_map2tod
+_gpu_map2tod.argtypes = (_p, _p, _p, _i, _i, _i, _i)
 # _gpu_map2tod(tod, map, xpointing, ndet, nt, ndec, nra)
+
+_gpu_tod2map = _libgpu_mm.py_gpu_tod2map
+_gpu_tod2map.argtypes = (_p, _p, _p, _p, _p, _i, _i, _i, _i, _i, _i)
 # _gpu_tod2map(map, tod, xpointing, plan_cltod_list, plan_quadruples, plan_ncltod, plan_nquadruples, ndet, nt, ndec, nra)
+
+_construct_cpu_plan1 = _libgpu_mm.py_construct_cpu_plan1
+_construct_cpu_plan1.argtypes = (_p, _p, _i, _i, _i, _i, _i)
 # _construct_cpu_plan1(out, xpointing, ndet, nt, ndec, nra, verbose)
+
+_construct_cpu_plan2 = _libgpu_mm.py_construct_cpu_plan2
+_construct_cpu_plan2.argtypes = (_p, _p, _l, _l, _l)
 # _construct_cpu_plan2(plan_cltod_list, plan_quadruples, cookie, ncl_inflated, num_quadruples)
 
-_reference_map2tod.argtypes = (_p, _p, _p, _i, _i, _i, _i)
-_reference_tod2map.argtypes = (_p, _p, _p, _i, _i, _i, _i)
-_gpu_map2tod.argtypes = (_p, _p, _p, _i, _i, _i, _i)
-_gpu_tod2map.argtypes = (_p, _p, _p, _p, _p, _i, _i, _i, _i, _i, _i)
-_construct_cpu_plan1.argtypes = (_p, _p, _i, _i, _i, _i, _i)
-_construct_cpu_plan2.argtypes = (_p, _p, _l, _l, _l)
-
+_clip = _libgpu_mm.clip
+_clip.argtypes = (_p, _l, _f, _f)
 
 ####################################################################################################
 
@@ -337,3 +341,12 @@ class PointingPlan:
         self.quadruples = cp.asarray(self.quadruples)   # copy CPU -> GPU
         self.ndec = ndec
         self.nra = nra
+
+# ----------
+# Misc stuff
+
+def clip(arr, vmin, vmax):
+	"""In-place clip. Necessary because cupy's clip makes a copy, even when
+	the out argument is used."""
+	assert arr.dtype == np.float32, "In-place clip only supports float32"
+	_clip(arr.data.ptr, arr.size, vmin, vmax)

@@ -7,9 +7,7 @@
 #include <omp.h>
 #include <cuComplex.h>
 
-extern "C"
-{
-void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)
+extern "C" void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)
 {
   size_t nb_max=0;
   for (int i=0;i<nsize;i++)
@@ -46,7 +44,6 @@ void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)
       }
     }
 }
-}
 /*--------------------------------------------------------------------------------*/
 
 void cufft_c2r(float *out, cufftComplex *data, int len, int ntrans)
@@ -73,7 +70,6 @@ void cufft_c2r_wplan(float *out, cufftComplex *data, cufftHandle plan)
   if (cufftExecC2R(plan,data,out)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error executing idft\n");
   cudaDeviceSynchronize();
-  
 }
 /*--------------------------------------------------------------------------------*/
 void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans)
@@ -96,8 +92,7 @@ void cufft_c2r_columns(float *out, cufftComplex *data,int len, int ntrans)
 }
 
 /*--------------------------------------------------------------------------------*/
-extern "C" {
-void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int axis)
+extern "C" void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int axis)
 {
   float *dout;
   cufftComplex *din;
@@ -118,10 +113,8 @@ void cufft_c2r_host(float *out, cufftComplex *data, int n, int m, int axis)
     cufft_c2r(dout,din,m,n);
     if (cudaMemcpy(out,dout,sizeof(float)*m*n,cudaMemcpyDeviceToHost)!=cudaSuccess)
       fprintf(stderr,"Error copying result to host in c2r\n");
-  
 
   }
-}
 }
 
 /*--------------------------------------------------------------------------------*/
@@ -170,20 +163,15 @@ void cufft_r2c_columns(cufftComplex *out, float *data, int len, int ntrans)
 }
 
 
-
-
-
-
 /*--------------------------------------------------------------------------------*/
-
 extern "C" {
+
 void cufft_r2c_gpu(cufftComplex *out, float *data, int n, int m, int axis)
 {
   if (axis==1)
     cufft_r2c(out,data,m,n);
   else
     cufft_r2c_columns(out,data,n,m);
-}
 }
 /*--------------------------------------------------------------------------------*/
 
@@ -194,18 +182,14 @@ void cufft_r2c_gpu_wplan(cufftComplex *out, float *data, int n, int m, int axis,
   else
     cufft_r2c_columns(out,data,n,m);
 }
-}
 /*--------------------------------------------------------------------------------*/
 
-extern "C" {
 void cufft_c2r_gpu_wplan(float  *out, cufftComplex *data, cufftHandle *plan)
 {
   cufft_c2r_wplan(out,data,*plan);
 }
-}
 /*--------------------------------------------------------------------------------*/
 
-extern "C" {
 void cufft_c2r_gpu(float *out, cufftComplex *data, int n, int m, int axis)
 {
   if (axis==1)
@@ -213,68 +197,63 @@ void cufft_c2r_gpu(float *out, cufftComplex *data, int n, int m, int axis)
   else
     cufft_c2r_columns(out,data,n,m);
 }
-}
 /*--------------------------------------------------------------------------------*/
-extern "C" {
 void get_plan_size(cufftHandle *plan, size_t *sz)
 {
   if (cufftGetSize(*plan,sz)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error querying plan size.\n");
 }
-}
 /*--------------------------------------------------------------------------------*/
-extern "C" {
-  void get_plan_r2c(int n, int m, int axis,cufftHandle *plan,int alloc)
+void get_plan_r2c(int n, int m, int axis, cufftHandle *plan, int alloc)
 {
   if (axis==1) {
-    if (cufftPlan1d(plan,m,CUFFT_R2C,n)!=CUFFT_SUCCESS)
-      fprintf(stderr,"Error planning dft.\n");
-    else {
-      size_t sz=0;
-      if (cufftGetSize(*plan,&sz)!=CUFFT_SUCCESS)
-        fprintf(stderr,"Error getting work size.\n");
-      printf("works size is %ld\n",sz);
-      if (alloc==0) {
-        cufftSetAutoAllocation(*plan,0);
-        void *ptr=NULL;
-        cufftSetWorkArea(*plan,ptr);
-      }
+    // Initialize an empty plan.
+    cufftCreate(plan);
+    // Turn off auto-allocation if required. This must be done before the
+    // plan is actually created, so we can't use the shortcut cufftPlan1d
+    if (!alloc) {
+        cufftSetAutoAllocation(*plan, 0);
+        //cufftSetWorkArea(*plan, NULL);
     }
+    // We can finally actually set up the plan
+    size_t work_size;
+    if (cufftMakePlan1d(*plan, m, CUFFT_R2C, n, &work_size)!=CUFFT_SUCCESS)
+      fprintf(stderr,"Error planning dft.\n");
+  } else {
+    // SKN: I assume this is TODO?
   }
-      
-}
 }
         
 /*--------------------------------------------------------------------------------*/
-extern "C" {
-void get_plan_c2r(int n, int m, int axis,cufftHandle *plan,int alloc)
+void get_plan_c2r(int n, int m, int axis,cufftHandle *plan, int alloc)
 //make sure n and m correspond to the size of the *output* transform
 {
   if (axis==1) {
-    if (cufftPlan1d(plan,m,CUFFT_C2R,n)!=CUFFT_SUCCESS)
-      fprintf(stderr,"Error planning idft.\n");
-    else {
-      if (alloc==0) {
-        cufftSetAutoAllocation(*plan,0);
-        void *ptr=NULL;
-        cufftSetWorkArea(*plan,ptr);
-      }
+    // Initialize an empty plan.
+    cufftCreate(plan);
+    // Turn off auto-allocation if required. This must be done before the
+    // plan is actually created, so we can't use the shortcut cufftPlan1d
+    if (!alloc) {
+        cufftSetAutoAllocation(*plan, 0);
+        //cufftSetWorkArea(*plan, NULL);
     }
+    // We can finally actually set up the plan
+    size_t work_size;
+    if (cufftMakePlan1d(*plan, m, CUFFT_C2R, n, &work_size)!=CUFFT_SUCCESS)
+      fprintf(stderr,"Error planning dft.\n");
+  } else {
+    // SKN: I assume this is TODO?
   }
-}
 }
         
 /*--------------------------------------------------------------------------------*/
-extern "C" {
 void destroy_plan(cufftHandle *plan)
 {
   if (cufftDestroy(*plan)!=CUFFT_SUCCESS)
     fprintf(stderr,"Error destroying plan.\n");
 }
-}
         
 /*--------------------------------------------------------------------------------*/
-extern "C" {
 void set_plan_scratch(cufftHandle plan,void *buf)
 {
   if (cufftSetWorkArea(plan,buf)!=CUFFT_SUCCESS)
@@ -283,10 +262,8 @@ void set_plan_scratch(cufftHandle plan,void *buf)
   //printf("successfully assigned buffer.\n");
           
 }
-}
 
 /*--------------------------------------------------------------------------------*/
-extern "C" {
 void cufft_r2c_host(cufftComplex *out, float *data, int n, int m, int axis)
 {
   cufftComplex *dout;
@@ -318,6 +295,7 @@ void cufft_r2c_host(cufftComplex *out, float *data, int n, int m, int axis)
   
   }
 }
+
 }
 
 
