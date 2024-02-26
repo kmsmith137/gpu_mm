@@ -181,13 +181,14 @@ CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, in
 
     if (!verbose)
 	return;
-    
+  /*
     cout << "CpuPointingPlan:\n"
 	 << "    ncl_uninflated = " << ncl_uninflated << "\n"
 	 << "    ncl_inflated = " << ncl_inflated << "\n"
 	 << "    num_quadruples = " << num_quadruples << " (i.e. nonempty cells)\n"
 	 << "    inflation factor = " << (double(ncl_inflated) / double(ncl_uninflated)) << "\n"
 	 << "    cache lines per nonempty cell = " << (double(ncl_inflated) / double(num_quadruples)) << endl;
+	*/
 }
 
 

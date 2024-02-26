@@ -112,9 +112,8 @@ class PlanCache:
         self.maxsize = -1
         self.scratch = None
         self.plans   = {}
-
-        self.maxsize = 2600000000
-        self.scratch = cp.empty(self.maxsize, dtype=np.uint8)
+        #self.maxsize = 2600000000
+        #self.scratch = cp.empty(self.maxsize, dtype=np.uint8)
     def get(self, kind, shape, axis=1):
         # Get a plan from the cache, or set it up if not present.
         # Reallocates the scratch space if necessary. We assume that

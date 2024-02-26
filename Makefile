@@ -23,7 +23,8 @@ OFILES = \
   src_lib/python_exports.o \
   src_lib/tod2map.o \
   src_lib/cnpy.o \
-  src_lib/misc.o
+  src_lib/misc.o \
+  src_lib/cuts.o
 
 XFILES = \
   bin/test-map2tod \
@@ -36,7 +37,7 @@ LIBFILES = \
   lib/libgpu_mm.a \
   lib/libgpu_mm.so \
   lib/libpycufft.a \
-  lib/libpycufft.so
+  lib/libpycufft.so \
 
 SRCDIRS = \
   include \

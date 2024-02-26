@@ -45,6 +45,16 @@ _construct_cpu_plan2.argtypes = (_p, _p, _l, _l, _l)
 _clip = _libgpu_mm.clip
 _clip.argtypes = (_p, _l, _f, _f)
 
+_extract_ranges = _libgpu_mm.extract_ranges
+_extract_ranges.argtypes = (_p, _i, _p, _p, _i, _p, _p, _p)
+
+_insert_ranges = _libgpu_mm.insert_ranges
+_insert_ranges.argtypes = (_p, _i, _p, _p, _i, _p, _p, _p)
+
+_clear_ranges = _libgpu_mm.clear_ranges
+_clear_ranges.argtypes = (_p, _i, _i, _p, _p, _p)
+
+
 ####################################################################################################
 
 
@@ -342,11 +352,21 @@ class PointingPlan:
         self.ndec = ndec
         self.nra = nra
 
+# Cuts
+def insert_ranges(tod, junk, offs, dets, starts, lens):
+    _insert_ranges(tod.data.ptr, tod.shape[1], junk.data.ptr, offs.data.ptr, len(lens), dets.data.ptr, starts.data.ptr, lens.data.ptr)
+
+def extract_ranges(tod, junk, offs, dets, starts, lens):
+    _extract_ranges(tod.data.ptr, tod.shape[1], junk.data.ptr, offs.data.ptr, len(lens), dets.data.ptr, starts.data.ptr, lens.data.ptr)
+
+def clear_ranges(tod, dets, starts, lens):
+    _clear_ranges(tod.data.ptr, tod.shape[1], len(lens), dets.data.ptr, starts.data.ptr, lens.data.ptr)
+
 # ----------
 # Misc stuff
 
 def clip(arr, vmin, vmax):
-	"""In-place clip. Necessary because cupy's clip makes a copy, even when
-	the out argument is used."""
-	assert arr.dtype == np.float32, "In-place clip only supports float32"
-	_clip(arr.data.ptr, arr.size, vmin, vmax)
+    """In-place clip. Necessary because cupy's clip makes a copy, even when
+    the out argument is used."""
+    assert arr.dtype == np.float32, "In-place clip only supports float32"
+    _clip(arr.data.ptr, arr.size, vmin, vmax)
