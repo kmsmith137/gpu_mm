@@ -139,6 +139,7 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
 
     arr_gpu.fill(arr_cpu);
     this->nmt_cumsum = arr_gpu;
+    this->plan_nmt = nmt;
 
     // Initialize this->cub_nbytes.
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(

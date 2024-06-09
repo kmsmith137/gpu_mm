@@ -79,10 +79,10 @@ static __device__ uint count_nmt(int iycell, int ixcell)
     int icell = (iycell << 10) | ixcell;
     bool valid = (iycell >= 0) && (ixcell >= 0);
 
-    uint lbit = 1U << threadIdx.x;
-    uint mask = __match_any_sync(ALL_LANES, icell);
-    bool is_lowest = (mask & lbit & (lbit-1)) != 0;
-
+    uint mmask = __match_any_sync(ALL_LANES, icell);
+    uint lmask = (1U << threadIdx.x) - 1;
+    bool is_lowest = (mmask & lmask) == 0;
+	
     return (valid && is_lowest) ? 1 : 0;
 }
 

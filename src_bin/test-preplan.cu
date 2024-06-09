@@ -83,8 +83,11 @@ static void test_preplan()
 	    s_curr += 32;
 	}
 
+	ulong nmt_gpu = nmt_cumsum.data[b];
+	cout << "b=" << b << ", s_curr=" << s_curr << ", nmt_curr=" << nmt_curr << ", nmt_gpu=" << nmt_gpu << endl;
+
 	assert(s_curr == s_end);
-	assert(nmt_cumsum.data[b] == nmt_curr);
+	assert(nmt_gpu == nmt_curr);
     }
 
     assert(s_curr == nsamp);

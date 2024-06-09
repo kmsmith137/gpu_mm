@@ -1,5 +1,8 @@
 #include "../include/gpu_mm2.hpp"
 
+#include <gputils/time_utils.hpp>
+#include <gputils/string_utils.hpp>
+
 using namespace std;
 using namespace gputils;
 
@@ -20,6 +23,10 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     
     assert((scan_speed > 0.0) && (scan_speed <= 1.0));
     assert((drift_speed > 0.0) && (drift_speed <= 1.0));
+    
+    struct timeval tv0 = get_time();
+    long nbytes_x = 3 * nsamp * sizeof(T);
+    cout << "ToyPointing<" << type_name<T>() << "> constructor: start (" << nbytes_to_str(nbytes_x) << " xpointing)" << endl;
 
     this->xpointing_cpu = Array<T> ({3,nsamp}, af_rhost);
     T *yp = xpointing_cpu.data;
@@ -53,6 +60,7 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     }
 
     this->xpointing_gpu = xpointing_cpu.to_gpu();
+    cout << "ToyPointing<" << type_name<T>() << "> constructor: done, time = " << time_since(tv0) << " seconds" << endl;
 }
 
 
