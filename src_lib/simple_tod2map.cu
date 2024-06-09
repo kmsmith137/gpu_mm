@@ -1,4 +1,5 @@
 #include "../include/gpu_mm2.hpp"
+#include "../include/gpu_mm2_internals.hpp"
 
 #include <iostream>
 #include <gputils/Array.hpp>
@@ -91,12 +92,18 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 	T xpix = xpointing[s + nsamp];
 	T alpha = xpointing[s + 2*nsamp];
 	T t = tod[s];
+
+	// FIXME add 'status' argument, and calls to range_check_{xpix,ypix}().
+	normalize_xpix(xpix, nxpix);   // defined in gpu_mm2_internals.hpp
 	
 	int iy0, iy1, ix0, ix1;
-	T dy, dx, q, u;
+	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
+	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+
+	T dy = ypix - iy0;
+	T dx = xpix - ix0;
 	
-	analyze_ypix(iy0, iy1, dy, ypix, nypix);
-	analyze_xpix(ix0, ix1, dx, xpix, nxpix);
+	T q, u;	
 	dtype<T>::xsincos(alpha, &q, &u);
 	q *= t;
 	u *= t;
@@ -112,8 +119,8 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 template<typename T>
 void launch_simple_tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing)
 {
-    uint nsamp_t, nsamp_x;
-    int nypix, nxpix;
+    long nsamp_t, nsamp_x;
+    long nypix, nxpix;
     
     check_map(map, nypix, nxpix, "launch_simple_tod2map");
     check_tod(tod, nsamp_t, "launch_simple_tod2map");

@@ -15,7 +15,8 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     drift_speed(total_drift / max(nsamp,1L))
 {
     check_nsamp(nsamp, "ToyPointing constructor");
-    check_nypix_nxpix(nypix, nxpix, "ToyPointing constructor");
+    check_nypix(nypix, "ToyPointing constructor");
+    check_nxpix(nxpix, "ToyPointing constructor");
     
     assert((scan_speed > 0.0) && (scan_speed <= 1.0));
     assert((drift_speed > 0.0) && (drift_speed <= 1.0));

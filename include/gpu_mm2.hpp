@@ -1,6 +1,7 @@
 #ifndef _GPU_MM2_HPP
 #define _GPU_MM2_HPP
 
+#include <iostream>
 #include <gputils/Array.hpp>
 
 namespace gpu_mm2 {
@@ -82,21 +83,25 @@ struct PointingPrePlan
     long nypix = 0;
     long nxpix = 0;
 
-    long nblocks = 0;     // number of threadblocks 
-    long nsec_tot = 0;    // total number of secondary cache lines (summed over all blocks)
-    long tmp_nbytes = 0;  // temp storage needed to create plan
-    long rk = 0;          // number of TOD samples per threadblock is (2^rk)
+    long rk = 0;            // number of TOD samples per threadblock is (2^rk)
+    long nblocks = 0;       // number of threadblocks 
+    long plan_nmt = 0;      // total number of mt-pairs in plan
+    size_t cub_nbytes = 0;  // number of bytes used in cub radix sort 'd_temp_storage'
 
-    // Count secondary cache lines per threadblock.
+    // Cumulative count of mt-pairs per threadblock.
     // 1-d array of length nblocks, in GPU memory.
-    gputils::Array<uint> nsec_cumsum;
+    gputils::Array<uint> nmt_cumsum;
     
     template<typename T>
     PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
-    
-    // long plan_nmt = 0;     // number of elements (ulong) in plan_mt array
-    // long plan_ntt = 0;     // number of elements (uint) in plan_tt array
-    // long plan_nbytes = 0;  // equal to (plan_nmt * sizeof(ulong) + plan_ntt * sizeof(uint))
+
+    void show(std::ostream &os = std::cout) const;
+    // Reminder: the plan will need to allocate
+    //   plan_mt[]
+    //   plan_tt[]
+    //   tmp buf for map2tod
+    //   sort input buffer
+    //   sort d_temp_storage
 };
 
 
@@ -131,11 +136,32 @@ extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T
 // Argument checking (defined in check_arguments.cu)
 
 extern void check_nsamp(long nsamp, const char *where);
-extern void check_nypix_nxpix(long nypix, long nxpix, const char *where);
+extern void check_nypix(long nypix, const char *where);
+extern void check_nxpix(long nxpix, const char *where);
+extern void check_err_xypix(int err, const char *where);
 
-template<typename T> extern void check_map(const gputils::Array<T> &map, int &nypix, int &nxpix, const char *where);
-template<typename T> extern void check_tod(const gputils::Array<T> &tod, uint &nsamp, const char *where);
-template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, uint &nsamp, const char *where);
+template<typename T> extern void check_map(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where);
+template<typename T> extern void check_tod(const gputils::Array<T> &tod, long &nsamp, const char *where);
+template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long &nsamp, const char *where);
+
+
+// A utility class for testing.
+
+struct QuantizedPointing
+{
+    long nsamp = 0;
+    long nypix = 0;
+    long nxpix = 0;
+    
+    // Since QuantizedPointing is only used in unit tests, assume the caller
+    // wants the 'iypix' and 'ixpix' arrays on the CPU.
+
+    gputils::Array<int> iypix_cpu;
+    gputils::Array<int> ixpix_cpu;
+
+    template<typename T>
+    QuantizedPointing(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+};
 
 
 } // namespace gpu_mm2

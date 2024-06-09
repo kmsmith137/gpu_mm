@@ -15,7 +15,8 @@ SHELL := /bin/bash
 
 HFILES = \
   include/gpu_mm.hpp \
-  include/gpu_mm2.hpp
+  include/gpu_mm2.hpp \
+  include/gpu_mm2_internals.hpp
 
 OFILES = \
   src_lib/ActPointing.o \
@@ -26,7 +27,9 @@ OFILES = \
   src_lib/cnpy.o \
   src_lib/misc.o \
   src_lib/cuts.o \
+  src_lib/PointingPrePlan.o \
   src_lib/ToyPointing.o \
+  src_lib/QuantizedPointing.o \
   src_lib/check_arguments.o \
   src_lib/simple_tod2map.o
 
@@ -35,6 +38,8 @@ XFILES = \
   bin/time-map2tod \
   bin/test-tod2map \
   bin/time-tod2map \
+  bin/test-preplan \
+  bin/time-preplan \
   bin/time-simple-tod2map \
   bin/scratch
 
