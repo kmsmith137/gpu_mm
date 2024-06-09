@@ -36,14 +36,24 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     double y = 1.0;
     double x = 1.0;
     double scan_vel = scan_speed;
-	
+    
     double y0 = 1.1 * scan_speed;
-    double y1 = nypix - (2.1 * scan_speed);
+    double y1 = nypix-1 - (1.1 * scan_speed);
+    
+    double xmin = x;
+    double xmax = x;
+    double ymin = y;
+    double ymax = y;
     
     for (long s = 0; s < nsamp; s++) {
 	yp[s] = y;
 	xp[s] = x;
 	ap[s] = 1.0;   // FIXME do something more interesting here
+
+	xmin = min(xmin, x);
+	xmax = max(xmax, x);
+	ymin = min(ymin, y);
+	ymax = max(ymax, y);
 
 	if ((scan_vel > 0) && (y > y1))
 	    scan_vel = -scan_speed;
@@ -60,7 +70,9 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     }
 
     this->xpointing_gpu = xpointing_cpu.to_gpu();
-    cout << "ToyPointing<" << type_name<T>() << "> constructor: done, time = " << time_since(tv0) << " seconds" << endl;
+    
+    cout << "ToyPointing<" << type_name<T>() << "> constructor: done, time = " << time_since(tv0) << " seconds"
+	 << ", xmin=" << xmin << ", xmax=" << xmax << ", ymin=" << ymin << ", ymax=" << ymax << endl;
 }
 
 

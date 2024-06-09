@@ -52,13 +52,13 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 	int iycell_e, iycell_o, ixcell_e, ixcell_o;
 	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm2_internals.hpp
 	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm2_internals.hpp
-
+	
 	nmt += count_nmt(iycell_e, ixcell_e);  // defined in gpu_mm2_internals.hpp
 	nmt += count_nmt(iycell_e, ixcell_o);  // defined in gpu_mm2_internals.hpp
 	nmt += count_nmt(iycell_o, ixcell_e);  // defined in gpu_mm2_internals.hpp
 	nmt += count_nmt(iycell_o, ixcell_o);  // defined in gpu_mm2_internals.hpp
     }
-
+    
     // Reduce across threads in the warp.
     err = __reduce_or_sync(ALL_LANES, err);
     nmt = __reduce_add_sync(ALL_LANES, nmt);

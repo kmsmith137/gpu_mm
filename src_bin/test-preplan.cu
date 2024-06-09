@@ -47,8 +47,9 @@ static void test_preplan()
     long nypix = 8*1024;
     long nxpix = 32*1024;
     
-    double scan_speed = 0.5;    // pixels per TOD sample
-    double total_drift = 1024;  // x-pixels
+    double scan_speed = 0.531289;      // pixels per TOD sample
+    double total_drift = 94289.38921;  // x-pixels
+    // double total_drift = 1000.0;
 
     ToyPointing<T> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
 
@@ -84,14 +85,14 @@ static void test_preplan()
 	}
 
 	ulong nmt_gpu = nmt_cumsum.data[b];
-	cout << "b=" << b << ", s_curr=" << s_curr << ", nmt_curr=" << nmt_curr << ", nmt_gpu=" << nmt_gpu << endl;
+	// cout << "b=" << b << ", s_curr=" << s_curr << ", nmt_curr=" << nmt_curr << ", nmt_gpu=" << nmt_gpu << endl;
 
 	assert(s_curr == s_end);
 	assert(nmt_gpu == nmt_curr);
     }
 
     assert(s_curr == nsamp);
-    cout << "test_preplan< " << type_name<T>() << ">: pass" << endl;
+    cout << "test_preplan<" << type_name<T>() << ">: pass" << endl;
 }
 
 
