@@ -14,7 +14,8 @@ SHELL := /bin/bash
 .PHONY: all clean .FORCE
 
 HFILES = \
-  include/gpu_mm.hpp
+  include/gpu_mm.hpp \
+  include/gpu_mm2.hpp
 
 OFILES = \
   src_lib/ActPointing.o \
@@ -24,7 +25,9 @@ OFILES = \
   src_lib/tod2map.o \
   src_lib/cnpy.o \
   src_lib/misc.o \
-  src_lib/cuts.o
+  src_lib/cuts.o \
+  src_lib/check_arguments.o \
+  src_lib/ToyPointing.o
 
 XFILES = \
   bin/test-map2tod \
