@@ -64,13 +64,13 @@ bin/%: src_bin/%.o lib/libgpu_mm.a
 # FIXME currently linking static libraries -> shared.
 # Better to make everything shared?
 lib/libgpu_mm.so: $(OFILES)
-	$(NVCC) -shared -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
+	mkdir -p lib && $(NVCC) -shared -o $@ $^ $(GPUTILS_LIBDIR)/libgputils.a -lz
 
 lib/libgpu_mm.a: $(OFILES)
-	ar rcs $@ $^
+	mkdir -p lib && ar rcs $@ $^
 
 lib/libpycufft.so: src_lib/pycufft.o
-	$(NVCC) -shared -o $@ $^ -lcufft
+	mkdir -p lib && $(NVCC) -shared -o $@ $^ -lcufft
 
 lib/libpycufft.a: src_lib/pycufft.o
-	ar rcs $@ $^
+	mkdir -p lib && ar rcs $@ $^
