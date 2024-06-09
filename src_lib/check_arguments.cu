@@ -28,10 +28,55 @@ void check_nypix_nxpix(long nypix, long nxpix, const char *where)
     assert(nxpix > 0);
     assert(nxpix <= 64*1024);
     assert((nxpix % 64) == 0);
-
-    // See gpu_mm2.hpp for explanation of this constraint.
-    assert((nypix <= 63*1024) || (nxpix <= 63*1024));
 }
+
+
+template<typename T>
+void check_map(const Array<T> &map, int &nypix, int &nxpix, const char *where)
+{
+    assert(map.ndim == 3);
+    assert(map.shape[0] == 3);
+    assert(map.is_fully_contiguous());
+    assert(map.on_gpu());
+    
+    check_nypix_nxpix(map.shape[1], map.shape[2], where);
+    nypix = map.shape[1];
+    nxpix = map.shape[2];
+}
+
+
+template<typename T>
+void check_tod(const Array<T> &tod, uint &nsamp, const char *where)
+{
+    assert(tod.ndim == 1);
+    assert(tod.is_fully_contiguous());
+    assert(tod.on_gpu());
+    
+    check_nsamp(tod.shape[0], where);
+    nsamp = tod.shape[0];
+}
+
+
+template<typename T>
+void check_xpointing(const Array<T> &xpointing, uint &nsamp, const char *where)
+{
+    assert(xpointing.ndim == 2);
+    assert(xpointing.shape[0] == 3);
+    assert(xpointing.is_fully_contiguous());
+    assert(xpointing.on_gpu());
+    
+    check_nsamp(xpointing.shape[1], where);
+    nsamp = xpointing.shape[1];
+}
+
+
+#define INSTANTIATE(T) \
+    template void check_map(const Array<T> &map, int &nypix, int &nxpix, const char *where); \
+    template void check_tod(const Array<T> &tod, uint &nsamp, const char *where); \
+    template void check_xpointing(const Array<T> &xpointing, uint &nsamp, const char *where)
+
+INSTANTIATE(float);
+INSTANTIATE(double);
 
 
 }  // namespace gpu_mm2

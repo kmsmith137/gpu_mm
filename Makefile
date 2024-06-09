@@ -26,14 +26,16 @@ OFILES = \
   src_lib/cnpy.o \
   src_lib/misc.o \
   src_lib/cuts.o \
+  src_lib/ToyPointing.o \
   src_lib/check_arguments.o \
-  src_lib/ToyPointing.o
+  src_lib/simple_tod2map.o
 
 XFILES = \
   bin/test-map2tod \
   bin/time-map2tod \
   bin/test-tod2map \
   bin/time-tod2map \
+  bin/time-simple-tod2map \
   bin/scratch
 
 LIBFILES = \

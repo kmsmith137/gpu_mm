@@ -22,17 +22,11 @@ namespace gpu_mm2 {
 //
 // Currently we require nypix to be a multiple of 64, and nxpix
 // to be a multiple of 128. (FIXME: I hope to improve this soon.)
+// We also require nxcells and nycells to be <= 1024.
 //
 // We divide maps into 64-by-64 cells. Thus the number of cells is:
 //   nycells = ceil(nypix / 64)
 //   nxcells = ceil(nxpix / 64)
-//
-// We sometimes represent cells by a 20-bit cell index:
-//   icell = (iycell << 10) | (ixcell)
-//
-// The code assumes this fits into 10 bits, and also reserves icell=-1
-// as a sentinel value. Therefore, nxcells and nycells must be <= 1024,
-// and they can't both be equal to 1024.
 //
 // --------------------------------------------------
 //               LOCAL PIXEL-SPACE MAPS
@@ -82,21 +76,44 @@ namespace gpu_mm2 {
 //   xpointing[3][nsamp];   // axis 0 is {y,x,alpha}
 
 
+struct PointingPrePlan
+{
+    long nsamp = 0;
+    long nypix = 0;
+    long nxpix = 0;
+
+    long nblocks = 0;     // number of threadblocks 
+    long nsec_tot = 0;    // total number of secondary cache lines (summed over all blocks)
+    long tmp_nbytes = 0;  // temp storage needed to create plan
+    long rk = 0;          // number of TOD samples per threadblock is (2^rk)
+
+    // Count secondary cache lines per threadblock.
+    // 1-d array of length nblocks, in GPU memory.
+    gputils::Array<uint> nsec_cumsum;
+    
+    template<typename T>
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+    
+    // long plan_nmt = 0;     // number of elements (ulong) in plan_mt array
+    // long plan_ntt = 0;     // number of elements (uint) in plan_tt array
+    // long plan_nbytes = 0;  // equal to (plan_nmt * sizeof(ulong) + plan_ntt * sizeof(uint))
+};
+
+
 template<typename T>
 struct ToyPointing
 {
     // Scans currently go at 45 degrees, and cover the full y-range.
-    // Usually use 
     
     ToyPointing(long nsamp, long nypix, long nxpix,
-		double scan_speed,      // map pixels per sample
-		double drift_radians);  // total drift over full TOD
+		double scan_speed,     // map pixels per sample
+		double total_drift);   // total drift over full TOD, in x-pixels
 
     const long nsamp;
     const long nypix;
     const long nxpix;
     const double scan_speed;
-    const double drift_radians;
+    const double total_drift;
     const double drift_speed;
 
     // Since ToyPointing is only used in unit tests, assume the caller
@@ -107,9 +124,18 @@ struct ToyPointing
 };
 
 
+template<typename T>
+extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
+
+
 // Argument checking (defined in check_arguments.cu)
+
 extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix_nxpix(long nypix, long nxpix, const char *where);
+
+template<typename T> extern void check_map(const gputils::Array<T> &map, int &nypix, int &nxpix, const char *where);
+template<typename T> extern void check_tod(const gputils::Array<T> &tod, uint &nsamp, const char *where);
+template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, uint &nsamp, const char *where);
 
 
 } // namespace gpu_mm2

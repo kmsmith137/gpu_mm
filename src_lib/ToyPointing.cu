@@ -10,9 +10,9 @@ namespace gpu_mm2 {
 
 
 template<typename T>
-ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_speed_, double drift_radians_) :
-    nsamp(nsamp_), nypix(nypix_), nxpix(nxpix_), scan_speed(scan_speed_), drift_radians(drift_radians_),
-    drift_speed(drift_radians / max(nsamp,1L))
+ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_speed_, double total_drift_) :
+    nsamp(nsamp_), nypix(nypix_), nxpix(nxpix_), scan_speed(scan_speed_), total_drift(total_drift_),
+    drift_speed(total_drift / max(nsamp,1L))
 {
     check_nsamp(nsamp, "ToyPointing constructor");
     check_nypix_nxpix(nypix, nxpix, "ToyPointing constructor");
@@ -35,7 +35,7 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     for (long s = 0; s < nsamp; s++) {
 	yp[s] = y;
 	xp[s] = x;
-	ap[s] = 0.0;   // FIXME do something more interesting here
+	ap[s] = 1.0;   // FIXME do something more interesting here
 
 	if ((scan_vel > 0) && (y > y1))
 	    scan_vel = -scan_speed;
@@ -56,7 +56,7 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
 
 
 #define INSTANTIATE(T) \
-    template ToyPointing<T>::ToyPointing(long nsamp, long nypix, long nxpix, double scan_speed, double drift_radians)
+    template ToyPointing<T>::ToyPointing(long nsamp, long nypix, long nxpix, double scan_speed, double total_drift)
 
 INSTANTIATE(float);
 INSTANTIATE(double);
