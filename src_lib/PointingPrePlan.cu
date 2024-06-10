@@ -160,8 +160,11 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     // Initialize public members containing byte counts: plan_nbytes, plan_constructor_tmp_nbytes.
     // Note: align128() is defined in gpu_mm2_internals.hpp
 
-    this->plan_nbytes = align128(plan_nmt * sizeof(ulong));
-    this->plan_constructor_tmp_nbytes = plan_nbytes + align128(cub_nbytes);
+    long mt_nbytes = align128(plan_nmt * sizeof(ulong));
+    long err_nbytes = align128(nblocks * sizeof(int));
+    
+    this->plan_nbytes = mt_nbytes + err_nbytes;
+    this->plan_constructor_tmp_nbytes = mt_nbytes + align128(cub_nbytes);
     // Forthcoming: plan_map2tod_tmp_nbytes
 }
 

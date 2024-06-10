@@ -112,20 +112,26 @@ struct PointingPrePlan
 
 struct PointingPlan
 {
-    long nsamp = 0;
-    long nypix = 0;
-    long nxpix = 0;
+    const long nsamp;
+    const long nypix;
+    const long nxpix;
     
     const PointingPrePlan pp;
-    
-    gputils::Array<ulong> plan_mt;
-    // Forthcoming: plan_tt
 
+    gputils::Array<unsigned char> buf;
+    ulong *plan_mt = nullptr;
+    uint *err_gpu = nullptr;
+
+    gputils::Array<uint> err_cpu;
+    
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
 		 const gputils::Array<T> &xpointing_gpu,
 		 const gputils::Array<unsigned char> &buf,
 		 const gputils::Array<unsigned char> &tmp_buf);
+
+    // Used in a unit test
+    gputils::Array<ulong> plan_mt_to_cpu() const;
 };
 
 
@@ -162,7 +168,7 @@ extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T
 extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix(long nypix, const char *where);
 extern void check_nxpix(long nxpix, const char *where);
-extern void check_err(int err, const char *where);
+extern void check_err(uint err, const char *where);
 
 template<typename T> extern void check_map(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long &nsamp, const char *where);

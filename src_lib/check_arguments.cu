@@ -35,7 +35,7 @@ void check_nxpix(long nxpix, const char *where)
 }
 
 
-void check_err(int err, const char *where)
+void check_err(uint err, const char *where)
 {
     if (err & 0x1)
 	throw runtime_error(string(where) + ": ypix out of range");

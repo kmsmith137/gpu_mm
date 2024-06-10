@@ -9,7 +9,7 @@ using namespace std;
 using namespace gputils;
 using namespace gpu_mm2;
 
-
+    
 struct test_helper
 {
     const int nypix;
@@ -52,13 +52,12 @@ static void test_preplan()
     // double total_drift = 1000.0;
 
     ToyPointing<T> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
-
+    QuantizedPointing qp(tp.xpointing_gpu, nypix, nxpix);
+    
     PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
     Array<uint> nmt_cumsum = pp.nmt_cumsum.to_host();
     pp.show();
     
-    QuantizedPointing qp(tp.xpointing_gpu, nypix, nxpix);
-
     // Accumulate nmt_cumsum by hand
     ulong s_curr = 0;
     ulong nmt_curr = 0;  // accumulated nmt[s] for s < s_curr
@@ -94,7 +93,7 @@ static void test_preplan()
     assert(s_curr == nsamp);
     cout << "test_preplan<" << type_name<T>() << ">: pass" << endl;
 }
-
+       
 
 int main(int argc, char **argv)
 {
@@ -102,4 +101,3 @@ int main(int argc, char **argv)
     test_preplan<double>();
     return 0;
 }
-       
