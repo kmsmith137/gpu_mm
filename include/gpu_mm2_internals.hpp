@@ -76,7 +76,7 @@ static __device__ void set_up_cell_pair(int &icell_e, int &icell_o, int ipix0, i
 
 static __device__ uint count_nmt(int iycell, int ixcell)
 {
-    int icell = (iycell << 10) | ixcell;
+    uint icell = (iycell << 10) | ixcell;
     bool valid = (iycell >= 0) && (ixcell >= 0);
 
     int laneId = threadIdx.x & 31;
@@ -85,6 +85,22 @@ static __device__ uint count_nmt(int iycell, int ixcell)
     bool is_lowest = ((mmask & lmask) == 0);
 	
     return (valid && is_lowest) ? 1 : 0;
+}
+
+
+// FIXME refactor common code in count_nmt(), analyze_cell_pair().
+static __device__ void analyze_cell_pair(int iycell, int ixcell, uint &icell, uint &amask, int &na)
+{
+    icell = (iycell << 10) | ixcell;
+    bool valid = (iycell >= 0) && (ixcell >= 0);
+
+    int laneId = threadIdx.x & 31;
+    uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
+    uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
+    bool is_lowest = ((mmask & lmask) == 0);
+
+    amask = __ballot_sync(ALL_LANES, valid && is_lowest);
+    na = __popc(amask);
 }
 
 

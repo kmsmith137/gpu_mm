@@ -34,8 +34,9 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
     uint nmt = 0;
     
     // Range of TOD samples to be processed by this threadblock.
-    uint s0 = blockIdx.x * nsamp_per_block;
-    uint s1 = min(nsamp, (blockIdx.x+1) * nsamp_per_block);
+    int b = blockIdx.x;
+    uint s0 = b * nsamp_per_block;
+    uint s1 = min(nsamp, (b+1) * nsamp_per_block);
 
     for (uint s = s0 + threadIdx.x; s < s1; s += blockDim.x) {
 	T ypix = xpointing[s];
@@ -89,7 +90,7 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
     out = err | (nmt << 2);
 
     if (laneId == 0)
-	outp[blockIdx.x] = out;
+	outp[b] = out;
 }
 
 
