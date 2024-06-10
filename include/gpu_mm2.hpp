@@ -83,6 +83,11 @@ struct PointingPrePlan
     long nypix = 0;
     long nxpix = 0;
 
+    long plan_nbytes = 0;
+    long plan_constructor_tmp_nbytes = 0;
+    // Forthcoming: plan_map2tod_tmp_nbytes
+
+    // Used internally
     long rk = 0;            // number of TOD samples per threadblock is (2^rk)
     long nblocks = 0;       // number of threadblocks 
     long plan_nmt = 0;      // total number of mt-pairs in plan
@@ -102,6 +107,25 @@ struct PointingPrePlan
     //   tmp buf for map2tod
     //   sort input buffer
     //   sort d_temp_storage
+};
+
+
+struct PointingPlan
+{
+    long nsamp = 0;
+    long nypix = 0;
+    long nxpix = 0;
+    
+    const PointingPrePlan pp;
+    
+    gputils::Array<ulong> plan_mt;
+    // Forthcoming: plan_tt
+
+    template<typename T>
+    PointingPlan(const PointingPrePlan &pp,
+		 const gputils::Array<T> &xpointing_gpu,
+		 const gputils::Array<unsigned char> &buf,
+		 const gputils::Array<unsigned char> &tmp_buf);
 };
 
 
@@ -138,14 +162,16 @@ extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T
 extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix(long nypix, const char *where);
 extern void check_nxpix(long nxpix, const char *where);
-extern void check_err_xypix(int err, const char *where);
+extern void check_err(int err, const char *where);
 
 template<typename T> extern void check_map(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long &nsamp, const char *where);
 template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long &nsamp, const char *where);
 
+extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
-// A utility class for testing.
+
+// QuantizedPointing: A utility class used in unit tests.
 
 struct QuantizedPointing
 {

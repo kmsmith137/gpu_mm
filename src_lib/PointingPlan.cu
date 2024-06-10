@@ -209,12 +209,22 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 // -------------------------------------------------------------------------------------------------
 
 
+template<typename T>
+PointingPlan::PointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu,
+			   const Array<unsigned char> &buf, const Array<unsigned char> &tmp_buf)
+{
+
+}
+
 
 // -------------------------------------------------------------------------------------------------
 
 
 #define INSTANTIATE(T) \
-    template PointingPlan::PointingPlan(const Array<T> &xpointing_gpu, long nypix, long nxpix)
+    template PointingPlan::PointingPlan(const PointingPrePlan &pp, \
+	const gputils::Array<T> &xpointing_gpu, \
+	const gputils::Array<unsigned char> &buf, \
+	const gputils::Array<unsigned char> &tmp_buf)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

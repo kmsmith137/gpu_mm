@@ -77,7 +77,7 @@ QuantizedPointing::QuantizedPointing(const Array<T> &xpointing_gpu, long nypix_,
     for (uint b = 0; b < nblocks; b++)
 	err |= err_cpu.data[b];
 
-    check_err_xypix(err, "QuantizedPointing constructor");
+    check_err(err, "QuantizedPointing constructor");
 }
 
 

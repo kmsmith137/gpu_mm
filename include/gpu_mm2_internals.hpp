@@ -11,6 +11,13 @@ namespace gpu_mm2 {
 static constexpr unsigned int ALL_LANES = 0xffffffffU;
 
 
+inline long align128(long n)
+{
+    assert(n >= 0);
+    return (n + 127L) & ~127L;
+}
+
+
 // -------------------------------------------------------------------------------------------------
 //
 // FIXME these functions could use some comments!
