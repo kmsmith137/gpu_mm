@@ -234,12 +234,10 @@ int main(int argc, char **argv)
 	
 	ToyPointing<float> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
 	PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
+	PointingPlan p(pp, tp.xpointing_gpu);
+	Array<ulong> plan_mt = p.get_plan_mt(true);  // gpu=true
 	
-	Array<unsigned char> buf({pp.plan_nbytes}, af_gpu);
-	Array<unsigned char> tmp_buf({pp.plan_constructor_tmp_nbytes}, af_gpu);
-	PointingPlan p(pp, tp.xpointing_gpu, buf, tmp_buf);
-	
-	test_plan_iterator(p.plan_mt_to_cpu(), nmt_per_block);  // last argument is nmt_per_block
+	test_plan_iterator(plan_mt, nmt_per_block);  // last argument is nmt_per_block
     } while (0);
 	
     return 0;

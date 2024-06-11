@@ -280,10 +280,23 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 }
 
 
-Array<ulong> PointingPlan::plan_mt_to_cpu() const
+// This constructor allocates GPU memory (rather than using externally managed GPU memory)
+template<typename T>
+PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpointing_gpu) :
+    PointingPlan(preplan, xpointing_gpu,
+		 Array<unsigned char>({preplan.plan_nbytes}, af_gpu), 
+		 Array<unsigned char>({preplan.plan_constructor_tmp_nbytes}, af_gpu))
+{ }
+
+
+// Only used in unit tests
+Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 {
-    Array<ulong> ret({pp.plan_nmt}, af_rhost);
-    CUDA_CALL(cudaMemcpy(ret.data, this->plan_mt, pp.plan_nmt * sizeof(ulong), cudaMemcpyDeviceToHost));
+    int aflags = gpu ? af_gpu : af_rhost;
+    cudaMemcpyKind direction = gpu ? cudaMemcpyDeviceToDevice : cudaMemcpyDeviceToHost;
+    
+    Array<ulong> ret({pp.plan_nmt}, aflags);
+    CUDA_CALL(cudaMemcpy(ret.data, this->plan_mt, pp.plan_nmt * sizeof(ulong), direction));
     return ret;
 }
 
@@ -295,7 +308,9 @@ Array<ulong> PointingPlan::plan_mt_to_cpu() const
     template PointingPlan::PointingPlan(const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu, \
 	const gputils::Array<unsigned char> &buf, \
-	const gputils::Array<unsigned char> &tmp_buf)
+	const gputils::Array<unsigned char> &tmp_buf); \
+    template PointingPlan::PointingPlan(const PointingPrePlan &pp, \
+	const gputils::Array<T> &xpointing_gpu)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

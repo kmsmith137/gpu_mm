@@ -123,15 +123,21 @@ struct PointingPlan
     uint *err_gpu = nullptr;
 
     gputils::Array<uint> err_cpu;
-    
+
+    // This constructor uses externally allocated GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
 		 const gputils::Array<T> &xpointing_gpu,
 		 const gputils::Array<unsigned char> &buf,
 		 const gputils::Array<unsigned char> &tmp_buf);
 
-    // Used in a unit test
-    gputils::Array<ulong> plan_mt_to_cpu() const;
+    // This constructor allocates GPU memory.
+    template<typename T>
+    PointingPlan(const PointingPrePlan &pp,
+		 const gputils::Array<T> &xpointing_gpu);
+
+    // Used in unit tests.
+    gputils::Array<ulong> get_plan_mt(bool gpu) const;
 };
 
 

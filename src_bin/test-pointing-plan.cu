@@ -109,9 +109,7 @@ static void test_pointing_plan()
     pp.show();
 
     cout << "Creating PointingPlan" << endl;
-    Array<unsigned char> buf({pp.plan_nbytes}, af_gpu);
-    Array<unsigned char> tmp_buf({pp.plan_constructor_tmp_nbytes}, af_gpu);
-    PointingPlan p(pp, tp.xpointing_gpu, buf, tmp_buf);
+    PointingPlan p(pp, tp.xpointing_gpu);
 
     cout << "Creating ReferencePlan" << endl;
     ReferencePlan rp(pp, tp.xpointing_gpu);
@@ -134,7 +132,7 @@ static void test_pointing_plan()
 
     // -------------------- Test that plan_mt is properly sorted --------------------
     
-    Array<ulong> plan_mt = p.plan_mt_to_cpu();
+    Array<ulong> plan_mt = p.get_plan_mt(false);  // gpu=false
     ulong *mt = plan_mt.data;
 
     ulong mask = (1L << 20) - 1;
