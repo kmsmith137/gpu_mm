@@ -4,7 +4,6 @@
 #include <iostream>
 #include <algorithm> // std::sort
 #include <gputils/cuda_utils.hpp>
-#include <gputils/time_utils.hpp>
 #include <gputils/string_utils.hpp>
 
 using namespace std;

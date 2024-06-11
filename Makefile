@@ -16,7 +16,8 @@ SHELL := /bin/bash
 HFILES = \
   include/gpu_mm.hpp \
   include/gpu_mm2.hpp \
-  include/gpu_mm2_internals.hpp
+  include/gpu_mm2_internals.hpp \
+  include/PlanIterator.hpp
 
 OFILES = \
   src_lib/ActPointing.o \
@@ -39,6 +40,7 @@ XFILES = \
   bin/time-map2tod \
   bin/test-tod2map \
   bin/time-tod2map \
+  bin/test-pointing-iterator \
   bin/test-pointing-plan \
   bin/test-preplan \
   bin/time-preplan \
