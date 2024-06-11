@@ -37,7 +37,7 @@ __device__ void assert_equal_within_block(uint *sp, uint x)
     __syncthreads();
 
     if (warpId == 0) {
-	uint y = sp[max(laneId,W-1)];
+	uint y = sp[min(laneId,W-1)];
 	assert_equal_within_warp(y);
     }
     
@@ -89,6 +89,8 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 
 	    if (laneId == 0)
 		atomicAdd(out_mt_counts + imt, 1);
+
+	    imt = iterator.imt_next;
 	}
     } while (iterator.next_cell());
 
@@ -204,11 +206,21 @@ static Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long
 
 int main(int argc, char **argv)
 {
-    for (int i = 0; i < 100; i++) {
+    int num_iterations = 400;
+    
+    for (int i = 0; i < num_iterations; i++) {
 	int ncells = rand_int(100, 1000);
+	int min_nmt_per_cell = 1;
+	int max_nmt_per_cell = 1000;
 	int nmt_per_block = 32 * rand_int(1,20);
-	Array<ulong> plan_mt = make_random_plan_mt(ncells, 1, 1000);
-	cout << "Random plan: ncells=" << ncells << ", nmt=" << plan_mt.size << ", nmt_per_block=" << nmt_per_block << endl;
+	Array<ulong> plan_mt = make_random_plan_mt(ncells, min_nmt_per_cell, max_nmt_per_cell);
+	
+	cout << "Random plan: ncells=" << ncells
+	     << ", min_nmt_per_cell=" << min_nmt_per_cell
+	     << ", max_nmt_per_cell=" << max_nmt_per_cell
+	     << ", nmt=" << plan_mt.size
+	     << ", nmt_per_block=" << nmt_per_block << endl;
+	
 	test_plan_iterator(plan_mt, nmt_per_block);
     }
 

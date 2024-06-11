@@ -152,7 +152,7 @@ struct PlanIterator
 	this->imt_rb = b*nmt_per_block;
 	this->imt_soft_end = min(nmt, (b+1)*nmt_per_block);
 	this->imt_hard_end = nmt;
-	
+
 	_load_rb();  // initializes mt_rb, icell_rb
 
 	// Initialize:
@@ -235,7 +235,7 @@ struct PlanIterator
 	    assert(imt_cell_end <= imt_next);  // condition for next_mt() to return false
 	}
 	
-	if (imt_cell_end >= imt_rb + 32) {
+	if (imt_cell_end > imt_rb + 32) {
 	    // Need to advance the ring buffer to "see" the next cell, but the ring buffer
 	    // was not advanced in prior calls to next_mt().
 	    //
@@ -250,7 +250,7 @@ struct PlanIterator
 		assert(imt_rb <= imt_cell_end);
 		assert(imt_cell_end <= imt_hard_end);
 		assert(imt_cell_end <= imt_next);
-		assert(imt_cell_end < imt_rb + 32);
+		assert(imt_cell_end <= imt_rb + 32);
 	    }
 	    
 	    // Fall through...
@@ -258,7 +258,7 @@ struct PlanIterator
 
 	// At this point, the following conditions are satisfied:
 	//
-	//   imt_rb <= imt_cell_end < (imt_rb + 32)
+	//   imt_rb <= imt_cell_end <= (imt_rb + 32)
 	//   imt_cell_end <= imt_next
 	//
 	// That is, the current cell ends in the current ring buffer.
