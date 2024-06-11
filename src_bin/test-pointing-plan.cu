@@ -105,14 +105,18 @@ static void test_pointing_plan()
 
     ToyPointing<T> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
 
+    cout << "Creating PointingPrePlan" << endl;
     PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
     pp.show();
 
+    cout << "Creating PointingPlan" << endl;
     Array<unsigned char> buf({pp.plan_nbytes}, af_gpu);
     Array<unsigned char> tmp_buf({pp.plan_constructor_tmp_nbytes}, af_gpu);
     PointingPlan p(pp, tp.xpointing_gpu, buf, tmp_buf);
 
+    cout << "Creating ReferencePlan" << endl;
     ReferencePlan rp(pp, tp.xpointing_gpu);
+    cout << "Starting test" << endl;
 
     // -------------------- Test preplan --------------------
     
@@ -120,7 +124,7 @@ static void test_pointing_plan()
     int nblocks = pp.nblocks;
     long nmt = pp.plan_nmt; 
     Array<uint> nmt_cumsum = pp.nmt_cumsum.to_host();
-
+    
     // These asserts are kinda silly, but I wanted to put them somewhere.
     assert(nsamp > ((nblocks-1) << rk));
     assert(nsamp <= ((nblocks) << rk));
@@ -152,12 +156,14 @@ static void test_pointing_plan()
     
     for (int i = 0; i < nmt; i++)
 	assert(mt[i] == rp.sorted_mt[i]);
+
+    cout << "test_pointing_plan<" << type_name<T>() << ">: pass!" << endl;
 }
 
 
 int main(int argc, char **argv)
 {
     test_pointing_plan<float>();
-    test_pointing_plan<double>();
+    // test_pointing_plan<double>();  // FIXME uncomment when blue is back
     return 0;
 }

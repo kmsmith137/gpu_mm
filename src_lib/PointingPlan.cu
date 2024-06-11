@@ -58,7 +58,7 @@ absorb_mt(ulong *plan_mt, int *shmem,        // pointers
     // If nmt_local is >32, then it "wraps around" from mt_local to mt_new.
     
     mt_local = (laneId < nmt_local) ? mt_local : mt_new;
-    nmt_local += mt_new;
+    nmt_local += na;
 
     if (nmt_local < 32)
 	return;
@@ -126,7 +126,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
     ulong mt_local = 0;
     int nmt_local = 0;
     uint err = 0;
-     
+
     for (uint s = s0 + 32*warpId + laneId; s < s1; s += 32*W) {
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
@@ -162,7 +162,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	    sid0 = atomicAdd(shmem+1, nsid);
 	sid0 = __shfl_sync(ALL_LANES, sid0, 0);  // broadcast from lane 0 to all lanes
 	// Note that sid0 is a zero-based index
-	
+
 	absorb_mt(plan_mt, shmem,        // pointers
 		  mt_local, nmt_local,   // per-warp ring buffer
 		  icell0, amask0, na0,   // map cells to absorb
@@ -208,7 +208,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 
     bool fail = (warpId == (W-1)) && (laneId == 0) && ((nout + nmt_local) != nmt_max);
     err = fail ? (err | 4) : err;
-	
+
     errp[b] = err;
 }
 
@@ -269,7 +269,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 	20               // int end_bit = sizeof(KeyT) * 8
 	// cudaStream_t stream = 0
     ));
-
+    
     cudaDeviceSynchronize();
 
     uint err = 0;
