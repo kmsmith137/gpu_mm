@@ -34,6 +34,8 @@ namespace gpu_mm2 {
 template<int W, bool Debug>
 struct PlanIterator
 {
+    const ulong *plan_mt;
+    
     // Same on all threads in block, not necessarily multiple of 32, constant after construction
     uint imt_soft_end;
     uint imt_hard_end;
@@ -58,7 +60,6 @@ struct PlanIterator
     __device__ void _load_rb()
     {
 	if constexpr (Debug) {
-	    assert(imt_rb >= 0);
 	    assert(imt_rb < imt_hard_end);
 	    assert((imt_rb & 31) == 0);
 	}
@@ -76,7 +77,7 @@ struct PlanIterator
     // Called in start_cell(), to initialize imt_cell_end at the beginning of a cell.
     // Also called in advance_rb(), when new ring buffer data is seen.
 
-    __device__ void _udpate_cell_end()
+    __device__ void _update_cell_end()
     {
 	if constexpr (Debug)
 	    assert(imt_cell_end == imt_hard_end);
@@ -103,7 +104,7 @@ struct PlanIterator
 	icell_curr = __shfl_sync(ALL_LANES, icell_rb, imt_cell_start & 31);
 
 	// Initialize imt_cell_end
-	imt_cell_end = imt_hard_end;   // to avoid failing an assert in _udpate_cell_end()
+	imt_cell_end = imt_hard_end;   // to avoid failing an assert in _update_cell_end()
 	_update_cell_end();       // updates imt_cell_end
 	
 	// Block dims are (32,W), so threadIdx.y is the warpId.
@@ -122,11 +123,11 @@ struct PlanIterator
 	
 	imt_rb += 32;
 	_load_rb();
-	_udpate_cell_end();
+	_update_cell_end();
     }
     
     
-    __device__ bool init(ulong *plan_mt, uint nmt, uint nmt_per_block)
+    __device__ bool init(const ulong *plan_mt_, uint nmt, uint nmt_per_block)
     {
 	if constexpr (Debug) {
 	    assert(nmt_per_block > 0);
@@ -137,19 +138,21 @@ struct PlanIterator
 	    assert(blockDim.y == W);
 	}
 	       
-	uint b = blockIdx.x;
-	int laneId = threadIdx.x;
-
 	// Initialize:
+	//   this->plan_mt
 	//   this->imt_soft_end
 	//   this->imt_hard_end
 	//   this->mt_rb
 	//   this->imt_rb
 	//   this->icell_rb
 	
+	uint b = blockIdx.x;
+
+	this->plan_mt = plan_mt_;
 	this->imt_rb = b*nmt_per_block;
 	this->imt_soft_end = min(nmt, (b+1)*nmt_per_block);
 	this->imt_hard_end = nmt;
+	
 	_load_rb();  // initializes mt_rb, icell_rb
 
 	// Initialize:
@@ -240,7 +243,7 @@ struct PlanIterator
 	    // In this case, we just advance the ring buffer.
 
 	    _advance_rb();       // updates imt_rb, mt_rb, icell_rb
-	    _udpate_cell_end();  // updates imt_cell_end
+	    _update_cell_end();  // updates imt_cell_end
 
 	    // Re-check assertions above
 	    if constexpr (Debug) {

@@ -40,8 +40,9 @@ XFILES = \
   bin/time-map2tod \
   bin/test-tod2map \
   bin/time-tod2map \
-  bin/test-pointing-iterator \
+  bin/test-plan-iterator \
   bin/test-pointing-plan \
+  bin/time-pointing-plan \
   bin/test-preplan \
   bin/time-preplan \
   bin/time-simple-tod2map \

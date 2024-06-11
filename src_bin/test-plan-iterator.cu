@@ -48,7 +48,7 @@ __device__ void assert_equal_within_block(uint *sp, uint x)
 template<int W>
 __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts, int *out_cell_counts)
 {
-    __shared__ ulong shmem[W];
+    __shared__ uint shmem[W];
 	
     assert(blockDim.x == 32);
     assert(blockDim.y == W);
@@ -58,7 +58,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
     
     PlanIterator<W,true> iterator;
 
-    if (!iterator.init())
+    if (!iterator.init(plan_mt, nmt, nmt_per_block))
 	return;
 
     do {
@@ -67,7 +67,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 	assert_equal_within_block(shmem, icell);
 
 	if ((warpId == 0) && (laneId == 0))
-	    atomicInc(out_cell_counts + iterator.icell_curr, 1);
+	    atomicAdd(out_cell_counts + iterator.icell_curr, 1);
 
 	uint imt = iterator.imt_next;
 	
@@ -88,7 +88,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 	    assert(icl == mt_icl);
 
 	    if (laneId == 0)
-		atomicInc(out_mt_counts + imt, 1);
+		atomicAdd(out_mt_counts + imt, 1);
 	}
     } while (iterator.next_cell());
 
@@ -143,8 +143,8 @@ static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
     CUDA_PEEK("iterator test kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
     
-    mt_counts = mt_counts.to_cpu();
-    cell_counts = cell_counts.to_gpu();
+    mt_counts = mt_counts.to_host();
+    cell_counts = cell_counts.to_host();
 
     // Check results
     
@@ -157,13 +157,13 @@ static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
 }
 
 
-static Array<int> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell)
+static Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell)
 {
     assert(ncells > 0);
     assert(ncells <= (1<<20));
-    assert(min_cl_per_cell >= 1);
-    assert(min_cl_per_cell <= max_cl_per_cell);
-    assert(max_cl_per_cell <= 1024);
+    assert(min_nmt_per_cell >= 1);
+    assert(min_nmt_per_cell <= max_nmt_per_cell);
+    assert(max_nmt_per_cell <= 16*1024);
 	   
     auto all_cells = rand_permutation(1<<20);
     
@@ -171,7 +171,7 @@ static Array<int> make_random_plan_mt(long ncells, long min_nmt_per_cell, long m
     vector<uint> nmt_per_cell(ncells);
     long nmt_tot = 0;
     
-    for (int i = 0; i < ncells; i++)
+    for (int i = 0; i < ncells; i++) {
 	cells[i] = all_cells[i];
 	int nmt = rand_int(min_nmt_per_cell, max_nmt_per_cell+1);
 	nmt_per_cell[i] = nmt;
@@ -186,7 +186,7 @@ static Array<int> make_random_plan_mt(long ncells, long min_nmt_per_cell, long m
     long imt = 0;
     for (int i = 0; i < ncells; i++) {
 	ulong icell = cells[i];
-	for (int j = 0; j < nmt_per_cell[i]; j++) {
+	for (uint j = 0; j < nmt_per_cell[i]; j++) {
 	    ulong icl = rand_int(0, 1<<26);
 	    ulong sec = rand_int(0, 1<<18);  // FIXME arbitrary for now
 	    assert(imt < nmt_tot);
@@ -207,7 +207,7 @@ int main(int argc, char **argv)
     for (int i = 0; i < 100; i++) {
 	int ncells = rand_int(100, 1000);
 	int nmt_per_block = 32 * rand_int(1,20);
-	Array<int> plan_mt = make_random_plan_mt(ncells, 1, 1000);
+	Array<ulong> plan_mt = make_random_plan_mt(ncells, 1, 1000);
 	cout << "Random plan: ncells=" << ncells << ", nmt=" << plan_mt.size << ", nmt_per_block=" << nmt_per_block << endl;
 	test_plan_iterator(plan_mt, nmt_per_block);
     }
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
 	double total_drift = 1024;  // x-pixels
 	int nmt_per_block = 256*1024;
 	
-	ToyPointing<T> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
+	ToyPointing<float> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
 	PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
 	
 	Array<unsigned char> buf({pp.plan_nbytes}, af_gpu);
