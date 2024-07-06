@@ -1,6 +1,9 @@
 import numpy as np
 import ctypes
 
+raise RuntimeError("I think this script is bitrotted -- e.g. it expects cufft_c2r_host() to have 6 arguments (2 pointer + 4 int),"
+                   + " and I didn't see a function with that signature in our cuda code. --KS")
+
 mylib=ctypes.cdll.LoadLibrary("libtime_cufft.so")
 
 #cufft_c2r=mylib.cufft_c2r_host

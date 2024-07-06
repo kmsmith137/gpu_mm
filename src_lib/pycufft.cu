@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <cuda.h>
 #include <cufft.h>
-#include <omp.h>
 #include <cuComplex.h>
 
 extern "C" void get_work_sizes_r2c(long int *sz, int nsize, long int *nbytes)

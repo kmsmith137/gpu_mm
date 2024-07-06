@@ -2,7 +2,7 @@ import cupy as cp, os
 import ctypes
 import numpy as np
 
-mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "..", "lib", "libpycufft.so"))
+mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
 
 # All function arguments are pointers or ints
 _i = ctypes.c_int

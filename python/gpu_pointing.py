@@ -1,9 +1,12 @@
 import numpy as np
-import gpu_utils
 import ctypes
-from gpu_utils import GPUvec
+import os
 
-mylib=ctypes.cdll.LoadLibrary("libgpu_point.so")
+from . import gpu_utils
+from .gpu_utils import GPUvec
+
+mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
+
 fillA=mylib.fillA_host
 fillA.argtypes=(ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p)
 

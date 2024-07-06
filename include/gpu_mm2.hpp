@@ -1,6 +1,7 @@
 #ifndef _GPU_MM2_HPP
 #define _GPU_MM2_HPP
 
+#include <cassert>
 #include <iostream>
 #include <gputils/Array.hpp>
 

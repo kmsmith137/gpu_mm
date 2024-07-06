@@ -1,6 +1,7 @@
 #ifndef _GPU_MM_HPP
 #define _GPU_MM_HPP
 
+#include <cassert>
 #include <gputils/Array.hpp>
 
 namespace gpu_mm {
@@ -198,29 +199,6 @@ struct CpuPointingPlan
     
     gputils::Array<int> plan_cltod_list;    // 1-d contiguous array of shape (ncl_inflated,)
     gputils::Array<int> plan_quadruples;    // 2-d contiguous array of shape (num_quadruples,4)
-};
-
-
-// -------------------------------------------------------------------------------------------------
-
-
-struct ActPointing
-{
-    ActPointing(const std::string &xpointing_npz_filename);
-
-    const std::string xpointing_npz_filename;
-
-    int ndet = 0;
-    int nt = 0;
-    int ndec = 0;
-    int nra = 0;
-
-    // Shape (3, ndet, nt) array, located on CPU.
-    // The length-3 axis is ordered { dec, ra, alpha }.
-    // Note that we use axis ordering { ra, dec, alpha} in the npz files.
-    // The ActPointing constructor does the recordering when it reads the file.
-    
-    gputils::Array<float> xpointing;
 };
 
 

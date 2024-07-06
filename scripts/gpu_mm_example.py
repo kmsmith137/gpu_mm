@@ -1,4 +1,5 @@
-import gpu_mm
+from gpu_mm import gpu_mm
+
 import numpy as np
 import cupy as cp
 import time

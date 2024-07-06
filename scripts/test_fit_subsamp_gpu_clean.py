@@ -1,9 +1,11 @@
+from gpu_mm import gpu_pointing
+
 import time
 import numpy as np
-from matplotlib import pyplot as plt
 import ctypes
-import gpu_pointing
-plt.ion()
+
+# from matplotlib import pyplot as plt
+# plt.ion()
 
 def fill_mat(ra_bore,dec_bore,nt,nra,ndec,cross=True,subsamp=200):
     n=len(ra_bore)

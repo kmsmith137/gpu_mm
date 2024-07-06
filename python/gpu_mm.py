@@ -8,7 +8,7 @@ import ctypes, os
 import numpy as np
 import cupy as cp
 
-_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__),"..","lib", "libgpu_mm.so"))
+_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
 
 ####################################################################################################
 

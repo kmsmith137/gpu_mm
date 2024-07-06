@@ -3,10 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cuda.h>
-#include <omp.h>
 #include <cuda_runtime.h>
 #include "cublas_v2.h"
 
+// get_time(), time_since()
+#include <gputils/time_utils.hpp>
 
 
 __global__
@@ -113,14 +114,14 @@ void eval_fit(float *out,float *fitp, int n, int ndet, float *ra_bore, float *de
 
   cudaDeviceSynchronize();
   for (int i=0;i<10;i++) {
-    double t1=omp_get_wtime();
+      struct timeval tv = gputils::get_time();
     fillA<<<128,128>>>(dra_bore,ddec_bore,n,dA);
     stat=cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_T,n,ndet,npar,&one,dA,n,dfitp,ndet,&zero,dout,n);
     if (stat!=CUBLAS_STATUS_SUCCESS) 
       printf("Error in sgemm.\n");
     cudaDeviceSynchronize();
-    double t2=omp_get_wtime(); 
-    printf("Pointing reconstruction took %12.4g\n",t2-t1);
+    double dt = gputils::time_since(tv);
+    printf("Pointing reconstruction took %12.4g\n",dt);
   }
   if (cudaMemcpy(out,dout,n*ndet*sizeof(float),cudaMemcpyDeviceToHost)!=cudaSuccess)
     fprintf(stderr,"Error copying out back to host.\n");

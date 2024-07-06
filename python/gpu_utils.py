@@ -1,7 +1,9 @@
 import numpy as np
 import ctypes
+import os
 
-mylib=ctypes.cdll.LoadLibrary("libgpu_utils.so")
+mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
+
 gpu_alloc=mylib.alloc_arr
 gpu_alloc.argtypes=(ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p)
 

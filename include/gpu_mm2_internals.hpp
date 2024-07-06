@@ -1,6 +1,7 @@
 #ifndef _GPU_MM2_INTERNALS_HPP
 #define _GPU_MM2_INTERNALS_HPP
 
+#include <cassert>
 #include <gputils/Array.hpp>
 
 namespace gpu_mm2 {

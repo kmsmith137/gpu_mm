@@ -1,10 +1,14 @@
 import time
 import numpy as np
-from matplotlib import pyplot as plt
 import ctypes
-plt.ion()
+import os
 
-mylib=ctypes.cdll.LoadLibrary("libtest_pointing.so")
+# from matplotlib import pyplot as plt
+# plt.ion()
+
+import gpu_mm
+mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(gpu_mm.__file__), 'libgpu_mm.so'))
+
 deval_fit=mylib.eval_fit
 deval_fit.argtypes=(ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_void_p,ctypes.c_void_p)
 
