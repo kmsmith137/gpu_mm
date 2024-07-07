@@ -106,7 +106,7 @@ static void test_pointing_plan()
 
     cout << "Creating PointingPrePlan" << endl;
     PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
-    pp.show();
+    cout << pp.str() << endl;
 
     cout << "Creating PointingPlan" << endl;
     PointingPlan p(pp, tp.xpointing_gpu);

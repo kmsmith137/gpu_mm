@@ -8,9 +8,82 @@ import ctypes, os
 import numpy as np
 import cupy as cp
 
-_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
+from . import gpu_mm_pybind11
+from .gpu_mm_pybind11 import QuantizedPointing, PointingPrePlan
+
+# Currently we wrap either float32 or float64, determined at compile time!
+# FIXME eventually, should wrap both.
+mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
+
+
+# PointingPrePlan: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
+# or read docstrings in the python interpreter).
+#
+# class PointingPrePlan:
+#     self.__init__(xpointing_gpu, nypix, nxpix)
+#     self.nsamp
+#     self.nypix
+#     self.nxpix
+
+
+class ToyPointing(gpu_mm_pybind11.ToyPointing):
+    """
+    ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
+    Scans currently go at 45 degrees, and cover the full ypix-range.
+
+    Constructor arguments:
+      scan_speed = map pixels per TOD sample
+      total_drift = total drift over full TOD, in x-pixels
+
+    Python members:
+      self.xpointing_cpu    shape (3,nsamp) numpy array
+      self.xpointing_gpu    shape (3,nsamp) numpy array
+
+    Inherits from C++ base class:
+        self.nsamp          int
+        self.nypix          int
+        self.nxpix          int
+        self.scan_speed     float
+        self.total_drift    float
+        self.drift_speed    float
+        self.__str__()
+    """
+
+    def __init__(self, nsamp, nypix, nxpix, scan_speed, total_drift, noisy=True):
+        assert nsamp > 0
+        self.xpointing_cpu = np.zeros((3,nsamp), mm_dtype)
+        self.xpointing_gpu = cp.zeros((3,nsamp), mm_dtype)
+        gpu_mm_pybind11.ToyPointing.__init__(self, nsamp, nypix, nxpix, scan_speed, total_drift, self.xpointing_cpu, self.xpointing_gpu, noisy)
+
+
+    @staticmethod
+    def make_random(nsamp_max, noisy=True):
+        assert nsamp_max >= 16*1024
+        npix_max = min(nsamp_max//128, 16384)
+        nsamp = 32 * np.random.randint(nsamp_max//64, nsamp_max//32)
+        nypix = 64 * np.random.randint(npix_max//128, npix_max//64)
+        nxpix = 128 * np.random.randint(npix_max//256, npix_max//128)
+        scan_speed = np.random.uniform(0.1, 0.5)
+        total_drift = np.random.uniform(0.1*nxpix, nxpix-2)
+        return ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
+
+
+# QuantizedPointing: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
+# or read docstrings in the python interpreter).
+#
+# class QuantizedPointing:
+#     self.__init__(xpointing_gpu, nypix, nxpix)
+#     self.nsamp
+#     self.nypix
+#     self.nxpix
+#     self.iypix_cpu
+#     self.ixpix_cpu
+
 
 ####################################################################################################
+
+
+_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
 
 # All function arguments are pointers, ints, or longs
 _i = ctypes.c_int

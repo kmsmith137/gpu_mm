@@ -13,25 +13,25 @@ namespace gpu_mm2 {
 
 void check_nsamp(long nsamp, const char *where)
 {
-    assert(nsamp > 0);
-    assert(nsamp <= (1L << 31));
-    assert((nsamp % 32) == 0);
+    xassert(nsamp > 0);
+    xassert(nsamp <= (1L << 31));
+    xassert((nsamp % 32) == 0);
 }
 
 
 void check_nypix(long nypix, const char *where)
 {
-    assert(nypix > 0);
-    assert(nypix <= 64*1024);
-    assert((nypix % 64) == 0);
+    xassert(nypix > 0);
+    xassert(nypix <= 64*1024);
+    xassert((nypix % 64) == 0);
 }
 
 
 void check_nxpix(long nxpix, const char *where)
 {
-    assert(nxpix > 0);
-    assert(nxpix <= 64*1024);
-    assert((nxpix % 64) == 0);
+    xassert(nxpix > 0);
+    xassert(nxpix <= 64*1024);
+    xassert((nxpix % 128) == 0);  // FIXME will be 64 after making x-coordinate non-periodic
 }
 
 
@@ -42,17 +42,17 @@ void check_err(uint err, const char *where)
     if (err & 0x2)
 	throw runtime_error(string(where) + ": xpix out of range");
     if (err & 0x4)
-	throw runtime_error(string(where) + ": inconsisent value of nmt between preplan/plan?! (should never happen)");
+	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
 }
 
 
 template<typename T>
 void check_map(const Array<T> &map, long &nypix, long &nxpix, const char *where)
 {
-    assert(map.ndim == 3);
-    assert(map.shape[0] == 3);
-    assert(map.is_fully_contiguous());
-    assert(map.on_gpu());
+    xassert(map.ndim == 3);
+    xassert(map.shape[0] == 3);
+    xassert(map.is_fully_contiguous());
+    xassert(map.on_gpu());
     
     check_nypix(map.shape[1], where);
     check_nxpix(map.shape[2], where);
@@ -65,9 +65,9 @@ void check_map(const Array<T> &map, long &nypix, long &nxpix, const char *where)
 template<typename T>
 void check_tod(const Array<T> &tod, long &nsamp, const char *where)
 {
-    assert(tod.ndim == 1);
-    assert(tod.is_fully_contiguous());
-    assert(tod.on_gpu());
+    xassert(tod.ndim == 1);
+    xassert(tod.is_fully_contiguous());
+    xassert(tod.on_gpu());
     
     check_nsamp(tod.shape[0], where);
     nsamp = tod.shape[0];
@@ -75,15 +75,26 @@ void check_tod(const Array<T> &tod, long &nsamp, const char *where)
 
 
 template<typename T>
-void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where)
+void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 {
-    assert(xpointing.ndim == 2);
-    assert(xpointing.shape[0] == 3);
-    assert(xpointing.is_fully_contiguous());
-    assert(xpointing.on_gpu());
-    
-    check_nsamp(xpointing.shape[1], where);
-    nsamp = xpointing.shape[1];
+    xassert(xpointing.ndim == 2);
+    xassert(xpointing.shape[0] == 3);
+    xassert(xpointing.is_fully_contiguous());
+
+    if (nsamp == 0)
+	nsamp = xpointing.shape[1];
+    else if (xpointing.shape[1] != nsamp) {
+	stringstream ss;
+	ss << where << ": expected xpointing array to have nsamp=" << nsamp << ", actual nsamp=" << xpointing.shape[1];
+	throw runtime_error(ss.str());
+    }
+
+    if (on_gpu)
+	xassert(xpointing.on_gpu());
+    else
+	xassert(xpointing.on_host());
+
+    check_nsamp(nsamp, where);
 }
 
 
@@ -112,7 +123,7 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 #define INSTANTIATE(T) \
     template void check_map(const Array<T> &map, long &nypix, long &nxpix, const char *where); \
     template void check_tod(const Array<T> &tod, long &nsamp, const char *where); \
-    template void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where)
+    template void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

@@ -76,19 +76,38 @@ namespace gpu_mm2 {
 // We use "exploded pointing" throughout, represented as an array
 //
 //   xpointing[3][nsamp];   // axis 0 is {y,x,alpha}
+//
+//
+
+// -----------------------------------------------------------------------------
+//
+// PointingPrePlan and PointingPlan.
+//
+// We factor plan creation into two steps:
+//
+//   - Create PointingPrePlan from xpointing array
+//   - Create PointingPlan from PointingPrePlan + xpointing array.
+//
+// These steps have similar running times, but the PointingPrePlan is much
+// smaller in memory (a few KB versus ~100 MB). Therefore, PointingPrePlans
+// can be retained (per-TOD) for the duration of the program, whereas
+// PointingPlans will typically be created and destroyed on the fly.
 
 
 struct PointingPrePlan
 {
+    template<typename T>
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+
     long nsamp = 0;
     long nypix = 0;
     long nxpix = 0;
 
-    long plan_nbytes = 0;
-    long plan_constructor_tmp_nbytes = 0;
+    long plan_nbytes = 0;                  // length of 'buf' argument to PointingPlan constructor
+    long plan_constructor_tmp_nbytes = 0;  // length of 'tmp_buf' argument to PointingPlan constructor
     // Forthcoming: plan_map2tod_tmp_nbytes
 
-    // Used internally
+    // Used internally.
     long rk = 0;            // number of TOD samples per threadblock is (2^rk)
     long nblocks = 0;       // number of threadblocks 
     long plan_nmt = 0;      // total number of mt-pairs in plan
@@ -96,12 +115,11 @@ struct PointingPrePlan
 
     // Cumulative count of mt-pairs per threadblock.
     // 1-d array of length nblocks, in GPU memory.
+    // FIXME should be able to swap between host/GPU memory.
     gputils::Array<uint> nmt_cumsum;
-    
-    template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
 
-    void show(std::ostream &os = std::cout) const;
+    std::string str() const;
+
     // Reminder: the plan will need to allocate
     //   plan_mt[]
     //   plan_tt[]
@@ -142,27 +160,43 @@ struct PointingPlan
 };
 
 
+// -----------------------------------------------------------------------------
+//
+// Testing
+
+
 template<typename T>
 struct ToyPointing
 {
     // Scans currently go at 45 degrees, and cover the full y-range.
-    
-    ToyPointing(long nsamp, long nypix, long nxpix,
-		double scan_speed,     // map pixels per sample
-		double total_drift);   // total drift over full TOD, in x-pixels
 
-    const long nsamp;
-    const long nypix;
-    const long nxpix;
-    const double scan_speed;
-    const double total_drift;
-    const double drift_speed;
+    // Version of constructor which allocates xpointing arrays.
+    ToyPointing(long nsamp, long nypix, long nxpix,
+		double scan_speed,     // map pixels per TOD sample
+		double total_drift,    // total drift over full TOD, in x-pixels
+		bool noisy = true);
+
+    // Version of constructor with externally allocated xpointing arrays (intended for python)
+    ToyPointing(long nsamp, long nypix, long nxpix,
+		double scan_speed, double total_drift,
+		const gputils::Array<T> &xpointing_cpu,
+		const gputils::Array<T> &xpointing_gpu,
+		bool noisy = true);
+
+    long nsamp;
+    long nypix;
+    long nxpix;
+    double scan_speed;    // map pixels per TOD sample
+    double total_drift;   // total drift over full TOD, in x-pixels
+    double drift_speed;   // drift (in x-pixels) per TOD sample
 
     // Since ToyPointing is only used in unit tests, assume the caller
     // wants array copies on both CPU and GPU.
     
     gputils::Array<T> xpointing_cpu;
     gputils::Array<T> xpointing_gpu;
+
+    std::string str() const;
 };
 
 
@@ -177,29 +211,42 @@ extern void check_nypix(long nypix, const char *where);
 extern void check_nxpix(long nxpix, const char *where);
 extern void check_err(uint err, const char *where);
 
+// The 'nsamp' argument to check_xpointing() has the following semantics:
+//   - if nsamp > 0, then exception will be thrown if xpointing array has mismatched size
+//   - if nsamp == 0, then check_xpointing() will set the value of nsamp.
+
 template<typename T> extern void check_map(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long &nsamp, const char *where);
-template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long &nsamp, const char *where);
+template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu=true);
 
 extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
 
 // QuantizedPointing: A utility class used in unit tests.
+//
+// Given an 'xpointing' array on the GPU, determine which map pixel (iy, ix)
+// each time sample falls into, and store the result in two length-nsamp arrays
+// (iypix_cpu, ixpix_cpu). (Since this class is only used in unit tests, we assume
+// that the caller wants these arrays on the CPU.)
 
 struct QuantizedPointing
 {
+    template<typename T>
+    QuantizedPointing(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+    
     long nsamp = 0;
     long nypix = 0;
     long nxpix = 0;
+
+    gputils::Array<int> iypix_cpu;   // length nsamp
+    gputils::Array<int> ixpix_cpu;   // length nsamp
+
+    // For testing PointingPrePlan.
+    // The 'rk' argument has the same meaning as PointingPrePlan::rk.
+    // The returned array has the same meaning as PointingPrePlan::nmt_cumsum.
+    gputils::Array<uint> compute_nmt_cumsum(int rk) const;
     
-    // Since QuantizedPointing is only used in unit tests, assume the caller
-    // wants the 'iypix' and 'ixpix' arrays on the CPU.
-
-    gputils::Array<int> iypix_cpu;
-    gputils::Array<int> ixpix_cpu;
-
-    template<typename T>
-    QuantizedPointing(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+    std::string str() const;
 };
 
 

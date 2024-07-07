@@ -119,21 +119,19 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 template<typename T>
 void launch_simple_tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing)
 {
-    long nsamp_t, nsamp_x;
+    long nsamp = 0;
     long nypix, nxpix;
     
     check_map(map, nypix, nxpix, "launch_simple_tod2map");
-    check_tod(tod, nsamp_t, "launch_simple_tod2map");
-    check_xpointing(xpointing, nsamp_x, "launch_simple_tod2map");
-    
-    assert(nsamp_t == nsamp_x);
+    check_tod(tod, nsamp, "launch_simple_tod2map");
+    check_xpointing(xpointing, nsamp, "launch_simple_tod2map");
 
     int nthreads_per_block = 128;
     int nsamp_per_block = 1024;
-    int nblocks = (nsamp_t + nsamp_per_block - 1) / nsamp_per_block;
+    int nblocks = (nsamp + nsamp_per_block - 1) / nsamp_per_block;
     
     simple_tod2map_kernel <<< nblocks, nthreads_per_block >>>
-	(map.data, tod.data, xpointing.data, nsamp_t, nypix, nxpix, nsamp_per_block);
+	(map.data, tod.data, xpointing.data, nsamp, nypix, nxpix, nsamp_per_block);
 
     CUDA_PEEK("simple_tod2map kernel launch");
 }

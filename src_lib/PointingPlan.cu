@@ -225,10 +225,8 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     pp(preplan),
     buf(buf_)
 {
-    long xpointing_nsamp = 0;
-    check_xpointing(xpointing_gpu, xpointing_nsamp, "PointingPlan constructor");
-    assert(xpointing_nsamp == preplan.nsamp);
-    
+    long nsamp = preplan.nsamp;
+    check_xpointing(xpointing_gpu, nsamp, "PointingPlan constructor");    
     check_buffer(buf, pp.plan_nbytes, "PointingPlan constructor", "buf");
     check_buffer(tmp_buf, pp.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
 

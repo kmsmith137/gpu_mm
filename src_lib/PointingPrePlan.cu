@@ -100,6 +100,7 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 template<typename T>
 PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_)
 {
+    this->nsamp = 0;
     this->nypix = nypix_;
     this->nxpix = nxpix_;
 
@@ -169,22 +170,21 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
 }
 
 
-// -------------------------------------------------------------------------------------------------
-
-
-void PointingPrePlan::show(ostream &os) const
+string PointingPrePlan::str() const
 {
     long plan_ntt = (nsamp / 32);
     double ratio = double(plan_nmt) / double(plan_ntt);
+    
+    stringstream ss;
+    
+    ss << "PointingPrePlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix
+       << ", plan_nbytes=" << plan_nbytes << " (" << nbytes_to_str(plan_nbytes) << ")"
+       << ", tmp_nbytes=" << plan_constructor_tmp_nbytes << " (" << nbytes_to_str(plan_constructor_tmp_nbytes) << ")"
+       << ", ntt=" << plan_ntt << ", nmt=" << plan_nmt << ", ratio=" << ratio
+       << ", rk=" << rk << ", nblocks=" << nblocks
+       << ")";
 
-    os << "PointingPrePlan:\n"
-       << "   nsamp=" << nsamp << " (float64 TOD is " << nbytes_to_str(8*nsamp) << ")\n"
-       << "   nypix=" << nypix << ", nxpix=" << nxpix << " (float64 map is " << nbytes_to_str(24*nypix*nxpix) << ")\n"
-       << "   ntt=" << plan_ntt << ", nmt=" << plan_nmt << ", ratio=" << ratio << "\n"
-       << "   rk=" << rk << ", nblocks=" << nblocks << "\n"
-       << "     Plan size: " << nbytes_to_str(4*plan_ntt + 8*plan_nmt) << "\n"
-       << "     Temporary memory needed for construction: " << nbytes_to_str(8*plan_nmt + cub_nbytes)
-       << endl;
+    return ss.str();
 }
 
 

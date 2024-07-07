@@ -1,6 +1,8 @@
 Here's one way to install:
 ```
-conda create -c conda-forge -n gpu_mm cupy scipy matplotlib meson-python pybind11
+conda create -n gpu_mm -f conda_env.yaml
+# Or: conda create -c conda-forge -n gpu_mm cupy scipy matplotlib meson-python pybind11
+
 conda activate gpu_mm
 
 # Compile gputils library (note -b flag to select 'python' branch)

@@ -13,22 +13,47 @@ namespace gpu_mm2 {
 
 
 template<typename T>
-ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_speed_, double total_drift_) :
+inline Array<T> _alloc_xpointing(long nsamp, int aflags)
+{
+    check_nsamp(nsamp, "ToyPointing constructor");
+    return Array<T> ({3,nsamp}, aflags);
+}
+
+				 
+template<typename T>
+ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_speed_, double total_drift_, bool noisy) :
+    // Delegate to version of constructor which uses externally allocated arrays.
+    ToyPointing(nsamp_, nypix_, nxpix_, scan_speed_, total_drift_,
+		_alloc_xpointing<T> (nsamp_, af_rhost),
+		_alloc_xpointing<T> (nsamp_, af_gpu),
+		noisy)
+{ }
+
+
+template<typename T>
+ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_speed_, double total_drift_,
+			    const Array<T> &xpointing_cpu_, const Array<T> &xpointing_gpu_, bool noisy) :
     nsamp(nsamp_), nypix(nypix_), nxpix(nxpix_), scan_speed(scan_speed_), total_drift(total_drift_),
-    drift_speed(total_drift / max(nsamp,1L))
+    drift_speed(total_drift / max(nsamp,1L)),
+    xpointing_cpu(xpointing_cpu_),
+    xpointing_gpu(xpointing_gpu_)
 {
     check_nsamp(nsamp, "ToyPointing constructor");
     check_nypix(nypix, "ToyPointing constructor");
     check_nxpix(nxpix, "ToyPointing constructor");
+    check_xpointing(xpointing_cpu, nsamp, "ToyPointing constructor (xpointing_cpu)", false);  // on_gpu=false
+    check_xpointing(xpointing_gpu, nsamp, "ToyPointing constructor (xpointing_gpu)", true);   // on_gpu=false
     
-    assert((scan_speed > 0.0) && (scan_speed <= 1.0));
-    assert((drift_speed > 0.0) && (drift_speed <= 1.0));
-    
+    xassert((scan_speed > 0.0) && (scan_speed <= 1.0));
+    xassert((drift_speed > 0.0) && (drift_speed <= 1.0));
     struct timeval tv0 = get_time();
-    long nbytes_x = 3 * nsamp * sizeof(T);
-    cout << "ToyPointing<" << type_name<T>() << "> constructor: start (" << nbytes_to_str(nbytes_x) << " xpointing)" << endl;
 
-    this->xpointing_cpu = Array<T> ({3,nsamp}, af_rhost);
+    if (noisy) {
+	cout << "ToyPointing<" << type_name<T>() << "> constructor: start: nsamp=" << nsamp
+	     << ", nypix=" << nypix << ", nxpix=" << nxpix << ", scan_speed=" << scan_speed
+	     << ", total_drift=" << total_drift << endl;
+    }
+
     T *yp = xpointing_cpu.data;
     T *xp = xpointing_cpu.data + nsamp;
     T *ap = xpointing_cpu.data + 2*nsamp;
@@ -38,7 +63,7 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
     double scan_vel = scan_speed;
     
     double y0 = 1.1 * scan_speed;
-    double y1 = nypix-1 - (1.1 * scan_speed);
+    double y1 = nypix-2 - (1.1 * scan_speed);
     
     double xmin = x;
     double xmax = x;
@@ -69,15 +94,31 @@ ToyPointing<T>::ToyPointing(long nsamp_, long nypix_, long nxpix_, double scan_s
 	    x -= nxpix;
     }
 
-    this->xpointing_gpu = xpointing_cpu.to_gpu();
-    
-    cout << "ToyPointing<" << type_name<T>() << "> constructor: done, time = " << time_since(tv0) << " seconds"
-	 << ", xmin=" << xmin << ", xmax=" << xmax << ", ymin=" << ymin << ", ymax=" << ymax << endl;
+    // Copy CPU -> GPU
+    xpointing_gpu.fill(xpointing_cpu);
+
+    if (noisy) {
+	double dt = time_since(tv0);
+	cout << "ToyPointing<" << type_name<T>() << "> constructor: done: time = " << dt << " seconds"
+	     << ", xmin=" << xmin << ", xmax=" << xmax << ", ymin=" << ymin << ", ymax=" << ymax << endl;
+    }
+}
+
+
+template<typename T>
+string ToyPointing<T>::str() const
+{
+    stringstream ss;
+    ss << "ToyPointing(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix
+       << ", scan_speed=" << scan_speed << ", total_drift=" << total_drift << ")";
+    return ss.str();
 }
 
 
 #define INSTANTIATE(T) \
-    template ToyPointing<T>::ToyPointing(long nsamp, long nypix, long nxpix, double scan_speed, double total_drift)
+    template ToyPointing<T>::ToyPointing(long nsamp, long nypix, long nxpix, double scan_speed, double total_drift, bool noisy); \
+    template ToyPointing<T>::ToyPointing(long nsamp, long nypix, long nxpix, double scan_speed, double total_drift, const Array<T> &xp_cpu, const Array<T> &xp_gpu, bool noisy); \
+    template string ToyPointing<T>::str() const
 
 INSTANTIATE(float);
 INSTANTIATE(double);

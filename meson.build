@@ -29,23 +29,24 @@ lib_source_files = [
     'src_lib/tod2map.cu'            # old
 ]
 
-# pyext_source_files = [
-#     'src_pybind11/gpu_mm_pybind11.cu'
-# ]
+pyext_source_files = [
+     'src_pybind11/gpu_mm_pybind11.cu'
+]
 
 python_files_toplevel = [
     'python/__init__.py',
+    'python/__main__.py',
     'python/gpu_mm.py',
     'python/gpu_pointing.py',
     'python/gpu_utils.py',
-    'python/pycufft.py'
+    'python/pycufft.py',
+    'python/tests.py'
 ]    
 
 # In src_bin/
 local_executables = [
     'test-plan-iterator',
     'test-pointing-plan',
-    'test-preplan',
     'time-plan-iterator',
     'time-pointing-plan',
     'time-preplan',
@@ -101,7 +102,7 @@ cufft = nvcc.find_library('cufft')
 
 gputils_ret = run_command(py3.path(), '-c', 'import gputils; print(gputils.__file__)', check: true)
 gputils_ret = gputils_ret.stdout().strip()
-message('gputils_ret = ', gputils_ret)
+# message('gputils_ret = ', gputils_ret)
 
 gputils_incdir = fs.parent(gputils_ret) / 'include'
 gputils_libdir = fs.parent(gputils_ret)
@@ -116,7 +117,7 @@ endif
 
 gputils_pyext_ret = run_command(py3.path(), '-c', 'import gputils; print(gputils.gputils_pybind11.__file__)', check: true)
 gputils_pyext_ret = gputils_pyext_ret.stdout().strip()
-message('gputils_pyext_ret = ', gputils_pyext_ret)
+# message('gputils_pyext_ret = ', gputils_pyext_ret)
 
 gputils_pyext_dir = fs.parent(gputils_pyext_ret)
 gputils_pyext_basename = fs.name(gputils_pyext_ret)
@@ -138,18 +139,18 @@ gputils_pyext = cpp.find_library(gputils_pyext_stem, dirs: gputils_libdir)
 ####################################################################################################
 
 
-# pybind11_ret = run_command(py3.path(), '-m', 'pybind11', '--includes', check: true)
-# pybind11_ret = pybind11_ret.stdout().strip()
+pybind11_ret = run_command(py3.path(), '-m', 'pybind11', '--includes', check: true)
+pybind11_ret = pybind11_ret.stdout().strip()
 # message('Debug: Output of python -m pybind11 --includes: ', pybind11_ret)
 
-# pybind11_include_dirs = [ ]
-# foreach include_dir: pybind11_ret.split()
-#     include_dir = include_dir.strip().strip('-I')
-#     pybind11_include_dirs += include_dir
-# endforeach
+pybind11_include_dirs = [ ]
+foreach include_dir: pybind11_ret.split()
+    include_dir = include_dir.strip().strip('-I')
+    pybind11_include_dirs += include_dir
+endforeach
 
 # message('Debug: pybind11_include_dirs = ', pybind11_include_dirs)
-# pybind11_dep = declare_dependency(include_directories: pybind11_include_dirs)
+pybind11_dep = declare_dependency(include_directories: pybind11_include_dirs)
 
 
 ####################################################################################################
@@ -176,19 +177,19 @@ gpu_mm_lib = library(
     install_dir: py3.get_install_dir() / 'gpu_mm'
 )
 
-# py3.extension_module(
-#     'gpu_mm_pybind11',   # compiled extension will be named gpu_mm_pybind11.so
-#     sources: pyext_source_files,
-#     dependencies : [pybind11_dep, numpy_dep, gputils_pyext, gputils_lib],
-#     include_directories: gputils_incdir,
-#     cuda_args: cuda_args,
-#     link_args: link_args,
-#     link_language : 'cuda',
-#     link_with: gpu_mm_lib,  # link libgpu_mm.so to gpu_mm_pybind11.so
-#     override_options: ['cpp_rtti=true'],
-#     subdir: 'gpu_mm',
-#     install: true
-# )
+py3.extension_module(
+    'gpu_mm_pybind11',     # compiled extension will be named gpu_mm_pybind11.so
+    sources: pyext_source_files,
+    dependencies : [pybind11_dep, numpy_dep, gputils_pyext, gputils_lib],
+    include_directories: gputils_incdir,
+    cuda_args: cuda_args,
+    link_args: link_args,
+    link_language : 'cuda',
+    link_with: gpu_mm_lib,  # link libgpu_mm.so to gpu_mm_pybind11.so
+    override_options: ['cpp_rtti=true'],
+    subdir: 'gpu_mm',
+    install: true
+)
 
 py3.install_sources(
     python_files_toplevel,
