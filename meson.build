@@ -15,7 +15,7 @@ lib_source_files = [
     'src_lib/CpuPointingPlan.cu',  # old
     'src_lib/PointingPlan.cu',
     'src_lib/PointingPrePlan.cu',
-    'src_lib/QuantizedPointing.cu',
+    'src_lib/ReferencePointingPlan.cu',
     'src_lib/ToyPointing.cu',
     'src_lib/check_arguments.cu',
     'src_lib/cuts.cu',
