@@ -9,7 +9,7 @@ import numpy as np
 import cupy as cp
 
 from . import gpu_mm_pybind11
-from .gpu_mm_pybind11 import QuantizedPointing, PointingPrePlan
+from .gpu_mm_pybind11 import PointingPrePlan, ReferencePointingPlan
 
 # Currently we wrap either float32 or float64, determined at compile time!
 # FIXME eventually, should wrap both.
@@ -24,6 +24,46 @@ mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 #     self.nsamp
 #     self.nypix
 #     self.nxpix
+#     self.plan_nbytes
+#     self.plan_constructor_tmp_nbytes
+#     self.rk
+#     self.nblocks
+#     self.plan_nmt
+#     self.cub_nbytes
+#     self.get_nmt_cumsum()
+
+
+class PointingPlan(gpu_mm_pybind11.PointingPlan):
+    """
+    PointingPlan(preplan, xpointing_gpu, buf=None, tmp_buf=None)
+
+    Constructor arguments:
+        preplan             instance of type gpu_mm.PointingPrePlan
+        xpointing_gpu       shape (3, preplan.nsamp) array, on GPU
+        buf                 1-d uint8 array with length >= preplan.plan_nbytes
+        tmp_buf             1-d uint8 array with length >= preplan.plan_constructor_tmp_nbytes
+
+    FIXME explain difference between 'buf' and 'tmp_buf'.
+
+    Inherits from C++ base class:
+        self.nsamp          int
+        self.nypix          int
+        self.nxpix          int
+        self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
+        self.__str__()
+    """
+    
+    def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):
+        if buf is None:
+            buf = cp.empty(preplan.plan_nbytes, dtype=np.uint8)
+        if tmp_buf is None:
+            tmp_buf = cp.empty(preplan.plan_constructor_tmp_nbytes, dtype=np.uint8)
+
+        gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf)
+            
+    
+
+####################################################################################################
 
 
 class ToyPointing(gpu_mm_pybind11.ToyPointing):
@@ -68,16 +108,20 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
         return ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
 
 
-# QuantizedPointing: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
+# ReferencePointingPlan: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
 # or read docstrings in the python interpreter).
 #
-# class QuantizedPointing:
+# class ReferencePointingPlan:
 #     self.__init__(xpointing_gpu, nypix, nxpix)
 #     self.nsamp
 #     self.nypix
 #     self.nxpix
-#     self.iypix_cpu
-#     self.ixpix_cpu
+#     self.rk
+#     self.nblocks
+#     self.iypix
+#     self.ixpix
+#     self.nmt_cumsum
+#     self.sorted_mt
 
 
 ####################################################################################################
@@ -350,19 +394,19 @@ def gpu_tod2map(map_accum, tod_in, xpointing, plan):
 ####################################################################################################
 
 
-class PointingPlan:
+class OldPointingPlan:
     def __init__(self, xpointing, ndec, nra, verbose=True):
         """
-        The PointingPlan object must be precomputed from 'xpointing', before calling gpu_map2tod().
+        The OldPointingPlan object must be precomputed from 'xpointing', before calling gpu_map2tod().
         It contains some cupy arrays which keep track of tiling info (see C++/cuda code for more info).
 
-        The same PointingPlan may be used for multiple calls to gpu_map2tod(), if the 'xpointing'
+        The same OldPointingPlan may be used for multiple calls to gpu_map2tod(), if the 'xpointing'
         argument is the same for each call. For example, in a CG solver, you'd need one precomputed
-        PointingPlan for each TOD, but you could re-use PointingPlans between CG iterations.
+        OldPointingPlan for each TOD, but you could re-use OldPointingPlans between CG iterations.
 
-        The PointingPlans are ~30MB per TOD, and need 1.5 seconds(!) to compute.
+        The OldPointingPlans are ~30MB per TOD, and need 1.5 seconds(!) to compute.
 
-        FIXME: the slow PointingPlan construction time is because I'm currently using slow
+        FIXME: the slow OldPointingPlan construction time is because I'm currently using slow
         single-threaded CPU code. I'll move plan construction to the GPU soon!
 
         ---------------------
@@ -400,7 +444,7 @@ class PointingPlan:
           self.nra: map dimension (same meaning as constructor argument with same name)
         """
 
-        func_name = "PointingPlan.__init__()"
+        func_name = "OldPointingPlan.__init__()"
         check_array(func_name, "'xpointing' argument", xpointing, 3, np.float32, gpu=False)
         
         if xpointing.shape[0] != 3:

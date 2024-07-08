@@ -16,6 +16,13 @@ namespace py = pybind11;
 using Tmm = float;
 
 
+static const char *xstrdup(const string &s)
+{
+    const char *ret = strdup(s.c_str());
+    return ret ? ret : "strdup() failed?";
+}
+
+
 PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm_pybind11.so
 {
     m.doc() = "gpu_mm: low-level library for CMB map-making on GPUs";
@@ -32,14 +39,15 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     // FIXME temporary hack
     m.def("_get_tsize", []() { return sizeof(Tmm); });
 
+    
     // ---------------------------------------------------------------------------------------------
 
+    
     using PointingPrePlan = gpu_mm2::PointingPrePlan;
+    using PointingPlan = gpu_mm2::PointingPlan;
 
-    const char *pointing_preplan_docstring =
-	"PointingPrePlan(xpointing_gpu, nypix, nxpix)\n"
-	"\n"
-	"We factor plan creation into two steps:\n"
+    string pp_suffix =
+	"Reminder: plan creation is factored into two steps:\n"
 	"\n"
 	"   - Create PointingPrePlan from xpointing array\n"
 	"   - Create PointingPlan from PointingPrePlan + xpointing array.\n"
@@ -48,8 +56,22 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	"smaller in memory (a few KB versus ~100 MB). Therefore, PointingPrePlans\n"
 	"can be retained (per-TOD) for the duration of the program, whereas\n"
 	"PointingPlans will typically be created and destroyed on the fly.\n";
+	
+    // FIXME write longer docstrings
+    string pointing_preplan_docstring =
+	"PointingPrePlan(xpointing_gpu, nypix, nxpix)\n"
+	"\n"
+	+ pp_suffix;
+    
+    string pointing_plan_docstring =
+	"PointingPlan(preplan, xpointing_gpu)\n"
+	"\n"
+	+ pp_suffix;
 
-    py::class_<PointingPrePlan>(m, "PointingPrePlan", pointing_preplan_docstring)
+
+    // If updating this wrapper, don't forget to update comment in gpu_mm.py,
+    // listing members/methods.
+    py::class_<PointingPrePlan>(m, "PointingPrePlan", xstrdup(pointing_preplan_docstring))
 	.def(py::init<const Array<Tmm>&, long, long>(),
 	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"))
 	
@@ -59,10 +81,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("plan_nbytes", &PointingPrePlan::plan_nbytes, "Length of 'buf' argument to PointingPlan constructor")
 	.def_readonly("plan_constructor_tmp_nbytes", &PointingPrePlan::plan_constructor_tmp_nbytes, "Length of 'tmp_buf' argument to PointingPlan constructor")
 	
-	.def_readonly("_rk", &PointingPrePlan::rk, "Number of TOD samples per threadblock is (2^rk)")
-	.def_readonly("_nblocks", &PointingPrePlan::nblocks, "Number of threadblocks")
-	.def_readonly("_plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
-	.def_readonly("_cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
+	.def_readonly("rk", &PointingPrePlan::rk, "Number of TOD samples per threadblock is (2^rk)")
+	.def_readonly("nblocks", &PointingPrePlan::nblocks, "Number of threadblocks")
+	.def_readonly("plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
+	.def_readonly("cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
 
 	// FIXME temporary hack, used in tests.test_pointing_preplan().
 	// To be replaced later by systematic API for shuffling between GPU/CPU.
@@ -72,12 +94,32 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def("__str__", &PointingPrePlan::str)
     ;
 
+        
+    py::class_<PointingPlan>(m, "PointingPlan", xstrdup(pointing_plan_docstring))
+	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &, const Array<unsigned char> &>(),
+	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("buf"), py::arg("tmp_buf"))
+	
+	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
+	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")
+	.def_readonly("nxpix", &PointingPlan::nxpix, "Number of x-pixels")
+
+	// We wrap get_plan_mt() with the constraint on_gpu=false.
+	// This is necessary because I wrote a to-python converter for numpy arrays, but not cupy arrays.
+	// I might improve this later (not sure if it's necessary -- do we need on_gpu=true from python?)
+	
+	.def("get_plan_mt", [](const PointingPlan &p) { return p.get_plan_mt(false); },
+	     "Length nmt_cumsum[-1] array, coarsely sorted by map cell")
+	     
+	.def("__str__", &PointingPlan::str)
+    ;
+
+    
     // ---------------------------------------------------------------------------------------------
     //
     // Only used in unit tests
 
     using ToyPointing = gpu_mm2::ToyPointing<Tmm>;
-    using QuantizedPointing = gpu_mm2::QuantizedPointing;
+    using ReferencePointingPlan = gpu_mm2::ReferencePointingPlan;
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
@@ -96,30 +138,25 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def("__str__", &ToyPointing::str)
     ;
 
-    const char *quantized_pointing_docstring =
-	"QuantizedPointing: A utility class used in unit tests.\n"
-	"\n"
-	"Given an 'xpointing' array on the GPU, determine which map pixel (iy, ix)\n"
-	"each time sample falls into, and store the result in two length-nsamp arrays\n"
-	"(iypix_cpu, ixpix_cpu). (Since this class is only used in unit tests, we assume\n"
-	"that the caller wants these arrays on the CPU.)\n";
+    // FIXME write longer docstring
+    const char *reference_pointing_plan_docstring =
+	"ReferencePointingPlan: A utility class used in unit tests.\n";
         
-    py::class_<QuantizedPointing>(m, "QuantizedPointing", quantized_pointing_docstring)
-	.def(py::init<const Array<Tmm>&, long, long>(),
-	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"))
+    py::class_<ReferencePointingPlan>(m, "ReferencePointingPlan", reference_pointing_plan_docstring)
+	.def(py::init<const PointingPrePlan &, const Array<Tmm> &>(),
+	     py::arg("preplan"), py::arg("xpointing_gpu"))
 	
-	.def_readonly("nsamp", &QuantizedPointing::nsamp, "Number of TOD samples")
-	.def_readonly("nypix", &QuantizedPointing::nypix, "Number of y-pixels")
-	.def_readonly("nxpix", &QuantizedPointing::nxpix, "Number of x-pixels")
+	.def_readonly("nsamp", &ReferencePointingPlan::nsamp, "Number of TOD samples")
+	.def_readonly("nypix", &ReferencePointingPlan::nypix, "Number of y-pixels")
+	.def_readonly("nxpix", &ReferencePointingPlan::nxpix, "Number of x-pixels")
+	.def_readonly("rk", &ReferencePointingPlan::rk, "Number of TOD samples per threadblock is (2^rk)")
+	.def_readonly("nblocks", &ReferencePointingPlan::nblocks, "Number of threadblocks")
 
-	.def_readonly("iypix_cpu", &QuantizedPointing::iypix_cpu, "Length-nsamp array containing integer y-pixel indices")
-	.def_readonly("ixpix_cpu", &QuantizedPointing::ixpix_cpu, "Length-nsamp array containing integer x-pixel indices")
-
-	.def("compute_nmt_cumsum", &QuantizedPointing::compute_nmt_cumsum, py::arg("rk"),
-	     "For testing PointingPrePlan.\n"
-	     "The 'rk' argument has the same meaning as PointingPrePlan.rk.\n"
-	     "The returned array has the same meaning as PointingPrePlan.nmt_cumsum.")
+	.def_readonly("iypix", &ReferencePointingPlan::iypix_arr, "Length-nsamp array containing integer y-pixel indices")
+	.def_readonly("ixpix", &ReferencePointingPlan::ixpix_arr, "Length-nsamp array containing integer x-pixel indices")
+	.def_readonly("nmt_cumsum", &ReferencePointingPlan::nmt_cumsum, "Length-nblocks array containing integer cumulative counts")
+	.def_readonly("sorted_mt", &ReferencePointingPlan::sorted_mt, "Length nmt_cumsum[-1], see PointingPlan docstring for 'mt' format")
 	     
-	.def("__str__", &QuantizedPointing::str)
+	.def("__str__", &ReferencePointingPlan::str)
     ;
 }

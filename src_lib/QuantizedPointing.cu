@@ -2,6 +2,7 @@
 #include "../include/gpu_mm2_internals.hpp"
 
 #include <gputils/cuda_utils.hpp>
+#include <algorithm>  // std::sort()
 
 using namespace std;
 using namespace gputils;
@@ -57,129 +58,117 @@ __global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint
 
 
 template<typename T>
-QuantizedPointing::QuantizedPointing(const Array<T> &xpointing_gpu, long nypix_, long nxpix_)
+ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu)
 {
-    this->nsamp = 0;
-    this->nypix = nypix_;
-    this->nxpix = nxpix_;
+    this->nsamp = pp.nsamp;
+    this->nypix = pp.nypix;
+    this->nxpix = pp.nxpix;
+    this->nblocks = pp.nblocks;
+    this->rk = pp.rk;
 
-    // Call to check_xpointing() initializes this->nsamp.
-    check_xpointing(xpointing_gpu, this->nsamp, "QuantizedPointing constructor");
-    check_nypix(nypix, "QuantizedPointing constructor");
-    check_nxpix(nxpix, "QuantizedPointing constructor");
+    check_xpointing(xpointing_gpu, nsamp, "ReferencePointingPlan constructor");
 
+    // ---------------------------------------------------------------------------------------------
+    
     uint nsamp_per_block = 1024;
     uint warps_per_threadblock = 4;
-    uint nblocks = uint(nsamp + nsamp_per_block - 1) / nsamp_per_block;
-    uint nerr = nblocks * warps_per_threadblock;
+    uint quantize_nblocks = uint(nsamp + nsamp_per_block - 1) / nsamp_per_block;
+    uint nerr = quantize_nblocks * warps_per_threadblock;
+
+    this->iypix_arr = Array<int> ({nsamp}, af_gpu);
+    this->ixpix_arr = Array<int> ({nsamp}, af_gpu);
+    Array<uint> errp = Array<uint> ({nerr}, af_gpu);
     
-    Array<int> iypix_gpu({nsamp}, af_gpu);
-    Array<int> ixpix_gpu({nsamp}, af_gpu);
-    Array<uint> err_gpu({nerr}, af_gpu);
-    
-    quantize_kernel <<< nblocks, 32*warps_per_threadblock >>>
-	(iypix_gpu.data, ixpix_gpu.data, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, err_gpu.data);
+    quantize_kernel <<< quantize_nblocks, 32*warps_per_threadblock >>>
+	(iypix_arr.data, ixpix_arr.data, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, errp.data);
 
     CUDA_PEEK("quantize_kernel launch");
 
-    this->iypix_cpu = iypix_gpu.to_host();
-    this->ixpix_cpu = ixpix_gpu.to_host();
-    Array<uint> err_cpu = err_gpu.to_host();
+    this->iypix_arr = iypix_arr.to_host();
+    this->ixpix_arr = ixpix_arr.to_host();
+    errp = errp.to_host();
 
     uint err = 0;
     for (uint b = 0; b < nerr; b++)
-	err |= err_cpu.data[b];
+	err |= errp.data[b];
 
-    check_err(err, "QuantizedPointing constructor");
+    check_err(err, "ReferencePointingPlan constructor (quantize_kernel)");
+
+    // ---------------------------------------------------------------------------------------------
+
+    this->nmt_cumsum = Array<uint> ({nblocks}, af_uhost);
+    
+    for (long b = 0; b < nblocks; b++) {
+	ulong s0 = min((b) << rk, nsamp);
+	ulong s1 = min((b+1) << rk, nsamp);
+	    
+	while (s0 < s1) {
+	    this->_ntmp_cells = 0;
+	    for (ulong s = s0; s < s0+32; s++) {
+		int iypix = iypix_arr.data[s];
+		int ixpix = ixpix_arr.data[s];
+		int ixpix1 = (ixpix < (nxpix-1)) ? (ixpix+1) : 0;
+		
+		this->_add_tmp_cell(iypix, ixpix);
+		this->_add_tmp_cell(iypix, ixpix1);
+		this->_add_tmp_cell(iypix+1, ixpix);
+		this->_add_tmp_cell(iypix+1, ixpix1);
+	    }
+
+	    std::sort(_tmp_cells, _tmp_cells + _ntmp_cells);
+		
+	    for (int i = 0; i < this->_ntmp_cells; i++) {
+		ulong mt = ulong(_tmp_cells[i]) | (ulong(s0 >> 5) << 20);
+		_mtvec.push_back(mt);
+	    }
+	    
+	    s0 += 32;
+	}
+	
+	nmt_cumsum.data[b] = _mtvec.size();
+    }
+
+    std::sort(_mtvec.begin(), _mtvec.end());
+
+    long nmt = _mtvec.size();
+    this->sorted_mt = Array<ulong> ({nmt}, af_uhost);
+    memcpy(sorted_mt.data, &_mtvec[0], nmt * sizeof(ulong));
+    this->_mtvec = vector<ulong> ();  // deallocate
 }
 
 
-string QuantizedPointing::str() const
+void ReferencePointingPlan::_add_tmp_cell(int iypix, int ixpix)
+{
+    xassert((iypix >= 0) && (iypix < nypix));
+    xassert((ixpix >= 0) && (ixpix < nxpix));
+    
+    int ycell = iypix >> 6;
+    int xcell = ixpix >> 6;
+    int icell = (ycell << 10) | xcell;
+    
+    for (int i = 0; i < _ntmp_cells; i++)
+	if (_tmp_cells[i] == icell)
+	    return;
+    
+    xassert(_ntmp_cells < 128);
+    _tmp_cells[_ntmp_cells++] = icell;
+}
+
+
+string ReferencePointingPlan::str() const
 {
     stringstream ss;
-    ss << "QuantizedPointing(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix << ")";
+    ss << "ReferencePointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix << ", rk=" << rk << ")";
     return ss.str();
 }
 
-
-// -------------------------------------------------------------------------------------------------
-
-    
-struct nmt_cumsum_helper
-{
-    const int nypix;
-    const int nxpix;
-
-    int nmt = 0;
-    int cells[128];
-
-    nmt_cumsum_helper(int nypix_, int nxpix_) :
-	nypix(nypix_), nxpix(nxpix_) { }
-
-    void add(int iypix, int ixpix)
-    {
-	assert((iypix >= 0) && (iypix < nypix));
-	assert((ixpix >= 0) && (ixpix < nxpix));
-
-	int ytile = iypix >> 6;
-	int xtile = ixpix >> 6;
-	int icell = (ytile << 10) | xtile;
-
-	for (int i = 0; i < nmt; i++)
-	    if (cells[i] == icell)
-		return;
-
-	assert(nmt < 128);
-	cells[nmt++] = icell;
-    }
-};
-
-
-Array<uint> QuantizedPointing::compute_nmt_cumsum(int rk) const
-{
-    xassert(rk >= 0);
-    long nblocks = (nsamp + (1<<rk) - 1) >> rk;   // ceil(nsamp/2^rk)
-    Array<uint> ret({nblocks}, af_uhost);
-    
-    long s_curr = 0;
-    long nmt_curr = 0;  // accumulated nmt[s] for s < s_curr
-    nmt_cumsum_helper h(nypix, nxpix);
-
-    for (long b = 0; b < nblocks; b++) {
-	long s_end = min((b+1) << rk, nsamp);
-
-	while (s_curr < s_end) {
-	    h.nmt = 0;
-	    for (long s = s_curr; s < s_curr+32; s++) {
-		int iypix = iypix_cpu.data[s];
-		int ixpix = ixpix_cpu.data[s];
-		int ixpix1 = (ixpix < (nxpix-1)) ? (ixpix+1) : 0;
-		
-		h.add(iypix, ixpix);
-		h.add(iypix, ixpix1);
-		h.add(iypix+1, ixpix);
-		h.add(iypix+1, ixpix1);
-	    }
-
-	    nmt_curr += h.nmt;
-	    s_curr += 32;
-	}
-
-	xassert(nmt_curr < (1L << 32));
-	xassert(s_curr == s_end);
-	ret.data[b] = nmt_curr;
-    }
-
-    xassert(s_curr == nsamp);
-    return ret;
-}
 
 
 // ------------------------------------------------------------------------------------------------
 
 
 #define INSTANTIATE(T) \
-    template QuantizedPointing::QuantizedPointing(const Array<T> &xpointing_gpu, long nypix, long nxpix)
+    template ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

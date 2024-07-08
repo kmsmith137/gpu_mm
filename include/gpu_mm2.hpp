@@ -119,7 +119,7 @@ struct PointingPrePlan
     gputils::Array<uint> nmt_cumsum;
 
     std::string str() const;
-
+    
     // Reminder: the plan will need to allocate
     //   plan_mt[]
     //   plan_tt[]
@@ -137,6 +137,12 @@ struct PointingPlan
     
     const PointingPrePlan pp;
 
+    // Reminder: mt bit layout is
+    //   Low 10 bits = Global xcell index
+    //   Next 10 bits = Global ycell index
+    //   Next 26 bits = Primary TOD cache line index
+    //   High 18 bits = Secondary TOD cache line index, 1-based (relative to start of block)
+    
     gputils::Array<unsigned char> buf;
     ulong *plan_mt = nullptr;
     uint *err_gpu = nullptr;
@@ -157,6 +163,8 @@ struct PointingPlan
 
     // Used in unit tests.
     gputils::Array<ulong> get_plan_mt(bool gpu) const;
+
+    std::string str() const;
 };
 
 
@@ -222,30 +230,41 @@ template<typename T> extern void check_xpointing(const gputils::Array<T> &xpoint
 extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
 
-// QuantizedPointing: A utility class used in unit tests.
+// ReferencePointingPlan: used in unit tests.
 //
 // Given an 'xpointing' array on the GPU, determine which map pixel (iy, ix)
 // each time sample falls into, and store the result in two length-nsamp arrays
 // (iypix_cpu, ixpix_cpu). (Since this class is only used in unit tests, we assume
 // that the caller wants these arrays on the CPU.)
 
-struct QuantizedPointing
+struct ReferencePointingPlan
 {
     template<typename T>
-    QuantizedPointing(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
-    
+    ReferencePointingPlan(const PointingPrePlan &pp, const gputils::Array<T> &xpointing_gpu);
+
+    // Same meaning as in PointingPrePlan.
     long nsamp = 0;
     long nypix = 0;
     long nxpix = 0;
+    int nblocks = 0;
+    int rk = 0;
 
-    gputils::Array<int> iypix_cpu;   // length nsamp
-    gputils::Array<int> ixpix_cpu;   // length nsamp
-
-    // For testing PointingPrePlan.
-    // The 'rk' argument has the same meaning as PointingPrePlan::rk.
-    // The returned array has the same meaning as PointingPrePlan::nmt_cumsum.
-    gputils::Array<uint> compute_nmt_cumsum(int rk) const;
+    // All arrays are on the CPU.
+    // (iypix, ixpix) = which map pixel does each time sample fall into?
+    // (Computed on GPU and copied to CPU, in order to guarantee roundoff consistency with other GPU code.)
     
+    gputils::Array<int> iypix_arr;   // length nsamp
+    gputils::Array<int> ixpix_arr;   // length nsamp
+
+    gputils::Array<uint> nmt_cumsum;  // length nblocks, same meaning as PointingPrePlan::nmt_cumsum.
+    gputils::Array<ulong> sorted_mt;  // length nmt_cumsum[nblocks-1], see PointingPlan for 'mt' format.
+
+    // Used temporarily in constructor.
+    std::vector<ulong> _mtvec;
+    int _tmp_cells[128];
+    int _ntmp_cells = 0;
+    void _add_tmp_cell(int iypix, int ixcpix);
+
     std::string str() const;
 };
 

@@ -2,10 +2,18 @@ import sys
 
 if (len(sys.argv) == 2) and (sys.argv[1] == 'test'):
     from . import tests
-    tests.test_pointing_preplan()
-#elif (len(sys.argv) == 2) and (sys.argv[1] == 'time'):
-#    from . import timing
-#    timing.time_points2alm(npoints_per_gpu=1000*1000, lmax=1000)
+    for p in tests.PointingInstance.generate_test_instances():
+        print(p.name)
+        p.test_pointing_preplan()
+        p.test_pointing_plan()
+
+elif (len(sys.argv) == 2) and (sys.argv[1] == 'time'):
+    from . import tests
+    for p in tests.PointingInstance.generate_timing_instances():
+        print(p.name)
+        p.time_pointing_preplan()
+        p.time_pointing_plan()
+
 else:
     print(f'Usage: python -m direct_sht [test | time]')
         

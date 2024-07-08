@@ -46,10 +46,7 @@ python_files_toplevel = [
 # In src_bin/
 local_executables = [
     'test-plan-iterator',
-    'test-pointing-plan',
     'time-plan-iterator',
-    'time-pointing-plan',
-    'time-preplan',
     'time-simple-tod2map'
 ]
 

@@ -299,6 +299,25 @@ Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 }
 
 
+string PointingPlan::str() const
+{
+    long plan_ntt = (nsamp / 32);
+    double ratio = double(pp.plan_nmt) / double(plan_ntt);
+    
+    stringstream ss;
+
+    // FIXME reduce cut-and-paste with PointingPrePlan::str()
+    ss << "PointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix
+       << ", rk=" << pp.rk << ", nblocks=" << pp.nblocks
+       << ", ntt=" << plan_ntt << ", nmt=" << pp.plan_nmt << ", ratio=" << ratio
+       << ", plan_nbytes=" << pp.plan_nbytes << " (" << nbytes_to_str(pp.plan_nbytes) << ")"
+       << ")";
+
+    return ss.str();
+}
+
+
+
 // -------------------------------------------------------------------------------------------------
 
 
