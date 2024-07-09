@@ -63,9 +63,9 @@ class PointingInstance:
         assert xmin >= 0
         
         return PointingInstance(
-            xpointing_gpu = cp.asarray(xp2),  # copy CPU -> CPU
-            nypix = 64*(ymax//64) + 64,       # FIXME should be in npy file
-            nxpix = 128*(xmax//128) + 128,    # FIXME can be 64 after removing periodicity
+            xpointing_gpu = cp.asarray(xp2),     # copy CPU -> CPU
+            nypix = 64*int(ymax//64) + 64,       # FIXME should be in npy file
+            nxpix = 128*int(xmax//128) + 128,    # FIXME can be 64 after removing periodicity
             name = filename
         )
 
@@ -128,6 +128,13 @@ class PointingInstance:
     def reference_plan(self):
         return gpu_mm.ReferencePointingPlan(self.preplan, self.xpointing_gpu)
 
+
+    def _compare_arrays(self, arr1, arr2):
+        num = cp.sum(cp.abs(arr1-arr2))
+        den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
+        assert den > 0
+        return num/den
+
     
     def test_pointing_preplan(self):
         nmt_cumsum_fast = self.preplan.get_nmt_cumsum()
@@ -174,11 +181,21 @@ class PointingInstance:
         m2 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
 
         gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
+        # FIXME synchronize
+        
         self.plan.tod2map(m2, tod, self.xpointing_gpu, debug=True)
+        # FIXME synchronize
 
-        # FIXME dtype-dependent epsilon_max
         epsilon = self._compare_arrays(m1, m2)
         print(f'    test_tod2map: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+
+        
+    def test_all(self):
+        self.test_pointing_preplan()
+        self.test_pointing_plan()
+        self.test_pointing_plan_iterator()
+        self.test_tod2map()
 
         
     def time_pointing_preplan(self):
@@ -199,11 +216,4 @@ class PointingInstance:
             p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
             print(f'    time_pointing_plan: {time.time()-t0} seconds')
             del p
-
-
-    def _compare_arrays(self, arr1, arr2):
-        num = cp.sum(cp.abs(arr1-arr2))
-        den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
-        assert den > 0
-        return num/den
     

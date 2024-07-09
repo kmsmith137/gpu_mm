@@ -82,14 +82,14 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 	T dx = xpix - ix0;
 	
 	T q, u;	
-	dtype<T>::xsincos(two*alpha, &q, &u);
+	dtype<T>::xsincos(two*alpha, &u, &q);
 	q *= t;
 	u *= t;
 
-	add_tqu(map + iy0*nypix + ix0, npix, t, q, u, (one-dy) * (one-dx));
-	add_tqu(map + iy0*nypix + ix1, npix, t, q, u, (one-dy) * (dx));
-	add_tqu(map + iy1*nypix + ix0, npix, t, q, u, (dy) * (one-dx));
-	add_tqu(map + iy1*nypix + ix1, npix, t, q, u, (dy) * (dx));
+	add_tqu(map + iy0*nxpix + ix0, npix, t, q, u, (one-dy) * (one-dx));
+	add_tqu(map + iy0*nxpix + ix1, npix, t, q, u, (one-dy) * (dx));
+	add_tqu(map + iy1*nxpix + ix0, npix, t, q, u, (dy) * (one-dx));
+	add_tqu(map + iy1*nxpix + ix1, npix, t, q, u, (dy) * (dx));
     }
 }
 

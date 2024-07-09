@@ -85,7 +85,7 @@ __global__ void tod2map2_kernel(T *map, const T *tod, const T *xpointing, const 
 	    T dx = xpix - ix0;
 	    
 	    T q, u;
-	    dtype<T>::xsincos(two*alpha, &q, &u);
+	    dtype<T>::xsincos(two*alpha, &u, &q);
 	    q *= t;
 	    u *= t;
 	    
@@ -109,8 +109,8 @@ __global__ void tod2map2_kernel(T *map, const T *tod, const T *xpointing, const 
 		    continue;
 
 		atomicAdd(map + sg, t);
-		atomicAdd(map + sg + nypix*nxpix, t + 64*64);
-		atomicAdd(map + sg + 2*nypix*nxpix, t + 2*64*64);
+		atomicAdd(map + sg + nypix*nxpix, shmem[ss+64*64]);
+		atomicAdd(map + sg + 2*nypix*nxpix, shmem[ss+2*64*64]);
 	    }
 	}
 
