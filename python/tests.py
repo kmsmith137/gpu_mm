@@ -217,3 +217,32 @@ class PointingInstance:
             print(f'    time_pointing_plan: {time.time()-t0} seconds')
             del p
     
+
+    def time_simple_tod2map(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+
+        for _ in range(10):
+            t0 = time.time()
+            gpu_mm_pybind11.simple_tod2map(m, tod, self.xpointing_gpu)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_simple_tod2map: {time.time()-t0} seconds')
+
+    
+    def time_tod2map(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        p = self.plan
+
+        for _ in range(10):
+            t0 = time.time()
+            p.tod2map(m, tod, self.xpointing_gpu, debug=False)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_tod2map: {time.time()-t0} seconds')
+
+
+    def time_all(self):
+        self.time_pointing_preplan()
+        self.time_pointing_plan()
+        self.time_simple_tod2map()
+        self.time_tod2map()
