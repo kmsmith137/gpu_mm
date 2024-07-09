@@ -8,12 +8,14 @@ header_files_toplevel = [
     'include/gpu_mm.hpp',
     'include/gpu_mm2.hpp',
     'include/gpu_mm2_internals.hpp',
-    'include/PlanIterator.hpp'
+    'include/PlanIterator.hpp',
+    'include/PlanIterator2.hpp'
 ]
 
 lib_source_files = [
     'src_lib/CpuPointingPlan.cu',  # old
     'src_lib/PointingPlan.cu',
+    'src_lib/PointingPlanIterator.cu',
     'src_lib/PointingPrePlan.cu',
     'src_lib/ReferencePointingPlan.cu',
     'src_lib/ToyPointing.cu',
@@ -46,6 +48,7 @@ python_files_toplevel = [
 # In src_bin/
 local_executables = [
     'test-plan-iterator',
+    'test-plan-iterator2',
     'time-plan-iterator',
     'time-simple-tod2map'
 ]

@@ -6,6 +6,7 @@ if (len(sys.argv) == 2) and (sys.argv[1] == 'test'):
         print(p.name)
         p.test_pointing_preplan()
         p.test_pointing_plan()
+        p.test_pointing_plan_iterator()
 
 elif (len(sys.argv) == 2) and (sys.argv[1] == 'time'):
     from . import tests

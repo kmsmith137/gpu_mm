@@ -40,7 +40,7 @@ struct PlanIterator
     uint imt_soft_end;
     uint imt_hard_end;
     
-    // These members are managed by load_rb()
+    // These members are managed by load_rb().
     ulong mt_rb;           // warp holds plan_mt[imt_rb:imt_rb+32).
     uint imt_rb;           // same on all threads in warp (not block), multiple of 32.
     uint icell_rb;         // derived from mt_rb
@@ -105,7 +105,7 @@ struct PlanIterator
 
 	// Initialize imt_cell_end
 	imt_cell_end = imt_hard_end;   // to avoid failing an assert in _update_cell_end()
-	_update_cell_end();       // updates imt_cell_end
+	_update_cell_end();            // updates imt_cell_end
 	
 	// Block dims are (32,W), so threadIdx.y is the warpId.
 	imt_next = imt_cell_start + threadIdx.y;
@@ -118,8 +118,9 @@ struct PlanIterator
     
     __device__ void _advance_rb()
     {
-	if constexpr (Debug)
+	if constexpr (Debug) {
 	    assert(imt_cell_end >= imt_rb + 32);
+	}
 	
 	imt_rb += 32;
 	_load_rb();
@@ -196,7 +197,7 @@ struct PlanIterator
 
     __device__ bool next_mt()
     {
-	if (imt_next >= imt_cell_end)
+	if ((imt_next >= imt_cell_end) && (imt_cell_end <= imt_rb+32))
 	    return false;
 
 	if (imt_next >= imt_rb + 32) {

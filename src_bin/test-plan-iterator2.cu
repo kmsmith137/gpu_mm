@@ -1,6 +1,6 @@
 #include "../include/gpu_mm2.hpp"
 #include "../include/gpu_mm2_internals.hpp"  // ALL_LANES
-#include "../include/PlanIterator.hpp"
+#include "../include/PlanIterator2.hpp"
 
 #include <vector>
 #include <iostream>
@@ -13,6 +13,7 @@ using namespace std;
 using namespace gputils;
 using namespace gpu_mm2;
 
+#if 0
 
 // -------------------------------------------------------------------------------------------------
 
@@ -46,7 +47,7 @@ __device__ void assert_equal_within_block(uint *sp, uint x)
 
 
 template<int W>
-__global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts, int *out_cell_counts)
+__global__ void iterator2_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts)
 {
     __shared__ uint shmem[W];
 	
@@ -54,31 +55,28 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
     assert(blockDim.y == W);
 
     int laneId = threadIdx.x;
-    int warpId = threadIdx.y;
+    // int warpId = threadIdx.y;
     
-    PlanIterator<W,true> iterator;
-
-    if (!iterator.init(plan_mt, nmt, nmt_per_block))
-	return;
-
-    do {
-	uint icell = iterator.icell_curr;
+    PlanIterator2<W,true> iterator(plan_mt, nmt, nmt_per_block);
+    
+    while (iterator.get_cell()) {
+	uint icell = iterator.icell;
 	assert(icell < (1U << 20));
 	assert_equal_within_block(shmem, icell);
 
-	if ((warpId == 0) && (laneId == 0))
-	    atomicAdd(out_cell_counts + iterator.icell_curr, 1);
+	for (;;) {
+	    uint imt = iterator.imt_next;
 
-	uint imt = iterator.imt_next;
-	
-	while (iterator.next_mt()) {
-	    uint icl = iterator.icl_curr;
+	    if (!iterator.get_cl())
+		break;
+
+	    uint icl = iterator.icl;
 	    assert(icl < (1U << 26));
 	    assert(imt < nmt);
 	    
 	    assert_equal_within_warp(imt);
 	    assert_equal_within_warp(icl);
-	    assert(iterator.icell_curr == icell);
+	    assert(iterator.icell == icell);
 
 	    ulong mt = plan_mt[imt];
 	    uint mt_icell = uint(mt) & ((1U << 20) - 1);
@@ -89,10 +87,10 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 
 	    if (laneId == 0)
 		atomicAdd(out_mt_counts + imt, 1);
-
-	    imt = iterator.imt_next;
 	}
-    } while (iterator.next_cell());
+
+	// No __syncthreads() needed, since assert_equal_within_block() calls __syncthreads().
+    }
 
     uint sentinel = 1U << 27;
     assert_equal_within_block(shmem, sentinel);
@@ -102,7 +100,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 // -------------------------------------------------------------------------------------------------
 
 
-static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
+static void test_plan_iterator2(const Array<ulong> plan_mt, uint nmt_per_block)
 {
     assert(plan_mt.ndim == 1);
     assert(plan_mt.is_fully_contiguous());
@@ -123,40 +121,32 @@ static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
 	assert(icell0 <= icell1);
     }
 
-    // Output arrays
+    // Output array
     Array<int> mt_counts({nmt}, af_gpu | af_zero);
-    Array<int> cell_counts({1<<20}, af_gpu | af_zero);
-    Array<int> expected_cell_counts({1<<20}, af_uhost | af_zero);
-
-    // Initialize expected_cell_counts
-    for (long i = 0; i < nmt; i++) {
-	uint icell = uint(mt[i]) & ((1<<20) - 1);
-	expected_cell_counts.data[icell] = 1;
-    }
     
     // Launch kernel
     
     int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
     constexpr int W = 16;
     
-    iterator_test_kernel<W> <<< nblocks, {32,W} >>>
-	(plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data, cell_counts.data);
+    iterator2_test_kernel<W> <<< nblocks, {32,W} >>>
+	(plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data);
 
-    CUDA_PEEK("iterator test kernel launch");
+    CUDA_PEEK("iterator2 test kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
     
-    mt_counts = mt_counts.to_host();
-    cell_counts = cell_counts.to_host();
 
     // Check results
     
+    mt_counts = mt_counts.to_host();
+    
     for (long i = 0; i < nmt; i++)
 	assert(mt_counts.data[i] == 1);
-    for (long i = 0; i < (1<<20); i++)
-	assert(cell_counts.data[i] == expected_cell_counts.data[i]);
 
-    cout << "test_plan_iterator: pass" << endl;
+    cout << "test_plan_iterator2: pass" << endl;
 }
+
+#endif
 
 
 static Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell)
@@ -201,9 +191,6 @@ static Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long
 }
 
 
-// -------------------------------------------------------------------------------------------------
-
-
 int main(int argc, char **argv)
 {
     int num_iterations = 400;
@@ -213,15 +200,18 @@ int main(int argc, char **argv)
 	int min_nmt_per_cell = 1;
 	int max_nmt_per_cell = 1000;
 	int nmt_per_block = 32 * rand_int(1,20);
+	int warps_per_threadblock = 1 << rand_int(2,5);
 	Array<ulong> plan_mt = make_random_plan_mt(ncells, min_nmt_per_cell, max_nmt_per_cell);
 	
 	cout << "Random plan: ncells=" << ncells
 	     << ", min_nmt_per_cell=" << min_nmt_per_cell
 	     << ", max_nmt_per_cell=" << max_nmt_per_cell
 	     << ", nmt=" << plan_mt.size
-	     << ", nmt_per_block=" << nmt_per_block << endl;
+	     << ", nmt_per_block=" << nmt_per_block
+	     << ", warps_per_threadblock=" << warps_per_threadblock
+	     << endl;
 	
-	test_plan_iterator(plan_mt, nmt_per_block);
+	test_plan_iterator2(plan_mt, nmt_per_block, warps_per_threadblock);
     }
 
     do {
@@ -231,13 +221,14 @@ int main(int argc, char **argv)
 	double scan_speed = 0.5;    // pixels per TOD sample
 	double total_drift = 1024;  // x-pixels
 	int nmt_per_block = 256*1024;
+	int warps_per_threadblock = 16;
 	
 	ToyPointing<float> tp(nsamp, nypix, nxpix, scan_speed, total_drift);
 	PointingPrePlan pp(tp.xpointing_gpu, nypix, nxpix);
 	PointingPlan p(pp, tp.xpointing_gpu);
 	Array<ulong> plan_mt = p.get_plan_mt(true);  // gpu=true
 	
-	test_plan_iterator(plan_mt, nmt_per_block);  // last argument is nmt_per_block
+	test_plan_iterator2(plan_mt, nmt_per_block, warps_per_threadblock);
     } while (0);
 	
     return 0;

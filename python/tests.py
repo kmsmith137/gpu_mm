@@ -1,9 +1,11 @@
 import os
 import time
-import gpu_mm
 import functools
 import cupy as cp
 import numpy as np
+
+from . import gpu_mm
+from . import gpu_mm_pybind11
 
 
 def is_sorted(arr):
@@ -21,13 +23,13 @@ class PointingInstance:
 
     @classmethod
     def from_toy_pointing(cls, nsamp, nypix, nxpix, scan_speed, total_drift):
-        tp = gpu_mm.gpu_mm.ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
+        tp = gpu_mm.ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
         return PointingInstance(tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
 
     
     @classmethod
     def make_random(cls, nsamp_max):
-        tp = gpu_mm.gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
+        tp = gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
         return PointingInstance(tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
 
     
@@ -114,15 +116,15 @@ class PointingInstance:
 
     @functools.cached_property
     def preplan(self):
-        return gpu_mm.gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
+        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
 
     @functools.cached_property
     def plan(self):
-        return gpu_mm.gpu_mm.PointingPlan(self.preplan, self.xpointing_gpu)
+        return gpu_mm.PointingPlan(self.preplan, self.xpointing_gpu)
 
     @functools.cached_property
     def reference_plan(self):
-        return gpu_mm.gpu_mm.ReferencePointingPlan(self.preplan, self.xpointing_gpu)
+        return gpu_mm.ReferencePointingPlan(self.preplan, self.xpointing_gpu)
 
     
     def test_pointing_preplan(self):
@@ -153,11 +155,19 @@ class PointingInstance:
         assert np.all(mt_sorted == mt_slow)
         print('    test_pointing_preplan: pass')
 
+
+    def test_pointing_plan_iterator(self):
+        plan_mt = self.plan.get_plan_mt()   # FIXME extra copy GPU -> CPU -> GPU
+        nmt_per_threadblock = 32 * np.random.randint(1, 100)   # FIXME revisit
+        warps_per_threadblock = 1 << np.random.randint(2, 5)   # FIXME revisit
+        gpu_mm_pybind11.test_pointing_plan_iterator(plan_mt, nmt_per_threadblock, warps_per_threadblock)
+        print('    test_pointing_plan_iterator: pass')
+
         
     def time_pointing_preplan(self):
         for _ in range(10):
             t0 = time.time()
-            pp = gpu_mm.gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
+            pp = gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
             print(f'    time_pointing_preplan: {time.time()-t0} seconds')
             del pp
 
@@ -169,6 +179,6 @@ class PointingInstance:
         
         for _ in range(10):
             t0 = time.time()
-            p = gpu_mm.gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
+            p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
             print(f'    time_pointing_plan: {time.time()-t0} seconds')
             del p

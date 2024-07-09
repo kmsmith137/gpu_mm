@@ -4,6 +4,7 @@
 #include <iostream>
 #include <gputils/pybind11.hpp>
 #include "../include/gpu_mm2.hpp"
+#include "../include/PlanIterator2.hpp"
 
 
 using namespace std;
@@ -159,4 +160,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	     
 	.def("__str__", &ReferencePointingPlan::str)
     ;
+
+    m.def("test_pointing_plan_iterator", &gpu_mm2::test_plan_iterator2,
+	  py::arg("plan_mt"), py::arg("nmt_per_block"), py::arg("warps_per_threadblock"));
 }
