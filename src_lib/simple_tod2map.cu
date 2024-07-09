@@ -14,29 +14,6 @@ namespace gpu_mm2 {
 #endif
 
 
-
-// -------------------------------------------------------------------------------------------------
-//
-// Some boilerplate, used to support T=float and T=double with the same C++ template.
-
-template<typename T> struct dtype {};
-
-template<> struct dtype<float>
-{
-    // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__SINGLE.html
-    static __device__ void xsincos(float x, float *sptr, float *cptr) { sincosf(x, sptr, cptr); }
-    static __device__ float *get_shmem() { extern __shared__ float shmem_f[]; return shmem_f; }
-};
-
-
-template<> struct dtype<double>
-{
-    // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html
-    static __device__ void xsincos(double x, double *sptr, double *cptr) { sincos(x, sptr, cptr); }
-    static __device__ double *get_shmem() { extern __shared__ double shmem_d[]; return shmem_d; }
-};
-
-
 // -------------------------------------------------------------------------------------------------
 
 
@@ -82,6 +59,7 @@ template<typename T>
 __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, uint nsamp, int nypix, int nxpix, uint nsamp_per_block)
 {
     static constexpr T one = 1;
+    static constexpr T two = 2;
     
     int npix = nypix * nxpix;
     uint s0 = blockIdx.x * nsamp_per_block;
@@ -104,7 +82,7 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 	T dx = xpix - ix0;
 	
 	T q, u;	
-	dtype<T>::xsincos(alpha, &q, &u);
+	dtype<T>::xsincos(two*alpha, &q, &u);
 	q *= t;
 	u *= t;
 
@@ -119,12 +97,11 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 template<typename T>
 void launch_simple_tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing)
 {
-    long nsamp = 0;
-    long nypix, nxpix;
+    long nsamp, nypix, nxpix;
     
-    check_map(map, nypix, nxpix, "launch_simple_tod2map");
-    check_tod(tod, nsamp, "launch_simple_tod2map");
-    check_xpointing(xpointing, nsamp, "launch_simple_tod2map");
+    check_map_and_init_npix(map, nypix, nxpix, "launch_simple_tod2map", true);  // on_gpu=true
+    check_tod_and_init_nsamp(tod, nsamp, "launch_simple_tod2map", true);        // on_gpu=true
+    check_xpointing(xpointing, nsamp, "launch_simple_tod2map", true);           // on_gpu=true
 
     int nthreads_per_block = 128;
     int nsamp_per_block = 1024;

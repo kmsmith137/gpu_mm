@@ -9,7 +9,9 @@ namespace gpu_mm2 {
 #endif
 
 
-// FIXME all functions in this file are placeholders for future expansion.
+// FIXME error-checking is pretty complete now, but the quality of the error messages
+// could use some improvement.
+
 
 void check_nsamp(long nsamp, const char *where)
 {
@@ -45,56 +47,89 @@ void check_err(uint err, const char *where)
 	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
 }
 
+static void _check_location(int aflags, const char *where, const char *arr_name, bool on_gpu)
+{
+    if (on_gpu && gputils::af_on_gpu(aflags))
+	return;
+    if (!on_gpu && gputils::af_on_host(aflags))
+	return;
+
+    stringstream ss;
+    ss << where << ": expected " << arr_name << " to be in " << (on_gpu ? "GPU" : "CPU") << " memory";
+    throw runtime_error(ss.str());
+}
+
 
 template<typename T>
-void check_map(const Array<T> &map, long &nypix, long &nxpix, const char *where)
+void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu)
 {
     xassert(map.ndim == 3);
     xassert(map.shape[0] == 3);
     xassert(map.is_fully_contiguous());
-    xassert(map.on_gpu());
-    
-    check_nypix(map.shape[1], where);
-    check_nxpix(map.shape[2], where);
-    
+
     nypix = map.shape[1];
     nxpix = map.shape[2];
+    
+    check_nypix(nypix, where);
+    check_nxpix(nxpix, where);
+    
+    _check_location(map.aflags, where, "map", on_gpu);
 }
 
 
 template<typename T>
-void check_tod(const Array<T> &tod, long &nsamp, const char *where)
+void check_map(const gputils::Array<T> &map, long nypix_expected, long nxpix_expected, const char *where, bool on_gpu)
+{
+    long nypix_actual, nxpix_actual;
+    check_map_and_init_npix(map, nypix_actual, nxpix_actual, where, on_gpu);
+
+    xassert_eq(nypix_expected, nypix_actual);
+    xassert_eq(nypix_expected, nypix_actual);
+}
+
+
+template<typename T>
+void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu)
 {
     xassert(tod.ndim == 1);
     xassert(tod.is_fully_contiguous());
-    xassert(tod.on_gpu());
-    
-    check_nsamp(tod.shape[0], where);
+
     nsamp = tod.shape[0];
+    check_nsamp(nsamp, where);
+
+    _check_location(tod.aflags, where, "tod", on_gpu);
 }
 
 
 template<typename T>
-void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
+void check_tod(const Array<T> &tod, long nsamp_expected, const char *where, bool on_gpu)
+{
+    long nsamp_actual;
+    check_tod_and_init_nsamp(tod, nsamp_actual, where, on_gpu);
+    xassert_eq(nsamp_expected, nsamp_actual);
+}
+
+
+template<typename T>
+void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 {
     xassert(xpointing.ndim == 2);
     xassert(xpointing.shape[0] == 3);
     xassert(xpointing.is_fully_contiguous());
 
-    if (nsamp == 0)
-	nsamp = xpointing.shape[1];
-    else if (xpointing.shape[1] != nsamp) {
-	stringstream ss;
-	ss << where << ": expected xpointing array to have nsamp=" << nsamp << ", actual nsamp=" << xpointing.shape[1];
-	throw runtime_error(ss.str());
-    }
-
-    if (on_gpu)
-	xassert(xpointing.on_gpu());
-    else
-	xassert(xpointing.on_host());
-
+    nsamp = xpointing.shape[1];
     check_nsamp(nsamp, where);
+
+    _check_location(xpointing.aflags, where, "xpointing", on_gpu);
+}
+
+
+template<typename T>
+void check_xpointing(const Array<T> &xpointing, long nsamp_expected, const char *where, bool on_gpu)
+{
+    long nsamp_actual;
+    check_xpointing_and_init_nsamp(xpointing, nsamp_actual, where, on_gpu);
+    xassert_eq(nsamp_expected, nsamp_actual);
 }
 
 
@@ -121,9 +156,12 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 
 
 #define INSTANTIATE(T) \
-    template void check_map(const Array<T> &map, long &nypix, long &nxpix, const char *where); \
-    template void check_tod(const Array<T> &tod, long &nsamp, const char *where); \
-    template void check_xpointing(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
+    template void check_map(const Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu); \
+    template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
+    template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
+    template void check_map_and_init_npix(const Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu); \
+    template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
+    template void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

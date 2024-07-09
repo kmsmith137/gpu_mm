@@ -66,7 +66,7 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     this->nblocks = pp.nblocks;
     this->rk = pp.rk;
 
-    check_xpointing(xpointing_gpu, nsamp, "ReferencePointingPlan constructor");
+    check_xpointing(xpointing_gpu, pp.nsamp, "ReferencePointingPlan constructor", true);   // on_gpu=true
 
     // ---------------------------------------------------------------------------------------------
     

@@ -16,6 +16,8 @@ def is_sorted(arr):
 class PointingInstance:
     def __init__(self, xpointing_gpu, nypix, nxpix, name):
         self.xpointing_gpu = xpointing_gpu
+        self.dtype = xpointing_gpu.dtype
+        self.nsamp = xpointing_gpu.shape[1]
         self.nypix = nypix
         self.nxpix = nxpix
         self.name = name
@@ -163,6 +165,21 @@ class PointingInstance:
         gpu_mm_pybind11.test_pointing_plan_iterator(plan_mt, nmt_per_threadblock, warps_per_threadblock)
         print('    test_pointing_plan_iterator: pass')
 
+
+    def test_tod2map(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        
+        # FIXME use something nonzero
+        m1 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        m2 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+
+        gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
+        self.plan.tod2map(m2, tod, self.xpointing_gpu, debug=True)
+
+        # FIXME dtype-dependent epsilon_max
+        epsilon = self._compare_arrays(m1, m2)
+        print(f'    test_tod2map: {epsilon=}')
+
         
     def time_pointing_preplan(self):
         for _ in range(10):
@@ -182,3 +199,11 @@ class PointingInstance:
             p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
             print(f'    time_pointing_plan: {time.time()-t0} seconds')
             del p
+
+
+    def _compare_arrays(self, arr1, arr2):
+        num = cp.sum(cp.abs(arr1-arr2))
+        den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
+        assert den > 0
+        return num/den
+    

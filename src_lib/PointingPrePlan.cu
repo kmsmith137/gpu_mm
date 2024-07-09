@@ -100,12 +100,11 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 template<typename T>
 PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_)
 {
-    this->nsamp = 0;
     this->nypix = nypix_;
     this->nxpix = nxpix_;
-
+    
     // Initializes this->nsamp.
-    check_xpointing(xpointing_gpu, this->nsamp, "PointingPrePlan constructor");
+    check_xpointing_and_init_nsamp(xpointing_gpu, this->nsamp, "PointingPrePlan constructor", true);  // on_gpu=true
     check_nypix(nypix, "PointingPrePlan constructor");
     check_nxpix(nxpix, "PointingPrePlan constructor");
     

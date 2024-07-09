@@ -161,6 +161,15 @@ struct PointingPlan
     PointingPlan(const PointingPrePlan &pp,
 		 const gputils::Array<T> &xpointing_gpu);
 
+
+    // All arrays must be on the GPU.
+    template<typename T>
+    void tod2map(gputils::Array<T> &map,
+		 const gputils::Array<T> &tod,
+		 const gputils::Array<T> &xpointing,
+		 bool debug = false) const;
+
+    
     // Used in unit tests.
     gputils::Array<ulong> get_plan_mt(bool gpu) const;
 
@@ -168,10 +177,22 @@ struct PointingPlan
 };
 
 
+
 // -----------------------------------------------------------------------------
 //
-// Testing
+// Internals + testing
 
+
+// Bare-pointer interface to tod2map.
+// You probably want to call PointingPlan::tod2map(), not this function!
+template<typename T>
+extern void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
+			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
+
+
+template<typename T>
+extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
+    
 
 template<typename T>
 struct ToyPointing
@@ -208,10 +229,6 @@ struct ToyPointing
 };
 
 
-template<typename T>
-extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
-
-
 // Argument checking (defined in check_arguments.cu)
 
 extern void check_nsamp(long nsamp, const char *where);
@@ -219,13 +236,15 @@ extern void check_nypix(long nypix, const char *where);
 extern void check_nxpix(long nxpix, const char *where);
 extern void check_err(uint err, const char *where);
 
-// The 'nsamp' argument to check_xpointing() has the following semantics:
-//   - if nsamp > 0, then exception will be thrown if xpointing array has mismatched size
-//   - if nsamp == 0, then check_xpointing() will set the value of nsamp.
+// Check (map, tod, xpointing) arrays, in a case where we know the dimensions in advance.
+template<typename T> extern void check_map(const gputils::Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu);
+template<typename T> extern void check_tod(const gputils::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
 
-template<typename T> extern void check_map(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where);
-template<typename T> extern void check_tod(const gputils::Array<T> &tod, long &nsamp, const char *where);
-template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu=true);
+// Check (map, tod, xpointing) arrays, in a case where we do not know the dimensions in advance.
+template<typename T> extern void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu);
+template<typename T> extern void check_tod_and_init_nsamp(const gputils::Array<T> &tod, long &nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_xpointing_and_init_nsamp(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu);
 
 extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 

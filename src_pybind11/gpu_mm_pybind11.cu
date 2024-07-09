@@ -69,6 +69,11 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	"\n"
 	+ pp_suffix;
 
+    // Select template specialization T=Tmm
+    auto _tod2map = [](const PointingPlan &self, Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing, bool debug)
+    {
+	self.tod2map(map, tod, xpointing, debug);
+    };
 
     // If updating this wrapper, don't forget to update comment in gpu_mm.py,
     // listing members/methods.
@@ -94,7 +99,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	
 	.def("__str__", &PointingPrePlan::str)
     ;
-
         
     py::class_<PointingPlan>(m, "PointingPlan", xstrdup(pointing_plan_docstring))
 	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &, const Array<unsigned char> &>(),
@@ -103,6 +107,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &PointingPlan::nxpix, "Number of x-pixels")
+
+	.def("tod2map", _tod2map, py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("debug") = false)
 
 	// We wrap get_plan_mt() with the constraint on_gpu=false.
 	// This is necessary because I wrote a to-python converter for numpy arrays, but not cupy arrays.
@@ -121,6 +127,19 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     using ToyPointing = gpu_mm2::ToyPointing<Tmm>;
     using ReferencePointingPlan = gpu_mm2::ReferencePointingPlan;
+
+    // FIXME write longer docstring
+    const char *reference_pointing_plan_docstring =
+	"ReferencePointingPlan: A utility class used in unit tests.\n";
+    
+    // Select template specialization T=Tmm
+    auto _simple_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
+    {
+	gpu_mm2::launch_simple_tod2map(map, tod, xpointing);
+    };
+
+    m.def("simple_tod2map", _simple_tod2map,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
@@ -138,10 +157,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
 	.def("__str__", &ToyPointing::str)
     ;
-
-    // FIXME write longer docstring
-    const char *reference_pointing_plan_docstring =
-	"ReferencePointingPlan: A utility class used in unit tests.\n";
         
     py::class_<ReferencePointingPlan>(m, "ReferencePointingPlan", reference_pointing_plan_docstring)
 	.def(py::init<const PointingPrePlan &, const Array<Tmm> &>(),

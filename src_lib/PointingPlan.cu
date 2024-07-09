@@ -225,11 +225,10 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     pp(preplan),
     buf(buf_)
 {
-    long nsamp = preplan.nsamp;
-    check_xpointing(xpointing_gpu, nsamp, "PointingPlan constructor");    
-    check_buffer(buf, pp.plan_nbytes, "PointingPlan constructor", "buf");
-    check_buffer(tmp_buf, pp.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
-
+    check_buffer(buf, preplan.plan_nbytes, "PointingPlan constructor", "buf");
+    check_buffer(tmp_buf, preplan.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
+    check_xpointing(xpointing_gpu, preplan.nsamp, "PointingPlan constructor", true);   // on_gpu=true
+    
     long mt_nbytes = align128(pp.plan_nmt * sizeof(ulong));
     size_t cub_nbytes = pp.cub_nbytes;
     
@@ -287,6 +286,22 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 { }
 
 
+template<typename T>
+void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing, bool debug) const
+{
+    check_map(map, nypix, nxpix, "PointingPlan::tod2map", true);          // on_gpu=true
+    check_tod(tod, nsamp, "PointingPlan::tod2map", true);                 // on_gpu=true
+    check_xpointing(xpointing, nsamp, "PointingPlan::tod2map", true);     // on_gpu=true
+
+    // FIXME revisit?
+    int nmt_per_block = 1 << pp.rk;
+    
+    launch_tod2map2(map.data, tod.data, xpointing.data, this->plan_mt,
+		    this->nsamp, this->nypix, this->nxpix,
+		    this->pp.plan_nmt, nmt_per_block, debug);
+}
+
+
 // Only used in unit tests
 Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 {
@@ -322,12 +337,20 @@ string PointingPlan::str() const
 
 
 #define INSTANTIATE(T) \
-    template PointingPlan::PointingPlan(const PointingPrePlan &pp, \
+    template PointingPlan::PointingPlan( \
+	const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu, \
 	const gputils::Array<unsigned char> &buf, \
 	const gputils::Array<unsigned char> &tmp_buf); \
-    template PointingPlan::PointingPlan(const PointingPrePlan &pp, \
-	const gputils::Array<T> &xpointing_gpu)
+    template PointingPlan::PointingPlan( \
+	const PointingPrePlan &pp, \
+	const gputils::Array<T> &xpointing_gpu); \
+    template void PointingPlan::tod2map( \
+	gputils::Array<T> &map, \
+	const gputils::Array<T> &tod, \
+	const gputils::Array<T> &xpointing, \
+	bool debug) const
+
 
 INSTANTIATE(float);
 INSTANTIATE(double);

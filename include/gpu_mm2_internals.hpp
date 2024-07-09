@@ -18,6 +18,28 @@ inline long align128(long n)
     return (n + 127L) & ~127L;
 }
 
+// -------------------------------------------------------------------------------------------------
+//
+// Some boilerplate, used to support T=float and T=double with the same C++ template.
+
+
+template<typename T> struct dtype {};
+
+template<> struct dtype<float>
+{
+    // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__SINGLE.html
+    static __device__ void xsincos(float x, float *sptr, float *cptr) { sincosf(x, sptr, cptr); }
+    static __device__ float *get_shmem() { extern __shared__ float shmem_f[]; return shmem_f; }
+};
+
+
+template<> struct dtype<double>
+{
+    // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html
+    static __device__ void xsincos(double x, double *sptr, double *cptr) { sincos(x, sptr, cptr); }
+    static __device__ double *get_shmem() { extern __shared__ double shmem_d[]; return shmem_d; }
+};
+
 
 // -------------------------------------------------------------------------------------------------
 //

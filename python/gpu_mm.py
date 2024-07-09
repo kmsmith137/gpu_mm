@@ -51,6 +51,9 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         self.nxpix          int
         self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
         self.__str__()
+
+        self.tod2map(map, tod, xpointing_gpu, debug=False)
+           -> accumulates result
     """
     
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):
@@ -60,6 +63,7 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
             tmp_buf = cp.empty(preplan.plan_constructor_tmp_nbytes, dtype=np.uint8)
 
         gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf)
+
             
     
 
