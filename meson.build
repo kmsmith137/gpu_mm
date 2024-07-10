@@ -24,6 +24,7 @@ lib_source_files = [
     'src_lib/gpu_point.cu',
     'src_lib/gpu_utils.cu',
     'src_lib/map2tod.cu',           # old
+    'src_lib/map2tod2.cu',
     'src_lib/misc.cu',
     'src_lib/pycufft.cu',
     'src_lib/python_exports.cu',

@@ -164,6 +164,13 @@ struct PointingPlan
 
     // All arrays must be on the GPU.
     template<typename T>
+    void map2tod(gputils::Array<T> &tod,
+		 const gputils::Array<T> &map,
+		 const gputils::Array<T> &xpointing,
+		 bool debug = false) const;
+
+    // All arrays must be on the GPU.
+    template<typename T>
     void tod2map(gputils::Array<T> &map,
 		 const gputils::Array<T> &tod,
 		 const gputils::Array<T> &xpointing,
@@ -182,6 +189,12 @@ struct PointingPlan
 //
 // Internals + testing
 
+
+// Bare-pointer interface to tod2map.
+// You probably want to call PointingPlan::map2tod(), not this function!
+template<typename T>
+extern void launch_map2tod2(T *tod, const T *map, const T *xpointing, const ulong *plan_mt,
+			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
 
 // Bare-pointer interface to tod2map.
 // You probably want to call PointingPlan::tod2map(), not this function!

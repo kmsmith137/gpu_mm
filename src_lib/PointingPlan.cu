@@ -25,7 +25,7 @@ __device__ __forceinline__ void
 absorb_mt(ulong *plan_mt, int *shmem,        // pointers
 	  ulong &mt_local, int &nmt_local,   // per-warp ring buffer
 	  uint icell, uint amask, int na,    // map cells to absorb
-	  uint s, int sid0, int na_prev,     // additional data needed to construct mt_new
+	  uint s, int na_prev,               // additional data needed to construct mt_new
 	  int nmt_max, uint &err)            // error testing and reporting
 {
     if (na == 0)
@@ -41,18 +41,18 @@ absorb_mt(ulong *plan_mt, int *shmem,        // pointers
     uint src_lane = __fns(amask, 0, llid+1);
     icell = __shfl_sync(ALL_LANES, icell, src_lane & 31);  // FIXME do I need "& 31"?
 
-    // Secondary cache line index (note that sid0 is 0-based, whereas sid is 1-based)
+    // Secondary cache line index 0 <= a < 2.
     uint a = na_prev + llid;
-    uint sid = (a > 0) ? (sid0 + a) : 0;
+    a = (a < 2) ? a : 2;
 
     // Promote (uint20 icell) to (uint64 mt_new).
     // Reminder: mt_new bit layout is
     //   Low 10 bits = Global xcell index
     //   Next 10 bits = Global ycell index
     //   Next 26 bits = Primary TOD cache line index
-    //   High 18 bits = Secondary TOD cache line index, 1-based (relative to start of block)
+    //   High 18 bits = Secondary TOD cache line index 0 <= a < 2
     
-    ulong mt_new = icell | (ulong(s >> 5) << 20) | (ulong(sid) << 46);
+    ulong mt_new = icell | (ulong(s >> 5) << 20) | (ulong(a) << 46);
 
     // Extend ring buffer.
     // If nmt_local is >32, then it "wraps around" from mt_local to mt_new.
@@ -155,36 +155,28 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	analyze_cell_pair(iycell_o, ixcell_e, icell2, amask2, na2);
 	analyze_cell_pair(iycell_o, ixcell_o, icell3, amask3, na3);
 
-	int sid0 = 0;
-	int nsid = na0+na1+na2+na3-1;
-	
-	if ((nsid > 0) && (laneId == 0))
-	    sid0 = atomicAdd(shmem+1, nsid);
-	sid0 = __shfl_sync(ALL_LANES, sid0, 0);  // broadcast from lane 0 to all lanes
-	// Note that sid0 is a zero-based index
-
 	absorb_mt(plan_mt, shmem,        // pointers
 		  mt_local, nmt_local,   // per-warp ring buffer
 		  icell0, amask0, na0,   // map cells to absorb
-		  s, sid0, 0,            // additional data needed to construct mt_new
+		  s, 0,                  // additional data needed to construct mt_new
 		  nmt_max, err);         // error testing and reporting
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell1, amask1, na1,
-		  s, sid0, na0,
+		  s, na0,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell2, amask2, na2,
-		  s, sid0, na0+na1,
+		  s, na0+na1,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell3, amask3, na3,
-		  s, sid0, na0+na1+na2,
+		  s, na0+na1+na2,
 		  nmt_max, err);
     }
     
@@ -286,6 +278,23 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 { }
 
 
+
+template<typename T>
+void PointingPlan::map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &xpointing, bool debug) const
+{
+    check_map(map, nypix, nxpix, "PointingPlan::map2tod", true);          // on_gpu=true
+    check_tod(tod, nsamp, "PointingPlan::map2tod", true);                 // on_gpu=true
+    check_xpointing(xpointing, nsamp, "PointingPlan::map2tod", true);     // on_gpu=true
+
+    // FIXME revisit?
+    int nmt_per_block = 1 << pp.rk;
+    
+    launch_map2tod2(tod.data, map.data, xpointing.data, this->plan_mt,
+		    this->nsamp, this->nypix, this->nxpix,
+		    this->pp.plan_nmt, nmt_per_block, debug);
+}
+
+
 template<typename T>
 void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing, bool debug) const
 {
@@ -345,6 +354,11 @@ string PointingPlan::str() const
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu); \
+    template void PointingPlan::map2tod( \
+	gputils::Array<T> &tod, \
+	const gputils::Array<T> &map, \
+	const gputils::Array<T> &xpointing, \
+	bool debug) const; \
     template void PointingPlan::tod2map( \
 	gputils::Array<T> &map, \
 	const gputils::Array<T> &tod, \

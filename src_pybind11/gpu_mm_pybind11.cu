@@ -70,6 +70,12 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	+ pp_suffix;
 
     // Select template specialization T=Tmm
+    auto _map2tod = [](const PointingPlan &self, Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing, bool debug)
+    {
+	self.map2tod(tod, map, xpointing, debug);
+    };
+
+    // Select template specialization T=Tmm
     auto _tod2map = [](const PointingPlan &self, Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing, bool debug)
     {
 	self.tod2map(map, tod, xpointing, debug);
@@ -108,6 +114,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &PointingPlan::nxpix, "Number of x-pixels")
 
+	.def("map2tod", _map2tod, py::arg("tod"), py::arg("map"), py::arg("xpointing"), py::arg("debug") = false)
 	.def("tod2map", _tod2map, py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("debug") = false)
 
 	// We wrap get_plan_mt() with the constraint on_gpu=false.

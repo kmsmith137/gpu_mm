@@ -173,6 +173,22 @@ class PointingInstance:
         print('    test_pointing_plan_iterator: pass')
 
 
+    def test_map2tod(self):
+        m = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        tod1 = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod2 = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        
+        gpu_mm_pybind11.simple_map2tod(tod1, m, self.xpointing_gpu)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        self.plan.map2tod(tod2, m, self.xpointing_gpu, debug=True)
+        cp.cuda.runtime.deviceSynchronize()
+
+        epsilon = self._compare_arrays(tod1, tod2)
+        print(f'    test_map2tod: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+
+        
     def test_tod2map(self):
         tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
         
@@ -181,10 +197,10 @@ class PointingInstance:
         m2 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
 
         gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
-        # FIXME synchronize
+        cp.cuda.runtime.deviceSynchronize()
         
         self.plan.tod2map(m2, tod, self.xpointing_gpu, debug=True)
-        # FIXME synchronize
+        cp.cuda.runtime.deviceSynchronize()
 
         epsilon = self._compare_arrays(m1, m2)
         print(f'    test_tod2map: {epsilon=}')
@@ -195,6 +211,7 @@ class PointingInstance:
         self.test_pointing_preplan()
         self.test_pointing_plan()
         self.test_pointing_plan_iterator()
+        self.test_map2tod()
         self.test_tod2map()
 
         
@@ -226,7 +243,19 @@ class PointingInstance:
             t0 = time.time()
             gpu_mm_pybind11.simple_map2tod(tod, m, self.xpointing_gpu)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_simple_tod2map: {time.time()-t0} seconds')
+            print(f'    time_simple_map2tod: {time.time()-t0} seconds')
+
+
+    def time_map2tod(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        p = self.plan
+
+        for _ in range(10):
+            t0 = time.time()
+            p.map2tod(tod, m, self.xpointing_gpu, debug=False)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_map2tod: {time.time()-t0} seconds')
 
             
     def time_simple_tod2map(self):
@@ -256,5 +285,6 @@ class PointingInstance:
         self.time_pointing_preplan()
         self.time_pointing_plan()
         self.time_simple_map2tod()
+        self.time_map2tod()
         self.time_simple_tod2map()
         self.time_tod2map()

@@ -53,7 +53,10 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         self.__str__()
 
         self.tod2map(map, tod, xpointing_gpu, debug=False)
-           -> accumulates result
+           -> accumulates into output 'map' array
+
+        self.map2tod(tod, map, xpointing_gpu, debug=False)
+           -> overwrites output 'tod' array
     """
     
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):
