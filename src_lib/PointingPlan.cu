@@ -25,7 +25,7 @@ __device__ __forceinline__ void
 absorb_mt(ulong *plan_mt, int *shmem,        // pointers
 	  ulong &mt_local, int &nmt_local,   // per-warp ring buffer
 	  uint icell, uint amask, int na,    // map cells to absorb
-	  uint s, int na_prev,               // additional data needed to construct mt_new
+	  uint s, bool mflag, int na_prev,   // additional data needed to construct mt_new
 	  int nmt_max, uint &err)            // error testing and reporting
 {
     if (na == 0)
@@ -41,18 +41,21 @@ absorb_mt(ulong *plan_mt, int *shmem,        // pointers
     uint src_lane = __fns(amask, 0, llid+1);
     icell = __shfl_sync(ALL_LANES, icell, src_lane & 31);  // FIXME do I need "& 31"?
 
-    // Secondary cache line index 0 <= a < 2.
-    uint a = na_prev + llid;
-    a = (a < 2) ? a : 2;
-
-    // Promote (uint20 icell) to (uint64 mt_new).
-    // Reminder: mt_new bit layout is
+    // Reminder: mt bit layout is
     //   Low 10 bits = Global xcell index
     //   Next 10 bits = Global ycell index
     //   Next 26 bits = Primary TOD cache line index
-    //   High 18 bits = Secondary TOD cache line index 0 <= a < 2
+    //   Next bit = mflag (does cache line overlap multiple map cells?)
+    //   Next bit = zflag (mflag && first appearance of cache line)
     
-    ulong mt_new = icell | (ulong(s >> 5) << 20) | (ulong(a) << 46);
+    bool zflag = mflag && (na_prev == 0) && (llid == 0);
+
+    // Construct mt_new from icell, s, mflag, zflag.
+    uint mt20 = (s >> 5);
+    mt20 |= (mflag ? (1U << 26) : 0);
+    mt20 |= (zflag ? (1U << 27) : 0);
+    
+    ulong mt_new = icell | (ulong(mt20) << 20);
 
     // Extend ring buffer.
     // If nmt_local is >32, then it "wraps around" from mt_local to mt_new.
@@ -155,28 +158,30 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	analyze_cell_pair(iycell_o, ixcell_e, icell2, amask2, na2);
 	analyze_cell_pair(iycell_o, ixcell_o, icell3, amask3, na3);
 
+	bool mflag = ((na0 + na1 + na2 + na3) > 1);
+
 	absorb_mt(plan_mt, shmem,        // pointers
 		  mt_local, nmt_local,   // per-warp ring buffer
 		  icell0, amask0, na0,   // map cells to absorb
-		  s, 0,                  // additional data needed to construct mt_new
+		  s, mflag, 0,           // additional data needed to construct mt_new
 		  nmt_max, err);         // error testing and reporting
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell1, amask1, na1,
-		  s, na0,
+		  s, mflag, na0,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell2, amask2, na2,
-		  s, na0+na1,
+		  s, mflag, na0+na1,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
 		  icell3, amask3, na3,
-		  s, na0+na1+na2,
+		  s, mflag, na0+na1+na2,
 		  nmt_max, err);
     }
     

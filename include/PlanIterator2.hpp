@@ -21,7 +21,7 @@ extern void test_plan_iterator2(const gputils::Array<ulong> &plan_mt, uint nmt_p
 //        // Per-cell initialization (using value of iterator.icell)
 //      
 //        while (iterator.get_cl()) {
-//            // Per-mt processing (using values of iterator.icl and iterator.sid)
+//            // Per-mt processing (using values of iterator.icl and iterator.icl_flagged)
 //        }
 //
 //        __syncthreads(); shmem -> global;
@@ -47,8 +47,8 @@ struct PlanIterator2
 
     // Per-mt state.
     uint imt_next;           // mt-index that will be used in _next_ call to get_cl().
-    uint icl;                // cl-index from _previous_ call to get_cl().
-    uint sid;                // secondary ID (in {0,1,2}) from _previous_ call to get_cl().
+    uint icl_flagged;        // cl-index from _previous_ call to get_cl(), including mflag/zflag
+    uint icl;                // cl-index from _previous_ call to get_cl(), not including mflag/zflag
 
     // There are two helper methods:
     //   _load_mt_rb()            Called whenever 'imt_rb' changes. Updates 'mt_rb'.
@@ -117,7 +117,7 @@ struct PlanIterator2
     __device__ bool get_cl()
     {
 	// Caller has initialized current-cell state, next-cell state, and 'imt_next'.
-	// We either return false, or we update { imt_next, icl, sid } and return true.
+	// We either return false, or we update { imt_next, icl, icl_flagged } and return true.
 
 	while (imt_next >= imt_rb+32) {
 	    if (next_cell_seen || (imt_rb+32 >= imt_end))
@@ -134,7 +134,7 @@ struct PlanIterator2
 	if (imt_next >= iend)
 	    return false;
 	
-	// If we get here, then we update 'imt_next', 'icl', 'sid', and return true.
+	// If we get here, then we update 'imt_next', 'icl', 'icl_flagged, and return true.
 	
 	int src_lane = imt_next & 31;
 
@@ -143,12 +143,10 @@ struct PlanIterator2
 	    assert(imt_next == imt_rb + src_lane);
 	    assert((src_lane != threadIdx.x) || (src_icell == icell));
 	}
-	
-	uint mt0 = uint(mt_rb >> 20);
-	mt0 = __shfl_sync(ALL_LANES, mt0, src_lane);
-	
-	this->icl = mt0 & ((1U << 26) - 1);
-	this->sid = mt0 >> 26;
+
+	uint icl_rb = uint(mt_rb >> 20);
+	this->icl_flagged = __shfl_sync(ALL_LANES, icl_rb, src_lane);
+	this->icl = icl_flagged & ((1U << 26) - 1);
 	this->imt_next += W;
 	return true;
     }

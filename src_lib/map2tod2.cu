@@ -27,15 +27,15 @@ __global__ void pre_map2tod_kernel(T *tod, const ulong *plan_mt, uint nmt, uint 
 	uint i = (imt < nmt) ? imt : (nmt-1);
 	ulong mt = plan_mt[i];
 	
-	uint mt0 = uint(mt >> 20);
-	uint icl = mt0 & ((1U << 26) - 1);
-	bool flag = (imt < nmt) && ((mt0 & (1U << 26)) != 0);
-	uint mask = __ballot_sync(ALL_LANES, flag);
+	uint icl_flagged = uint(mt >> 20);
+	uint icl = icl_flagged & ((1U << 26) - 1);
+	bool zflag = (icl_flagged & (1U << 27)) != 0;
+	uint mask = __ballot_sync(ALL_LANES, (imt < nmt) && zflag);
 
 	for (uint lane = 0; lane < 32; lane++) {
 	    if (mask & (1U << lane)) {
-		uint iclz = __shfl_sync(ALL_LANES, icl, lane);
-		uint s = (ulong(iclz) << 5) + (threadIdx.x & 31);
+		uint zcl = __shfl_sync(ALL_LANES, icl, lane);
+		uint s = (ulong(zcl) << 5) + (threadIdx.x & 31);
 		tod[s] = 0;
 	    }
 	}
@@ -156,7 +156,9 @@ __global__ void map2tod2_kernel(T *tod, const T *map, const T *xpointing, const 
 	    t += eval_tqu(shmem, iy1, ix0, iy0_cell, ix0_cell, cos_2a, sin_2a) * (dy) * (one-dx);
 	    t += eval_tqu(shmem, iy1, ix1, iy0_cell, ix0_cell, cos_2a, sin_2a) * (dy) * (dx);
 
-	    if (iterator.sid > 0)
+	    bool mflag = iterator.icl_flagged & (1U << 26);
+	    
+	    if (mflag)
 		atomicAdd(tod+s, t);
 	    else
 		tod[s] = t;

@@ -133,7 +133,7 @@ class PointingInstance:
         num = cp.sum(cp.abs(arr1-arr2))
         den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
         assert den > 0
-        return num/den
+        return float(num/den)   # convert zero-dimensional array -> scalar
 
     
     def test_pointing_preplan(self):
@@ -154,12 +154,13 @@ class PointingInstance:
         #   Low 10 bits = Global xcell index
         #   Next 10 bits = Global ycell index
         #   Next 26 bits = Primary TOD cache line index
-        #   High 18 bits = Secondary TOD cache line index, 1-based (relative to start of block)
+        #   Next bit = zflag
+        #   Next bit = aflag
 
         # Lowest 20 bits of 'mt_fast' array should be sorted.
         assert is_sorted(mt_fast & ((1 << 20) - 1))
 
-        # Lowest 46 bits of 'mt_fast' array should agree with 'mt_slow'.
+        # Lowest 46 bits of 'mt_fast' array should agree with 'mt_slow' (after sorting).
         mt_sorted = np.sort(mt_fast & ((1 << 46) - 1))
         assert np.all(mt_sorted == mt_slow)
         print('    test_pointing_preplan: pass')

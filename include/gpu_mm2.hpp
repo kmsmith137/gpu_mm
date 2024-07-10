@@ -141,7 +141,8 @@ struct PointingPlan
     //   Low 10 bits = Global xcell index
     //   Next 10 bits = Global ycell index
     //   Next 26 bits = Primary TOD cache line index
-    //   High 18 bits = Secondary TOD cache line index, 1-based (relative to start of block)
+    //   Next bit = mflag (does cache line overlap multiple map cells?)
+    //   Next bit = zflag (mflag && first appearance of cache line)
     
     gputils::Array<unsigned char> buf;
     ulong *plan_mt = nullptr;
