@@ -31,7 +31,8 @@ lib_source_files = [
     'src_lib/simple_map2tod.cu',
     'src_lib/simple_tod2map.cu',
     'src_lib/tod2map.cu',           # old
-    'src_lib/tod2map2.cu'
+    'src_lib/tod2map2.cu',
+    'src_lib/tod2map3.cu'
 ]
 
 pyext_source_files = [

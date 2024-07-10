@@ -316,6 +316,22 @@ void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &x
 }
 
 
+template<typename T>
+void PointingPlan::tod2map3(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing, bool debug) const
+{
+    check_map(map, nypix, nxpix, "PointingPlan::tod2map3", true);          // on_gpu=true
+    check_tod(tod, nsamp, "PointingPlan::tod2map3", true);                 // on_gpu=true
+    check_xpointing(xpointing, nsamp, "PointingPlan::tod2map3", true);     // on_gpu=true
+
+    // FIXME revisit?
+    int nmt_per_block = 1 << pp.rk;
+    
+    launch_tod2map3(map.data, tod.data, xpointing.data, this->plan_mt,
+		    this->nsamp, this->nypix, this->nxpix,
+		    this->pp.plan_nmt, nmt_per_block, debug);
+}
+
+
 // Only used in unit tests
 Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 {
@@ -365,6 +381,11 @@ string PointingPlan::str() const
 	const gputils::Array<T> &xpointing, \
 	bool debug) const; \
     template void PointingPlan::tod2map( \
+	gputils::Array<T> &map, \
+	const gputils::Array<T> &tod, \
+	const gputils::Array<T> &xpointing, \
+	bool debug) const; \
+    template void PointingPlan::tod2map3( \
 	gputils::Array<T> &map, \
 	const gputils::Array<T> &tod, \
 	const gputils::Array<T> &xpointing, \

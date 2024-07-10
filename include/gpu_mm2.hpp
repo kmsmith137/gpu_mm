@@ -176,6 +176,13 @@ struct PointingPlan
 		 const gputils::Array<T> &tod,
 		 const gputils::Array<T> &xpointing,
 		 bool debug = false) const;
+    
+    // All arrays must be on the GPU.
+    template<typename T>
+    void tod2map3(gputils::Array<T> &map,
+		 const gputils::Array<T> &tod,
+		 const gputils::Array<T> &xpointing,
+		 bool debug = false) const;
 
     
     // Used in unit tests.
@@ -193,16 +200,23 @@ struct PointingPlan
 
 // Bare-pointer interface to tod2map.
 // You probably want to call PointingPlan::map2tod(), not this function!
+
 template<typename T>
 extern void launch_map2tod2(T *tod, const T *map, const T *xpointing, const ulong *plan_mt,
 			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
 
 // Bare-pointer interface to tod2map.
 // You probably want to call PointingPlan::tod2map(), not this function!
+
 template<typename T>
 extern void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
 			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
 
+template<typename T>
+extern void launch_tod2map3(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
+			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
+
+// "Plan-free" SHTs (intended for testing)
 
 template<typename T>
 extern void launch_simple_map2tod(gputils::Array<T> &tod, const gputils::Array<T> &map, const gputils::Array<T> &xpointing);

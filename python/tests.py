@@ -169,7 +169,7 @@ class PointingInstance:
     def test_pointing_plan_iterator(self):
         plan_mt = self.plan.get_plan_mt()   # FIXME extra copy GPU -> CPU -> GPU
         nmt_per_threadblock = 32 * np.random.randint(1, 100)   # FIXME revisit
-        warps_per_threadblock = 1 << np.random.randint(2, 5)   # FIXME revisit
+        warps_per_threadblock = 4 * np.random.randint(1,5)     # FIXME revisit
         gpu_mm_pybind11.test_pointing_plan_iterator(plan_mt, nmt_per_threadblock, warps_per_threadblock)
         print('    test_pointing_plan_iterator: pass')
 
@@ -281,6 +281,18 @@ class PointingInstance:
             cp.cuda.runtime.deviceSynchronize()
             print(f'    time_tod2map: {time.time()-t0} seconds')
 
+            
+    def time_tod2map3(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        p = self.plan
+
+        for _ in range(10):
+            t0 = time.time()
+            p.tod2map3(m, tod, self.xpointing_gpu, debug=False)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_tod2map3: {time.time()-t0} seconds')
+
 
     def time_all(self):
         self.time_pointing_preplan()
@@ -289,3 +301,4 @@ class PointingInstance:
         self.time_map2tod()
         self.time_simple_tod2map()
         self.time_tod2map()
+        self.time_tod2map3()

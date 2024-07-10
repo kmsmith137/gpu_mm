@@ -29,8 +29,9 @@ __device__ void add_tqu(T *sp, int iy, int ix, int iy0_cell, int ix0_cell, T t, 
 
 
 template<typename T, int W, bool Debug>
-__global__ void tod2map2_kernel(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
-				uint nsamp, int nypix, int nxpix, uint nmt, uint nmt_per_block)
+__global__ void __launch_bounds__(32*W, 1)
+    tod2map2_kernel(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
+		    uint nsamp, int nypix, int nxpix, uint nmt, uint nmt_per_block)
 {
     static constexpr T one = 1;
     static constexpr T two = 2;

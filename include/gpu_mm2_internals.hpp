@@ -40,6 +40,11 @@ template<> struct dtype<double>
     static __device__ double *get_shmem() { extern __shared__ double shmem_d[]; return shmem_d; }
 };
 
+template<> struct dtype<int>
+{
+    static __device__ int *get_shmem() { extern __shared__ int shmem_i[]; return shmem_i; }
+};
+
 
 // -------------------------------------------------------------------------------------------------
 //

@@ -52,11 +52,11 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
         self.__str__()
 
-        self.tod2map(map, tod, xpointing_gpu, debug=False)
-           -> accumulates into output 'map' array
-
         self.map2tod(tod, map, xpointing_gpu, debug=False)
            -> overwrites output 'tod' array
+
+        self.tod2map(map, tod, xpointing_gpu, debug=False)
+           -> accumulates into output 'map' array
     """
     
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):

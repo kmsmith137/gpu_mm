@@ -100,6 +100,18 @@ __global__ void iterator2_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_blo
 }
 
 
+// Helper for test_plan_iterator2()
+template<int W>
+static void launch_iterator_test_kernel(const Array<ulong> &plan_mt, Array<int> &mt_counts, int nmt_per_block)
+{
+    int nmt = plan_mt.size;
+    int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
+    
+    iterator2_test_kernel<W> <<< nblocks, {32,W} >>>
+	(plan_mt.data, nmt, nmt_per_block, mt_counts.data);
+}
+
+
 void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock)
 {
     xassert(plan_mt.ndim == 1);
@@ -128,17 +140,14 @@ void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int wa
     
     // Launch kernel
     
-    int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
-    
     if (warps_per_threadblock == 4)
-	iterator2_test_kernel<4> <<< nblocks, {32,4} >>>
-	    (plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data);
+	launch_iterator_test_kernel<4> (plan_mt, mt_counts, nmt_per_block);
     else if (warps_per_threadblock == 8)
-	iterator2_test_kernel<8> <<< nblocks, {32,8} >>>
-	    (plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data);
+	launch_iterator_test_kernel<8> (plan_mt, mt_counts, nmt_per_block);
+    else if (warps_per_threadblock == 12)
+	launch_iterator_test_kernel<12> (plan_mt, mt_counts, nmt_per_block);
     else if (warps_per_threadblock == 16)
-	iterator2_test_kernel<16> <<< nblocks, {32,16} >>>
-	    (plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data);
+	launch_iterator_test_kernel<16> (plan_mt, mt_counts, nmt_per_block);
     else
 	throw runtime_error("test_plan_iterator2: unsupported value of warps_per_threadblock");
 
@@ -152,5 +161,6 @@ void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int wa
     for (long i = 0; i < nmt; i++)
 	xassert(mt_counts.data[i] == 1);
 }
+
 
 }  // namespace gpu_mm2

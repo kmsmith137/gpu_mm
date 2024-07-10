@@ -85,7 +85,8 @@ __device__ T eval_tqu(T *sp, int iy, int ix, int iy0_cell, int ix0_cell, T cos_2
 
 
 template<typename T, int W, bool Debug>
-__global__ void map2tod2_kernel(T *tod, const T *map, const T *xpointing, const ulong *plan_mt,
+__global__ void __launch_bounds__(32*W, 1)
+    map2tod2_kernel(T *tod, const T *map, const T *xpointing, const ulong *plan_mt,
 				uint nsamp, int nypix, int nxpix, uint nmt, uint nmt_per_block)
 {
     static constexpr T one = 1;
