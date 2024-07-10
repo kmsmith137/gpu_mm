@@ -289,8 +289,15 @@ extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbyt
 
 struct ReferencePointingPlan
 {
+    // Version of constructor which allocates temporary arrays.
     template<typename T>
     ReferencePointingPlan(const PointingPrePlan &pp, const gputils::Array<T> &xpointing_gpu);
+
+    // Version of constructor with externally allocated tmp array (intended for python)
+    template<typename T>
+    ReferencePointingPlan(const PointingPrePlan &pp,
+			  const gputils::Array<T> &xpointing_gpu,
+			  const gputils::Array<unsigned char> &tmp);    
 
     // Same meaning as in PointingPrePlan.
     long nsamp = 0;
@@ -316,6 +323,11 @@ struct ReferencePointingPlan
     void _add_tmp_cell(int iypix, int ixcpix);
 
     std::string str() const;
+
+    // Helpers for python constructor logic.
+    static long get_constructor_tmp_nbytes(const PointingPrePlan &pp);
+    static constexpr int warps_per_threadblock = 4;
+    static constexpr int nsamp_per_block = 1024;
 };
 
 

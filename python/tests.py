@@ -128,6 +128,15 @@ class PointingInstance:
     def reference_plan(self):
         return gpu_mm.ReferencePointingPlan(self.preplan, self.xpointing_gpu)
 
+    @functools.cached_property
+    def old_plan(self):
+        print('    Making OldPointingPlan (currently done on CPU and slow)')
+        t0 = time.time()
+        xpointing_cpu = cp.asnumpy(self.xpointing_gpu).reshape((3,1,self.nsamp))
+        plan = gpu_mm.OldPointingPlan(xpointing_cpu, self.nypix, self.nxpix)
+        print(f'    Plan creation time = {time.time()-t0} seconds')
+        return plan
+    
 
     def _compare_arrays(self, arr1, arr2):
         num = cp.sum(cp.abs(arr1-arr2))
@@ -193,9 +202,8 @@ class PointingInstance:
     def test_tod2map(self):
         tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
         
-        # FIXME use something nonzero
-        m1 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-        m2 = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        m1 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        m2 = cp.copy(m1)
 
         gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
@@ -207,6 +215,23 @@ class PointingInstance:
         print(f'    test_tod2map: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
 
+
+    def test_old_tod2map(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        
+        m1 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        m2 = cp.copy(m1)
+
+        gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        gpu_mm.gpu_tod2map(m2, tod.reshape(1,self.nsamp), self.xpointing_gpu.reshape((3,1,self.nsamp)), self.old_plan)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(m1, m2)
+        print(f'    test_old_tod2map: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+
         
     def test_all(self):
         self.test_pointing_preplan()
@@ -214,6 +239,7 @@ class PointingInstance:
         self.test_pointing_plan_iterator()
         self.test_map2tod()
         self.test_tod2map()
+        self.test_old_tod2map()
 
         
     def time_pointing_preplan(self):
@@ -294,6 +320,19 @@ class PointingInstance:
             print(f'    time_tod2map3: {time.time()-t0} seconds')
 
 
+    def time_old_tod2map(self):
+        xpointing_gpu = self.xpointing_gpu.reshape((3,1,self.nsamp))
+        tod = cp.random.normal(size=(1,self.nsamp), dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        p = self.old_plan
+
+        for _ in range(10):
+            t0 = time.time()
+            gpu_mm.gpu_tod2map(m, tod, xpointing_gpu, p)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_old_tod2map: {time.time()-t0} seconds')
+
+
     def time_all(self):
         self.time_pointing_preplan()
         self.time_pointing_plan()
@@ -301,4 +340,5 @@ class PointingInstance:
         self.time_map2tod()
         self.time_simple_tod2map()
         self.time_tod2map()
-        self.time_tod2map3()
+        # self.time_tod2map3()
+        self.time_old_tod2map()

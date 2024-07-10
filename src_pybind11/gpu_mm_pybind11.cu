@@ -182,8 +182,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     ;
         
     py::class_<ReferencePointingPlan>(m, "ReferencePointingPlan", reference_pointing_plan_docstring)
-	.def(py::init<const PointingPrePlan &, const Array<Tmm> &>(),
-	     py::arg("preplan"), py::arg("xpointing_gpu"))
+	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &>(),
+	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("tmp"))
 	
 	.def_readonly("nsamp", &ReferencePointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &ReferencePointingPlan::nypix, "Number of y-pixels")
@@ -196,6 +196,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nmt_cumsum", &ReferencePointingPlan::nmt_cumsum, "Length-nblocks array containing integer cumulative counts")
 	.def_readonly("sorted_mt", &ReferencePointingPlan::sorted_mt, "Length nmt_cumsum[-1], see PointingPlan docstring for 'mt' format")
 	     
+	.def_static("get_constructor_tmp_nbytes", &ReferencePointingPlan::get_constructor_tmp_nbytes, py::arg("preplan"))
+		    
 	.def("__str__", &ReferencePointingPlan::str)
     ;
 

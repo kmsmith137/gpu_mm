@@ -9,7 +9,7 @@ import numpy as np
 import cupy as cp
 
 from . import gpu_mm_pybind11
-from .gpu_mm_pybind11 import PointingPrePlan, ReferencePointingPlan
+from .gpu_mm_pybind11 import PointingPrePlan
 
 # Currently we wrap either float32 or float64, determined at compile time!
 # FIXME eventually, should wrap both.
@@ -61,9 +61,9 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
     
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):
         if buf is None:
-            buf = cp.empty(preplan.plan_nbytes, dtype=np.uint8)
+            buf = cp.empty(preplan.plan_nbytes, dtype=cp.uint8)
         if tmp_buf is None:
-            tmp_buf = cp.empty(preplan.plan_constructor_tmp_nbytes, dtype=np.uint8)
+            tmp_buf = cp.empty(preplan.plan_constructor_tmp_nbytes, dtype=cp.uint8)
 
         gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf)
 
@@ -105,31 +105,44 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
 
     @staticmethod
     def make_random(nsamp_max, noisy=True):
-        assert nsamp_max >= 16*1024
+        assert nsamp_max >= 64*1024
         npix_max = min(nsamp_max//128, 16384)
         nsamp = 32 * np.random.randint(nsamp_max//64, nsamp_max//32)
-        nypix = 64 * np.random.randint(npix_max//128, npix_max//64)
-        nxpix = 128 * np.random.randint(npix_max//256, npix_max//128)
+        nypix = 64 * np.random.randint(npix_max//512, npix_max//128)
+        nxpix = 128 * np.random.randint(nypix//128 + 2, npix_max//128)
         scan_speed = np.random.uniform(0.1, 0.5)
-        total_drift = np.random.uniform(0.1*nxpix, nxpix-2)
+        total_drift = np.random.uniform(0.1*(nxpix-nypix), (nxpix-nypix)-2)
         return ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
 
 
-# ReferencePointingPlan: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
-# or read docstrings in the python interpreter).
-#
-# class ReferencePointingPlan:
-#     self.__init__(xpointing_gpu, nypix, nxpix)
-#     self.nsamp
-#     self.nypix
-#     self.nxpix
-#     self.rk
-#     self.nblocks
-#     self.iypix
-#     self.ixpix
-#     self.nmt_cumsum
-#     self.sorted_mt
+class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
+    """
+    ReferencePointingPlan(preplan, xpointing_gpu).
 
+    Only used in unit tests.
+    Inherited from C++:
+
+      self.nsamp
+      self.nypix
+      self.nxpix
+      self.rk
+      self.nblocks
+
+      self.iypix         shape (nsamp,)
+      self.ixpix         shape (self.nsamp,)
+      self.nmt_cumsum    shape (self.nblocks,)
+      self.sorted_mt     shape (self.nmt,)
+    """
+
+    def __init__(self, preplan, xpointing_gpu):
+        assert isinstance(preplan, PointingPrePlan)
+        
+        tmp_nbytes = gpu_mm_pybind11.ReferencePointingPlan.get_constructor_tmp_nbytes(preplan)
+        tmp = cp.empty(tmp_nbytes, dtype=cp.uint8)
+        
+        gpu_mm_pybind11.ReferencePointingPlan.__init__(self, preplan, xpointing_gpu, tmp)
+        
+        
 
 ####################################################################################################
 
@@ -381,7 +394,7 @@ def gpu_tod2map(map_accum, tod_in, xpointing, plan):
     plan: instance of 'class PointingPlan', see below.
     """
 
-    assert isinstance(plan, PointingPlan)
+    assert isinstance(plan, OldPointingPlan)
     check_tmx_args('gpu_tod2map()', tod_in, map_accum, xpointing, gpu=True)
 
     # Check consistency between plan and tod/map args

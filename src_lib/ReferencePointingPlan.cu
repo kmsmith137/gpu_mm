@@ -58,7 +58,7 @@ __global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint
 
 
 template<typename T>
-ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu)
+ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu, const Array<unsigned char> &tmp)
 {
     this->nsamp = pp.nsamp;
     this->nypix = pp.nypix;
@@ -69,28 +69,35 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     check_xpointing(xpointing_gpu, pp.nsamp, "ReferencePointingPlan constructor", true);   // on_gpu=true
 
     // ---------------------------------------------------------------------------------------------
-    
-    uint nsamp_per_block = 1024;
-    uint warps_per_threadblock = 4;
+
+    // Note: 'warps_per_threadblock' and 'nsamp_per_block' are static members of ReferencePointingPlan.
     uint quantize_nblocks = uint(nsamp + nsamp_per_block - 1) / nsamp_per_block;
     uint nerr = quantize_nblocks * warps_per_threadblock;
-
-    this->iypix_arr = Array<int> ({nsamp}, af_gpu);
-    this->ixpix_arr = Array<int> ({nsamp}, af_gpu);
-    Array<uint> errp = Array<uint> ({nerr}, af_gpu);
     
+    long min_nbytes = (2*nsamp + nerr) * sizeof(int);
+    check_buffer(tmp, min_nbytes, "ReferencePointingPlan constructor", "tmp");
+
+    int *iypix_gpu = (int *) tmp.data;
+    int *ixpix_gpu = (int *) (iypix_gpu + nsamp);
+    uint *err_gpu = (uint*) (ixpix_gpu + nsamp);
+    
+    this->iypix_arr = Array<int> ({nsamp}, af_rhost);
+    this->ixpix_arr = Array<int> ({nsamp}, af_rhost);
+    Array<uint> err_arr = Array<uint> ({nerr}, af_rhost);
+
     quantize_kernel <<< quantize_nblocks, 32*warps_per_threadblock >>>
-	(iypix_arr.data, ixpix_arr.data, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, errp.data);
+	(iypix_gpu, ixpix_gpu, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, err_gpu);
 
     CUDA_PEEK("quantize_kernel launch");
-
-    this->iypix_arr = iypix_arr.to_host();
-    this->ixpix_arr = ixpix_arr.to_host();
-    errp = errp.to_host();
+    CUDA_CALL(cudaDeviceSynchronize());
+    
+    CUDA_CALL(cudaMemcpy(iypix_arr.data, iypix_gpu, nsamp * sizeof(int), cudaMemcpyDefault));
+    CUDA_CALL(cudaMemcpy(ixpix_arr.data, ixpix_gpu, nsamp * sizeof(int), cudaMemcpyDefault));
+    CUDA_CALL(cudaMemcpy(err_arr.data, err_gpu, nerr * sizeof(uint), cudaMemcpyDefault));
 
     uint err = 0;
     for (uint b = 0; b < nerr; b++)
-	err |= errp.data[b];
+	err |= err_arr.data[b];
 
     check_err(err, "ReferencePointingPlan constructor (quantize_kernel)");
 
@@ -137,6 +144,24 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
 }
 
 
+template<typename T>
+ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu) :
+    // Delegate to externally-allocated version of constructor
+    ReferencePointingPlan(pp, xpointing_gpu, Array<unsigned char> ({get_constructor_tmp_nbytes(pp)}, af_gpu))
+{ }
+
+
+// Static member function.
+long ReferencePointingPlan::get_constructor_tmp_nbytes(const PointingPrePlan &pp)
+{
+    // Note: 'warps_per_threadblock' and 'nsamp_per_block' are static members of ReferencePointingPlan.
+    uint quantize_nblocks = uint(pp.nsamp + nsamp_per_block - 1) / nsamp_per_block;
+    uint nerr = quantize_nblocks * warps_per_threadblock;
+    return (2*pp.nsamp + nerr) * sizeof(int);
+}
+
+
+// Helper for constructor.
 void ReferencePointingPlan::_add_tmp_cell(int iypix, int ixpix)
 {
     xassert((iypix >= 0) && (iypix < nypix));
@@ -168,7 +193,8 @@ string ReferencePointingPlan::str() const
 
 
 #define INSTANTIATE(T) \
-    template ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu)
+    template ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu); \
+    template ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu, const Array<unsigned char> &tmp)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

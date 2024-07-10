@@ -137,9 +137,9 @@ if __name__ == '__main__':
     gpu_mm.reference_tod2map(map_cpu, tod_cpu, xpointing_cpu)
     print(f'{np.sum(map_cpu)=}')
 
-    print('\nMaking PointingPlan (currently done on CPU and slow)')
+    print('\nMaking OldPointingPlan (currently done on CPU and slow)')
     t0 = time.time()
-    plan = gpu_mm.PointingPlan(xpointing_cpu, ndec, nra)
+    plan = gpu_mm.OldPointingPlan(xpointing_cpu, ndec, nra)
     print(f'Plan creation time = {time.time()-t0} seconds')
 
     tod_gpu = cp.asarray(tod_cpu)   # copy input CPU -> GPU
