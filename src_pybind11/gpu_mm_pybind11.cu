@@ -137,9 +137,18 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     {
 	gpu_mm2::launch_simple_tod2map(map, tod, xpointing);
     };
+    
+    // Select template specialization T=Tmm
+    auto _simple_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing)
+    {
+	gpu_mm2::launch_simple_map2tod(tod, map, xpointing);
+    };
 
     m.def("simple_tod2map", _simple_tod2map,
 	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
+    
+    m.def("simple_map2tod", _simple_map2tod,
+	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),

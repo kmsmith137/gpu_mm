@@ -191,8 +191,11 @@ extern void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulon
 
 
 template<typename T>
+extern void launch_simple_map2tod(gputils::Array<T> &tod, const gputils::Array<T> &map, const gputils::Array<T> &xpointing);
+
+template<typename T>
 extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
-    
+
 
 template<typename T>
 struct ToyPointing

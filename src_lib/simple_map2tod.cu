@@ -13,21 +13,18 @@ namespace gpu_mm2 {
 }   // pacify editor auto-indent
 #endif
 
-
 // -------------------------------------------------------------------------------------------------
 
 
 template<typename T>
-__device__ void add_tqu(T *map, int npix, T t, T q, T u, T w)
+__device__ T eval_map(const T *map, int npix, T cos_2a, T sin_2a)
 {
-    atomicAdd(map, w*t);
-    atomicAdd(map + npix, w*q);
-    atomicAdd(map + 2*npix, w*u);
+    return map[0] + (cos_2a * map[npix]) + (sin_2a * map[2*npix]);
 }
 
 
 template<typename T>
-__global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, uint nsamp, int nypix, int nxpix, uint nsamp_per_block)
+__global__ void simple_map2tod_kernel(T *tod, const T *map, const T *xpointing, uint nsamp, int nypix, int nxpix, uint nsamp_per_block)
 {
     static constexpr T one = 1;
     static constexpr T two = 2;
@@ -40,7 +37,6 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 	T alpha = xpointing[s + 2*nsamp];
-	T t = tod[s];
 
 	// FIXME add 'status' argument, and calls to range_check_{xpix,ypix}().
 	normalize_xpix(xpix, nxpix);   // defined in gpu_mm2_internals.hpp
@@ -51,42 +47,42 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 
 	T dy = ypix - iy0;
 	T dx = xpix - ix0;
-	
-	T q, u;	
-	dtype<T>::xsincos(two*alpha, &u, &q);
-	q *= t;
-	u *= t;
 
-	add_tqu(map + iy0*nxpix + ix0, npix, t, q, u, (one-dy) * (one-dx));
-	add_tqu(map + iy0*nxpix + ix1, npix, t, q, u, (one-dy) * (dx));
-	add_tqu(map + iy1*nxpix + ix0, npix, t, q, u, (dy) * (one-dx));
-	add_tqu(map + iy1*nxpix + ix1, npix, t, q, u, (dy) * (dx));
+	T cos_2a, sin_2a;
+	dtype<T>::xsincos(two*alpha, &sin_2a, &cos_2a);
+
+	T t = eval_map(map + iy0*nxpix + ix0, npix, cos_2a, sin_2a) * (one-dy) * (one-dx);
+	t += eval_map(map + iy0*nxpix + ix1, npix, cos_2a, sin_2a) * (one-dy) * (dx);
+	t += eval_map(map + iy1*nxpix + ix0, npix, cos_2a, sin_2a) * (dy) * (one-dx);
+	t += eval_map(map + iy1*nxpix + ix1, npix, cos_2a, sin_2a) * (dy) * (dx);
+
+	tod[s] = t;
     }
 }
 
 
 template<typename T>
-void launch_simple_tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing)
+void launch_simple_map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &xpointing)
 {
     long nsamp, nypix, nxpix;
     
-    check_map_and_init_npix(map, nypix, nxpix, "launch_simple_tod2map", true);  // on_gpu=true
-    check_tod_and_init_nsamp(tod, nsamp, "launch_simple_tod2map", true);        // on_gpu=true
-    check_xpointing(xpointing, nsamp, "launch_simple_tod2map", true);           // on_gpu=true
+    check_map_and_init_npix(map, nypix, nxpix, "launch_simple_map2tod", true);  // on_gpu=true
+    check_tod_and_init_nsamp(tod, nsamp, "launch_simple_map2tod", true);        // on_gpu=true
+    check_xpointing(xpointing, nsamp, "launch_simple_map2tod", true);           // on_gpu=true
 
     int nthreads_per_block = 128;
     int nsamp_per_block = 1024;
     int nblocks = (nsamp + nsamp_per_block - 1) / nsamp_per_block;
     
-    simple_tod2map_kernel <<< nblocks, nthreads_per_block >>>
-	(map.data, tod.data, xpointing.data, nsamp, nypix, nxpix, nsamp_per_block);
+    simple_map2tod_kernel <<< nblocks, nthreads_per_block >>>
+	(tod.data, map.data, xpointing.data, nsamp, nypix, nxpix, nsamp_per_block);
 
-    CUDA_PEEK("simple_tod2map kernel launch");
+    CUDA_PEEK("simple_map2tod kernel launch");
 }
 
 
 #define INSTANTIATE(T) \
-    template void launch_simple_tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing)
+    template void launch_simple_map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &xpointing)
 
 INSTANTIATE(float);
 INSTANTIATE(double);
