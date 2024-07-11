@@ -118,7 +118,6 @@ void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int wa
     xassert(plan_mt.is_fully_contiguous());
     xassert(plan_mt.size > 0);
     xassert(nmt_per_block > 0);
-    xassert((nmt_per_block % 32) == 0);
 
     Array<ulong> plan_mt_cpu = plan_mt.to_host();
     Array<ulong> plan_mt_gpu = plan_mt.to_gpu();

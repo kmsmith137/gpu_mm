@@ -28,13 +28,16 @@ extern void test_plan_iterator2(const gputils::Array<ulong> &plan_mt, uint nmt_p
 //    }
 
 
+// The "irregular" PlanIterator allows each threadblock to use an arbitrary [imt_start, imt_end).
+// (This was temporarily useful during code development, but not sure if it has long-term usefulness.)
+// You probably want 'struct PlanIterator2' instead (see below).
+
 template<int W, bool Debug>
-struct PlanIterator2
+struct PlanIteratorIrregular
 {
     // Initialized in constructor, constant after construction.
     const ulong *plan_mt;
     uint imt_end;          // not necessarily multiple of 32
-    // int nbatch;
 
     // Ring buffer state.
     ulong mt_rb;           // warp holds plan_mt[imt_rb:imt_rb+32).
@@ -54,35 +57,26 @@ struct PlanIterator2
     //   _load_mt_rb()            Called whenever 'imt_rb' changes. Updates 'mt_rb'.
     //   _init_next_cell_state()  Called whenever 'mt_rb' or 'icell' changes. Updates 'next_cell_*'.
 
-    __device__ PlanIterator2(const ulong *plan_mt_, int nmt, int nmt_per_block)
+    __device__ PlanIteratorIrregular(const ulong *plan_mt_, uint imt_start, uint imt_end_)
     {
 	if constexpr (Debug) {
-	    assert(nmt_per_block > 0);
-	    assert((nmt_per_block & 31) == 0);	
-	    assert((gridDim.x-1) * nmt_per_block < nmt);
-	    assert((gridDim.x) * nmt_per_block >= nmt);
+	    assert(imt_start <= imt_end_);
 	    assert(blockDim.x == 32);
 	    assert(blockDim.y == W);
-	    // assert(nbatch_ > 0);
-	    // assert(nbatch_ <= 32);
-	    // assert((nbatch_ & (nbatch_-1)) == 0);
 	}
-
-	uint b = blockIdx.x;
 
 	// Initialized in constructor, constant after construction.
 	this->plan_mt = plan_mt_;
-	this->imt_end = min(nmt, (b+1)*nmt_per_block);
-	// this->nbatch = nbatch_;
+	this->imt_end = imt_end_;
 
 	// Ring buffer state.
-	this->imt_rb = b * nmt_per_block;
+	this->imt_rb = imt_start & ~31U;
 	this->_load_mt_rb();
 
 	// Sentinel initializations, to ensure that get_cell() does the right thing.
-	this->next_cell_start = imt_rb;
+	this->next_cell_start = imt_start;
 	this->next_cell_seen = true;
-	this->imt_next = imt_rb;
+	this->imt_next = imt_start;
     }
 
     
@@ -180,6 +174,24 @@ struct PlanIterator2
 };
 
 
+template<int W, bool Debug>
+struct PlanIterator2 : public PlanIteratorIrregular<W,Debug>
+{
+    __device__ PlanIterator2(const ulong *plan_mt_, uint nmt, uint nmt_per_block)
+	: PlanIteratorIrregular<W,Debug> (
+	      plan_mt_,
+	      blockIdx.x * nmt_per_block,                // imt_start
+	      min(nmt, (blockIdx.x+1) * nmt_per_block))  // imt_end
+    {
+	if constexpr (Debug) {
+	    assert(nmt_per_block > 0);
+	    assert((gridDim.x-1) * nmt_per_block < nmt);
+	    assert((gridDim.x) * nmt_per_block >= nmt);
+	}
+    }
+};
+
+    
 }  // namespace gpu_mm2
 
 #endif  // _GPU_MM2_PLAN_ITERATOR2_HPP
