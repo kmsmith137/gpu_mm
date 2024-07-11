@@ -91,9 +91,8 @@ tod2map4_kernel(
 	// Value of 'cltod' is the same on each thread.
 	int cltod = __shfl_sync(ALL_LANES, cltod_rb, icl & 31);
 
-	// By convention, negative cltods are allowed, but ignored.
-	if (cltod < 0)
-	    continue;
+	if constexpr (Debug)
+	    assert(cltod >= 0);
 
 	long s = (long(cltod) << 5) + laneId;
 	float x = tod[s];
