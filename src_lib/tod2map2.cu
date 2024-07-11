@@ -132,7 +132,7 @@ void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan
     
     xassert(nmt > 0);
     xassert(nmt_per_block > 0);
-    xassert((nmt_per_block % 32) == 0);
+    xassert((nmt_per_block % 32) == 0);   // Not necessary, but failure probably indicates a bug
 
     int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
     int shmem_nbytes = 3 * 64 * 64 * sizeof(T);

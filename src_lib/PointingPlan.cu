@@ -226,7 +226,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     check_buffer(tmp_buf, preplan.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
     check_xpointing(xpointing_gpu, preplan.nsamp, "PointingPlan constructor", true);   // on_gpu=true
     
-    long mt_nbytes = align128(pp.plan_nmt * sizeof(ulong));
+    long mt_nbytes = align128(preplan.plan_nmt * sizeof(ulong));
     size_t cub_nbytes = pp.cub_nbytes;
     
     this->plan_mt = (ulong *) (buf.data);
@@ -291,12 +291,9 @@ void PointingPlan::map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &x
     check_tod(tod, nsamp, "PointingPlan::map2tod", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::map2tod", true);     // on_gpu=true
 
-    // FIXME revisit?
-    int nmt_per_block = 1 << pp.rk;
-    
     launch_map2tod2(tod.data, map.data, xpointing.data, this->plan_mt,
 		    this->nsamp, this->nypix, this->nxpix,
-		    this->pp.plan_nmt, nmt_per_block, debug);
+		    this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
 }
 
 
@@ -306,13 +303,10 @@ void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &x
     check_map(map, nypix, nxpix, "PointingPlan::tod2map", true);          // on_gpu=true
     check_tod(tod, nsamp, "PointingPlan::tod2map", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::tod2map", true);     // on_gpu=true
-
-    // FIXME revisit?
-    int nmt_per_block = 1 << pp.rk;
     
     launch_tod2map2(map.data, tod.data, xpointing.data, this->plan_mt,
 		    this->nsamp, this->nypix, this->nxpix,
-		    this->pp.plan_nmt, nmt_per_block, debug);
+		    this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
 }
 
 
@@ -322,13 +316,10 @@ void PointingPlan::tod2map3(Array<T> &map, const Array<T> &tod, const Array<T> &
     check_map(map, nypix, nxpix, "PointingPlan::tod2map3", true);          // on_gpu=true
     check_tod(tod, nsamp, "PointingPlan::tod2map3", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::tod2map3", true);     // on_gpu=true
-
-    // FIXME revisit?
-    int nmt_per_block = 1 << pp.rk;
     
     launch_tod2map3(map.data, tod.data, xpointing.data, this->plan_mt,
 		    this->nsamp, this->nypix, this->nxpix,
-		    this->pp.plan_nmt, nmt_per_block, debug);
+		    this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
 }
 
 

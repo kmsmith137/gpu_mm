@@ -182,7 +182,7 @@ void launch_map2tod2(T *tod, const T *map, const T *xpointing, const ulong *plan
     
     xassert(nmt > 0);
     xassert(nmt_per_block > 0);
-    xassert((nmt_per_block % 32) == 0);
+    xassert((nmt_per_block % 32) == 0);  // Not necessary, but failure probably indicates a bug
     
     launch_pre_map2tod(tod, plan_mt, nmt);
     

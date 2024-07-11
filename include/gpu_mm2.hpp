@@ -113,6 +113,10 @@ struct PointingPrePlan
     long plan_nmt = 0;      // total number of mt-pairs in plan
     size_t cub_nbytes = 0;  // number of bytes used in cub radix sort 'd_temp_storage'
 
+    // Used when launching pointing (tod2map/map2tod) operations.
+    long nmt_per_threadblock = 0;
+    long pointing_nblocks = 0;
+
     // Cumulative count of mt-pairs per threadblock.
     // 1-d array of length nblocks, in GPU memory.
     // FIXME should be able to swap between host/GPU memory.
@@ -134,7 +138,7 @@ struct PointingPlan
     const long nsamp;
     const long nypix;
     const long nxpix;
-    
+
     const PointingPrePlan pp;
 
     // Reminder: mt bit layout is
@@ -230,7 +234,7 @@ extern void launch_tod2map4(
     const gputils::Array<float> &tod,            // Shape (nsamp,)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
     const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
+    int nmt_per_block
 );
 
 

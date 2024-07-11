@@ -4,6 +4,7 @@
 #include "../include/gpu_mm2.hpp"
 #include "../include/PlanIterator2.hpp"
 
+using namespace std;
 using namespace gputils;
 
 namespace gpu_mm2 {
@@ -37,45 +38,25 @@ tod2map4_kernel(
     const float *tod,                        // Shape (nsamp,)
     const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
     const ulong *plan_mt,                    // See long comment above. Shape (plan_ncltod,)
-    const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
     long nsamp,                              // Number of TOD samples (= detectors * times)
     int nypix,                               // Length of map declination axis
-    int nxpix)                               // Length of map RA axis
+    int nxpix,                               // Length of map RA axis
+    uint nmt,
+    uint nmt_per_block)
 {
     __shared__ float shmem[3*64*64];
-
-    if constexpr (Debug) {
-	assert(blockDim.x == 32);
-	assert(blockDim.y == W);
-    }
     
     // Threadblock has shape (32,W), so threadIdx.x is the laneId, and threadIdx.y is the warpId.
     const uint laneId = threadIdx.x;
     const uint warpId = threadIdx.y;
-    
-    // Read quadruple for this block.
-    // (After this, we don't need the 'plan_quadruples' pointer any more.)
-    
-    plan_quadruples += 4 * blockIdx.x;
-    int cell_idec = plan_quadruples[0];  // divisible by 64
-    int cell_ira = plan_quadruples[1];   // divisible by 64
-    int icl_start = plan_quadruples[2];
-    int icl_end = plan_quadruples[3];
 
-    PlanIteratorIrregular<W,Debug> iterator(plan_mt, icl_start, icl_end);
-    int cell_count = 0;
+    PlanIterator2<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
 
     while (iterator.get_cell()) {
-	cell_count++;
+	uint icell = iterator.icell;
+	int iy0_cell = (icell >> 10) << 6;
+	int ix0_cell = (icell & ((1<<10) - 1)) << 6;
 	
-	if constexpr (Debug) {
-	    uint icell = iterator.icell;
-	    uint iy0_cell = (icell >> 10) << 6;
-	    uint ix0_cell = (icell & ((1<<10) - 1)) << 6;
-	    assert(iy0_cell == cell_idec);
-	    assert(ix0_cell == cell_ira);
-	}
-    
 	// Zero shared memmory
 	for (int s = 32*warpId + laneId; s < 3*64*64; s += 32*W)
 	    shmem[s] = 0;
@@ -107,10 +88,10 @@ tod2map4_kernel(
 		assert(ira < nxpix-1);
 	    }
 	    
-	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
-	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
-	    update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
-	    update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
+	    update_shmem(shmem, idec,   ira,   iy0_cell, ix0_cell, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
+	    update_shmem(shmem, idec,   ira+1, iy0_cell, ix0_cell, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
+	    update_shmem(shmem, idec+1, ira,   iy0_cell, ix0_cell, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
+	    update_shmem(shmem, idec+1, ira+1, iy0_cell, ix0_cell, cos_2a, sin_2a, x * (ddec) * (dra));	    
 	}
     
 	__syncthreads();
@@ -120,7 +101,7 @@ tod2map4_kernel(
 	for (int y = warpId; y < 64; y += W) {
 	    for (int x = laneId; x < 64; x += 32) {
 		int ss = 64*y + x;                            // shared memory offset
-		int sg = (cell_idec+y)*nxpix + (cell_ira+x);  // global memory offset
+		int sg = (iy0_cell+y)*nxpix + (ix0_cell+x);  // global memory offset
 		
 		float t = shmem[ss];
 		if (!__reduce_or_sync(ALL_LANES, t != 0))
@@ -134,8 +115,6 @@ tod2map4_kernel(
 
 	__syncthreads();
     }
-
-    if constexpr (Debug) assert(cell_count == 1);
 }
 
 
@@ -143,8 +122,8 @@ void launch_tod2map4(
     gputils::Array<float> &map,                  // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (nsamp,)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
+    const gputils::Array<ulong> &plan_mt,        // Shape (plan_nmt,)
+    int nmt_per_block)
 {
     static constexpr int W = 16;
     static constexpr bool Debug = false;
@@ -158,14 +137,12 @@ void launch_tod2map4(
     xassert(plan_mt.ndim == 1);
     xassert(plan_mt.is_fully_contiguous());
 
-    xassert(plan_quadruples.ndim == 2);
-    xassert(plan_quadruples.shape[1] == 4);
-    xassert(plan_quadruples.is_fully_contiguous());
-    
-    int nblocks = plan_quadruples.shape[0];
+    int nmt = plan_mt.size;
+    int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
+    // cout << "XXX nmt_per_block=" << nmt_per_block << ", nblocks=" << nblocks << endl;
     
     tod2map4_kernel<W,Debug> <<< nblocks, {32,W} >>>
-	(map.data, tod.data, xpointing.data, plan_mt.data, plan_quadruples.data, nsamp, nypix, nxpix);
+	(map.data, tod.data, xpointing.data, plan_mt.data, nsamp, nypix, nxpix, nmt, nmt_per_block);
     
     CUDA_PEEK("tod2map4_kernel");
 }

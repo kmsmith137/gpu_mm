@@ -165,7 +165,13 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     
     this->plan_nbytes = mt_nbytes + err_nbytes;
     this->plan_constructor_tmp_nbytes = mt_nbytes + align128(cub_nbytes);
-    // Forthcoming: plan_map2tod_tmp_nbytes
+
+    // Used when launching pointing (tod2map/map2tod) operations.
+    this->nmt_per_threadblock = sqrt(plan_nmt);
+    this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
+    this->pointing_nblocks = (plan_nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
+
+    cout << "    XXX nmt_per_threadblock=" << nmt_per_threadblock << ", pointing_nblocks=" << pointing_nblocks << endl;
 }
 
 
@@ -181,6 +187,8 @@ string PointingPrePlan::str() const
        << ", tmp_nbytes=" << plan_constructor_tmp_nbytes << " (" << nbytes_to_str(plan_constructor_tmp_nbytes) << ")"
        << ", ntt=" << plan_ntt << ", nmt=" << plan_nmt << ", ratio=" << ratio
        << ", rk=" << rk << ", nblocks=" << nblocks
+       << ", nmt_per_threadblock=" << nmt_per_threadblock
+       << ", pointing_nblocks=" << pointing_nblocks
        << ")";
 
     return ss.str();

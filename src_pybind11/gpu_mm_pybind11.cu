@@ -104,6 +104,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nblocks", &PointingPrePlan::nblocks, "Number of threadblocks")
 	.def_readonly("plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
 	.def_readonly("cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
+	.def_readonly("nmt_per_threadblock", &PointingPrePlan::nmt_per_threadblock, "Used in pointing operations (map2tod/tod2map)")
+	.def_readonly("pointing_nblocks", &PointingPrePlan::pointing_nblocks, "Used in pointing operations (map2tod/tod2map)")
 
 	// FIXME temporary hack, used in tests.test_pointing_preplan().
 	// To be replaced later by systematic API for shuffling between GPU/CPU.
@@ -169,7 +171,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
 
     m.def("tod2map4", gpu_mm2::launch_tod2map4,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_mt"), py::arg("nmt_per_block"));
 	  
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
