@@ -1,6 +1,8 @@
 #include <cassert>
 #include <gputils/cuda_utils.hpp>
+
 #include "../include/gpu_mm2.hpp"
+#include "../include/PlanIterator2.hpp"
 
 using namespace gputils;
 
@@ -8,8 +10,6 @@ namespace gpu_mm2 {
 #if 0
 }   // pacify editor auto-indent
 #endif
-
-static constexpr uint ALL_LANES = 0xffffffffU;
 
 
 // Helper function called by tod2map_kernel()
@@ -62,37 +62,27 @@ tod2map4_kernel(
     int icl_start = plan_quadruples[2];
     int icl_end = plan_quadruples[3];
 
+    PlanIteratorIrregular<W,Debug> iterator(plan_mt, icl_start, icl_end);
+    bool ret = iterator.get_cell();
+
+    if constexpr (Debug) {
+	assert(ret);
+	uint icell = iterator.icell;
+	uint iy0_cell = (icell >> 10) << 6;
+	uint ix0_cell = (icell & ((1<<10) - 1)) << 6;
+	assert(iy0_cell == cell_idec);
+	assert(ix0_cell == cell_ira);
+    }	
+    
     // Zero shared memmory
     for (int s = 32*warpId + laneId; s < 3*64*64; s += 32*W)
 	shmem[s] = 0;
     
     __syncthreads();
 
-    int cltod_rb = 0;
-    int icl_rb = -1;
-    
-    for (int icl = icl_start + warpId; icl < icl_end; icl += W) {
-	int icl_base = icl & ~31;
-	
-	if (icl_rb != icl_base) {
-	    icl_rb = icl_base;
-	    ulong mt = plan_mt[icl_rb + laneId];
-	    cltod_rb = int(mt >> 20);
-
-	    if constexpr (Debug) {
-		bool valid = ((icl_rb + laneId >= icl_start) && (icl_rb + laneId < icl_end));
-		uint iy0_cell = ((mt >> 10) & ((1<<10) - 1)) << 6;
-		uint ix0_cell = (mt & ((1<<10) - 1)) << 6;
-		assert(!valid || (iy0_cell == cell_idec));
-	        assert(!valid || (ix0_cell == cell_ira));
-	    }
-	}
-	
+    while (iterator.get_cl()) {
 	// Value of 'cltod' is the same on each thread.
-	int cltod = __shfl_sync(ALL_LANES, cltod_rb, icl & 31);
-
-	if constexpr (Debug)
-	    assert(cltod >= 0);
+	int cltod = iterator.icl;
 
 	long s = (long(cltod) << 5) + laneId;
 	float x = tod[s];
@@ -107,11 +97,13 @@ tod2map4_kernel(
 	int ira = int(px_ra);
 	float ddec = px_dec - float(idec);
 	float dra = px_ra - float(ira);
-	
-	// assert(idec >= 0);
-	// assert(idec < nypix-1);
-	// assert(ira >= 0);
-	// assert(ira < nxpix-1);	    
+
+	if (Debug) {
+	    assert(idec >= 0);
+	    assert(idec < nypix-1);
+	    assert(ira >= 0);
+	    assert(ira < nxpix-1);
+	}
 	
 	update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
 	update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
@@ -119,6 +111,8 @@ tod2map4_kernel(
 	update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
     }
 
+    ret = iterator.get_cell();
+    if constexpr (Debug) assert(!ret);
     
     __syncthreads();
 	
