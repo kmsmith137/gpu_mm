@@ -35,7 +35,7 @@ __global__ void tod2map4_kernel(
     float *map,                              // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
     const float *tod,                        // Shape (nsamp,)
     const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const int *plan_cltod_list,              // See long comment above. Shape (plan_ncltod,)
+    const ulong *plan_mt,                    // See long comment above. Shape (plan_ncltod,)
     const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
     long nsamp,                              // Number of TOD samples (= detectors * times)
     int nypix,                                // Length of map declination axis
@@ -55,13 +55,6 @@ __global__ void tod2map4_kernel(
     int cell_ira = plan_quadruples[1];   // divisible by 64
     int icl_start = plan_quadruples[2];
     int icl_end = plan_quadruples[3];
-
-    // Shift values of (plan_cltod_list, icl_start, icl_end), so that 0 <= icl_start < 32.
-    // The values of (icl_start, icl_end) are the same on all threads.
-    int icl_sbase = icl_start & ~31;
-    plan_cltod_list += icl_sbase;
-    icl_start -= icl_sbase;
-    icl_end -= icl_sbase;
 
     // Shift map pointer to per-thread (not per-block) base location
     const int idec_base = cell_idec + (threadIdx.x >> 6);
@@ -94,7 +87,14 @@ __global__ void tod2map4_kernel(
 	
 	if (icl_rb != icl_base) {
 	    icl_rb = icl_base;
-	    cltod_rb = plan_cltod_list[icl_rb + laneId];
+	    ulong mt = plan_mt[icl_rb + laneId];
+	    cltod_rb = int(mt >> 20);
+
+	    // bool valid = ((icl_rb + laneId >= icl_start) && (icl_rb + laneId < icl_end));
+	    // uint iy0_cell = ((mt >> 10) & ((1<<10) - 1)) << 6;
+	    // uint ix0_cell = (mt & ((1<<10) - 1)) << 6;
+	    // assert(!valid || (iy0_cell == cell_idec));
+	    // assert(!valid || (ix0_cell == cell_ira));
 	}
 	
 	// Value of 'cltod' is the same on each thread.
@@ -151,7 +151,7 @@ void launch_tod2map4(
     gputils::Array<float> &map,                  // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (nsamp,)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
     const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
     long nsamp, nypix, nxpix;
@@ -160,8 +160,8 @@ void launch_tod2map4(
     check_map_and_init_npix(map, nypix, nxpix, "launch_tod2map4", true);  // on_gpu=true
     check_xpointing(xpointing, nsamp, "launch_tod2map4", true);           // on_gpu
     
-    xassert(plan_cltod_list.ndim == 1);
-    xassert(plan_cltod_list.is_fully_contiguous());
+    xassert(plan_mt.ndim == 1);
+    xassert(plan_mt.is_fully_contiguous());
 
     xassert(plan_quadruples.ndim == 2);
     xassert(plan_quadruples.shape[1] == 4);
@@ -170,7 +170,7 @@ void launch_tod2map4(
     int nblocks = plan_quadruples.shape[0];
     
     tod2map4_kernel<<< nblocks, 512 >>>
-	(map.data, tod.data, xpointing.data, plan_cltod_list.data, plan_quadruples.data, nsamp, nypix, nxpix);
+	(map.data, tod.data, xpointing.data, plan_mt.data, plan_quadruples.data, nsamp, nypix, nxpix);
     
     CUDA_PEEK("tod2map4_kernel");
 }

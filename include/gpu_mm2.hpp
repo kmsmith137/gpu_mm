@@ -229,7 +229,7 @@ extern void launch_tod2map4(
     gputils::Array<float> &map,                  // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (nsamp,)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
     const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
 );
 

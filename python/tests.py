@@ -242,7 +242,7 @@ class PointingInstance:
         gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
 
-        gpu_mm_pybind11.tod2map4(m2, tod, self.xpointing_gpu, self.old_plan.cltod_list, self.old_plan.quadruples)
+        gpu_mm_pybind11.tod2map4(m2, tod, self.xpointing_gpu, self.old_plan.mt, self.old_plan.quadruples)
         cp.cuda.runtime.deviceSynchronize()
         
         epsilon = self._compare_arrays(m1, m2)
@@ -345,7 +345,7 @@ class PointingInstance:
 
         for _ in range(10):
             t0 = time.time()
-            gpu_mm_pybind11.tod2map4(m, tod, self.xpointing_gpu, p.cltod_list, p.quadruples)
+            gpu_mm_pybind11.tod2map4(m, tod, self.xpointing_gpu, p.mt, p.quadruples)
             cp.cuda.runtime.deviceSynchronize()
             print(f'    time_tod2map4: {time.time()-t0} seconds')
 

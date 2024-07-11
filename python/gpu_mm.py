@@ -474,10 +474,33 @@ class OldPointingPlan:
         # _construct_cpu_plan2(plan_cltod_list, plan_quadruples, cookie, ncl_inflated, num_quadruples)
         _construct_cpu_plan2(self.cltod_list.ctypes.data, self.quadruples.ctypes.data, cookie, self.ncl_inflated, self.num_quadruples)
 
+        # FIXME self.mt is a temporary hack
+        icl0 = 0
+        self.mt = np.array(self.cltod_list, dtype=np.uint64) << 20
+        for cell_idec, cell_ira, icl_start, icl_end in self.quadruples:
+            assert icl_start == icl0
+            assert icl_start <= icl_end
+            icell = (cell_ira >> 6) | ((cell_idec >> 6) << 10)
+            icell = np.asarray(icell, dtype=np.uint64)
+            self.mt[icl_start:icl_end] += icell
+            icl0 = icl_end
+        
+        self.mt = cp.asarray(self.mt)
+
         self.cltod_list = cp.asarray(self.cltod_list)   # copy CPU -> GPU
         self.quadruples = cp.asarray(self.quadruples)   # copy CPU -> GPU
         self.ndec = ndec
         self.nra = nra
+
+        # quadruples[:,0] = cell_idec (divisible by 64)
+        # quadruples[:,1] = cell_ira (divisible by 64)
+        # quadruples[:,2] = icl_start
+        # quadruples[:,3] = icl_end
+
+        # Low 10 bits = Global xcell index
+        # Next 10 bits = Global ycell index
+        # Next 26 bits = Primary TOD cache line index
+
 
 # Cuts
 def insert_ranges(tod, junk, offs, dets, starts, lens):
