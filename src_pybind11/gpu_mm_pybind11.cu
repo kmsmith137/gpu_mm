@@ -82,12 +82,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	self.tod2map(map, tod, xpointing, debug);
     };
 
-    // Select template specialization T=Tmm
-    auto _tod2map3 = [](const PointingPlan &self, Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing, bool debug)
-    {
-	self.tod2map3(map, tod, xpointing, debug);
-    };
-
     // If updating this wrapper, don't forget to update comment in gpu_mm.py,
     // listing members/methods.
     py::class_<PointingPrePlan>(m, "PointingPrePlan", xstrdup(pointing_preplan_docstring))
@@ -125,7 +119,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
 	.def("map2tod", _map2tod, py::arg("tod"), py::arg("map"), py::arg("xpointing"), py::arg("debug") = false)
 	.def("tod2map", _tod2map, py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("debug") = false)
-	.def("tod2map3", _tod2map3, py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("debug") = false)
 
 	// We wrap get_plan_mt() with the constraint on_gpu=false.
 	// This is necessary because I wrote a to-python converter for numpy arrays, but not cupy arrays.
@@ -169,9 +162,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     m.def("old_tod2map", gpu_mm::launch_tod2map,
 	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
-
-    m.def("tod2map4", gpu_mm2::launch_tod2map4,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_mt"), py::arg("nmt_per_block"));
 	  
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),

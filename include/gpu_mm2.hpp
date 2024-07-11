@@ -180,13 +180,6 @@ struct PointingPlan
 		 const gputils::Array<T> &tod,
 		 const gputils::Array<T> &xpointing,
 		 bool debug = false) const;
-    
-    // All arrays must be on the GPU.
-    template<typename T>
-    void tod2map3(gputils::Array<T> &map,
-		 const gputils::Array<T> &tod,
-		 const gputils::Array<T> &xpointing,
-		 bool debug = false) const;
 
     
     // Used in unit tests.
@@ -216,10 +209,6 @@ template<typename T>
 extern void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
 			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
 
-template<typename T>
-extern void launch_tod2map3(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
-			    long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
-
 // "Plan-free" SHTs (intended for testing)
 
 template<typename T>
@@ -227,15 +216,6 @@ extern void launch_simple_map2tod(gputils::Array<T> &tod, const gputils::Array<T
 
 template<typename T>
 extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
-
-
-extern void launch_tod2map4(
-    gputils::Array<float> &map,                  // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,            // Shape (nsamp,)
-    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
-    int nmt_per_block
-);
 
 
 template<typename T>

@@ -170,8 +170,6 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     this->nmt_per_threadblock = sqrt(plan_nmt);
     this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
     this->pointing_nblocks = (plan_nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
-
-    cout << "    XXX nmt_per_threadblock=" << nmt_per_threadblock << ", pointing_nblocks=" << pointing_nblocks << endl;
 }
 
 
