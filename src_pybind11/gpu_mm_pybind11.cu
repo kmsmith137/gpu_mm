@@ -91,15 +91,19 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &PointingPrePlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &PointingPrePlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &PointingPrePlan::nxpix, "Number of x-pixels")
+	
 	.def_readonly("plan_nbytes", &PointingPrePlan::plan_nbytes, "Length of 'buf' argument to PointingPlan constructor")
 	.def_readonly("plan_constructor_tmp_nbytes", &PointingPrePlan::plan_constructor_tmp_nbytes, "Length of 'tmp_buf' argument to PointingPlan constructor")
+	.def_readonly("overhead", &PointingPrePlan::overhead, "typically ~0.3 (meaning that cell decomposition is a ~30% overhead)")
 	
-	.def_readonly("rk", &PointingPrePlan::rk, "Number of TOD samples per threadblock is (2^rk)")
-	.def_readonly("nblocks", &PointingPrePlan::nblocks, "Number of threadblocks")
-	.def_readonly("plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
-	.def_readonly("cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
+	.def_readonly("ncl_per_threadblock", &PointingPrePlan::ncl_per_threadblock, "Used when launching planner/preplanner kernels")
+	.def_readonly("planner_nblocks", &PointingPrePlan::planner_nblocks, "Used when launching planner/preplanner kernels")
+	
 	.def_readonly("nmt_per_threadblock", &PointingPrePlan::nmt_per_threadblock, "Used in pointing operations (map2tod/tod2map)")
 	.def_readonly("pointing_nblocks", &PointingPrePlan::pointing_nblocks, "Used in pointing operations (map2tod/tod2map)")
+	
+	.def_readonly("plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
+	.def_readonly("cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
 
 	// FIXME temporary hack, used in tests.test_pointing_preplan().
 	// To be replaced later by systematic API for shuffling between GPU/CPU.
@@ -187,8 +191,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &ReferencePointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &ReferencePointingPlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &ReferencePointingPlan::nxpix, "Number of x-pixels")
-	.def_readonly("rk", &ReferencePointingPlan::rk, "Number of TOD samples per threadblock is (2^rk)")
-	.def_readonly("nblocks", &ReferencePointingPlan::nblocks, "Number of threadblocks")
+	
+	.def_readonly("plan_nmt", &ReferencePointingPlan::plan_nmt, "Total number of mt-pairs in plan")
+	.def_readonly("ncl_per_threadblock", &ReferencePointingPlan::ncl_per_threadblock, "Used when launching planner/preplanner kernels")
+	.def_readonly("planner_nblocks", &ReferencePointingPlan::planner_nblocks, "Used when launching planner/preplanner kernels")
 
 	.def_readonly("iypix", &ReferencePointingPlan::iypix_arr, "Length-nsamp array containing integer y-pixel indices")
 	.def_readonly("ixpix", &ReferencePointingPlan::ixpix_arr, "Length-nsamp array containing integer x-pixel indices")

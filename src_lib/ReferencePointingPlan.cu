@@ -63,18 +63,23 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     this->nsamp = pp.nsamp;
     this->nypix = pp.nypix;
     this->nxpix = pp.nxpix;
-    this->nblocks = pp.nblocks;
-    this->rk = pp.rk;
+    this->plan_nmt = pp.plan_nmt;
+    this->ncl_per_threadblock = pp.ncl_per_threadblock;
+    this->planner_nblocks = pp.planner_nblocks;
 
     check_xpointing(xpointing_gpu, pp.nsamp, "ReferencePointingPlan constructor", true);   // on_gpu=true
+    // check_buffer(tmp) happens later
 
-    // ---------------------------------------------------------------------------------------------
+    xassert(nsamp > (planner_nblocks-1) * ncl_per_threadblock * 32);
+    xassert(nsamp <= (planner_nblocks) * ncl_per_threadblock * 32);
+    
+    // ------------------------------  quantize kernel  ------------------------------
 
     // Note: 'warps_per_threadblock' and 'nsamp_per_block' are static members of ReferencePointingPlan.
     uint quantize_nblocks = uint(nsamp + nsamp_per_block - 1) / nsamp_per_block;
-    uint nerr = quantize_nblocks * warps_per_threadblock;
+    uint quantize_nerr = quantize_nblocks * warps_per_threadblock;
     
-    long min_nbytes = (2*nsamp + nerr) * sizeof(int);
+    long min_nbytes = (2*nsamp + quantize_nerr) * sizeof(int);
     check_buffer(tmp, min_nbytes, "ReferencePointingPlan constructor", "tmp");
 
     int *iypix_gpu = (int *) tmp.data;
@@ -83,7 +88,7 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     
     this->iypix_arr = Array<int> ({nsamp}, af_rhost);
     this->ixpix_arr = Array<int> ({nsamp}, af_rhost);
-    Array<uint> err_arr = Array<uint> ({nerr}, af_rhost);
+    Array<uint> err_arr = Array<uint> ({quantize_nerr}, af_rhost);
 
     quantize_kernel <<< quantize_nblocks, 32*warps_per_threadblock >>>
 	(iypix_gpu, ixpix_gpu, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, err_gpu);
@@ -93,25 +98,29 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     
     CUDA_CALL(cudaMemcpy(iypix_arr.data, iypix_gpu, nsamp * sizeof(int), cudaMemcpyDefault));
     CUDA_CALL(cudaMemcpy(ixpix_arr.data, ixpix_gpu, nsamp * sizeof(int), cudaMemcpyDefault));
-    CUDA_CALL(cudaMemcpy(err_arr.data, err_gpu, nerr * sizeof(uint), cudaMemcpyDefault));
+    CUDA_CALL(cudaMemcpy(err_arr.data, err_gpu, quantize_nerr * sizeof(uint), cudaMemcpyDefault));
 
     uint err = 0;
-    for (uint b = 0; b < nerr; b++)
+    for (uint b = 0; b < quantize_nerr; b++)
 	err |= err_arr.data[b];
 
     check_err(err, "ReferencePointingPlan constructor (quantize_kernel)");
 
-    // ---------------------------------------------------------------------------------------------
+    // ------------------------------  nmt_cumsum, sorted_mt  ------------------------------
 
-    this->nmt_cumsum = Array<uint> ({nblocks}, af_uhost);
+    this->nmt_cumsum = Array<uint> ({planner_nblocks}, af_uhost);
+    this->sorted_mt = Array<ulong> ({plan_nmt}, af_uhost);
+    long nmt_curr = 0;
     
-    for (long b = 0; b < nblocks; b++) {
-	ulong s0 = min((b) << rk, nsamp);
-	ulong s1 = min((b+1) << rk, nsamp);
+    for (long b = 0; b < planner_nblocks; b++) {
+	long s0 = b * ncl_per_threadblock * 32;
+	long s1 = (b+1) * ncl_per_threadblock * 32;
+	s1 = min(s1, nsamp);
 	    
 	while (s0 < s1) {
 	    this->_ntmp_cells = 0;
-	    for (ulong s = s0; s < s0+32; s++) {
+	    
+	    for (long s = s0; s < s0+32; s++) {
 		int iypix = iypix_arr.data[s];
 		int ixpix = ixpix_arr.data[s];
 		int ixpix1 = (ixpix < (nxpix-1)) ? (ixpix+1) : 0;
@@ -125,22 +134,19 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
 	    std::sort(_tmp_cells, _tmp_cells + _ntmp_cells);
 		
 	    for (int i = 0; i < this->_ntmp_cells; i++) {
-		ulong mt = ulong(_tmp_cells[i]) | (ulong(s0 >> 5) << 20);
-		_mtvec.push_back(mt);
+		xassert(nmt_curr < plan_nmt);
+		sorted_mt.data[nmt_curr] = ulong(_tmp_cells[i]) | (ulong(s0 >> 5) << 20);
+		nmt_curr++;
 	    }
 	    
 	    s0 += 32;
 	}
 	
-	nmt_cumsum.data[b] = _mtvec.size();
+	nmt_cumsum.data[b] = nmt_curr;
     }
 
-    std::sort(_mtvec.begin(), _mtvec.end());
-
-    long nmt = _mtvec.size();
-    this->sorted_mt = Array<ulong> ({nmt}, af_uhost);
-    memcpy(sorted_mt.data, &_mtvec[0], nmt * sizeof(ulong));
-    this->_mtvec = vector<ulong> ();  // deallocate
+    xassert(nmt_curr == plan_nmt);
+    std::sort(sorted_mt.data, sorted_mt.data + plan_nmt);
 }
 
 
@@ -154,10 +160,11 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
 // Static member function.
 long ReferencePointingPlan::get_constructor_tmp_nbytes(const PointingPrePlan &pp)
 {
+    // FIXME remove cut-and-paste with constructor.
     // Note: 'warps_per_threadblock' and 'nsamp_per_block' are static members of ReferencePointingPlan.
     uint quantize_nblocks = uint(pp.nsamp + nsamp_per_block - 1) / nsamp_per_block;
-    uint nerr = quantize_nblocks * warps_per_threadblock;
-    return (2*pp.nsamp + nerr) * sizeof(int);
+    uint quantize_nerr = quantize_nblocks * warps_per_threadblock;
+    return (2*pp.nsamp + quantize_nerr) * sizeof(int);
 }
 
 
@@ -183,7 +190,7 @@ void ReferencePointingPlan::_add_tmp_cell(int iypix, int ixpix)
 string ReferencePointingPlan::str() const
 {
     stringstream ss;
-    ss << "ReferencePointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix << ", rk=" << rk << ")";
+    ss << "ReferencePointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix << ")";
     return ss.str();
 }
 

@@ -24,6 +24,8 @@ namespace gpu_mm2 {
 // nsamp: must be a multiple of 32
 // nsamp_per_block: must be a multiple of 32
 
+// FIXME check for 32-bit overflows
+
 
 template<typename T>
 __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint nsamp_per_block, int nypix, int nxpix)
@@ -103,22 +105,23 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     this->nypix = nypix_;
     this->nxpix = nxpix_;
     
-    // Initializes this->nsamp.
     check_xpointing_and_init_nsamp(xpointing_gpu, this->nsamp, "PointingPrePlan constructor", true);  // on_gpu=true
     check_nypix(nypix, "PointingPrePlan constructor");
     check_nxpix(nxpix, "PointingPrePlan constructor");
     
-    // Aim for 1000-2000 threadblocks.
-    this->rk = max(7, int(log2(nsamp)) - 10);      // rk = log2(samples per block)
-    this->nblocks = (nsamp + (1<<rk) - 1) >> rk;   // ceil(nsamp/2^rk)
-
-    assert(rk >= 5);    // Kernel assumes nsamp_per_block is a multiple of 32.
-    assert(rk <= 25);   // Ensures 'uint32 nmt' can't overflow in kernel.
+    // Launch params for planner/preplanner kernels.
+    // Use at least 16 TOD cache lines per threadblock, and at most 1024 threadblocks.
     
-    Array<uint> arr_gpu({nblocks}, af_gpu);
+    this->ncl_per_threadblock = max(16L, (nsamp+1023)/1024);
+    this->ncl_per_threadblock = (ncl_per_threadblock + 3) & ~3;
+    
+    long nsamp_per_threadblock = 32 * ncl_per_threadblock;
+    this->planner_nblocks = (nsamp + nsamp_per_threadblock - 1) / nsamp_per_threadblock;
+    
+    Array<uint> arr_gpu({planner_nblocks}, af_gpu);
 
-    preplan_kernel <<< nblocks, 128 >>>
-	(arr_gpu.data, xpointing_gpu.data, nsamp, (1 << rk), nypix, nxpix);
+    preplan_kernel <<< planner_nblocks, 128 >>>
+	(arr_gpu.data, xpointing_gpu.data, nsamp, nsamp_per_threadblock, nypix, nxpix);
 
     CUDA_PEEK("preplan_kernel launch");
 
@@ -127,7 +130,7 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     uint err = 0;
     ulong nmt = 0;
     
-    for (long i = 0; i < nblocks; i++) {
+    for (long i = 0; i < planner_nblocks; i++) {
 	err |= (p[i] & 3);
 	nmt += (p[i] >> 2);
 	p[i] = nmt;
@@ -141,6 +144,11 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     arr_gpu.fill(arr_cpu);
     this->nmt_cumsum = arr_gpu;
     this->plan_nmt = nmt;
+    
+    // Used when launching pointing (tod2map/map2tod) operations.
+    this->nmt_per_threadblock = sqrt(plan_nmt);
+    this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
+    this->pointing_nblocks = (plan_nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
 
     // Initialize this->cub_nbytes.
     
@@ -161,30 +169,27 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     // Note: align128() is defined in gpu_mm2_internals.hpp
 
     long mt_nbytes = align128(plan_nmt * sizeof(ulong));
-    long err_nbytes = align128(nblocks * sizeof(int));
+    long err_nbytes = align128(planner_nblocks * sizeof(int));
     
     this->plan_nbytes = mt_nbytes + err_nbytes;
     this->plan_constructor_tmp_nbytes = mt_nbytes + align128(cub_nbytes);
-
-    // Used when launching pointing (tod2map/map2tod) operations.
-    this->nmt_per_threadblock = sqrt(plan_nmt);
-    this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
-    this->pointing_nblocks = (plan_nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
+    this->overhead = 32*plan_nmt/double(nsamp) - 1.0;
 }
 
 
 string PointingPrePlan::str() const
 {
-    long plan_ntt = (nsamp / 32);
-    double ratio = double(plan_nmt) / double(plan_ntt);
-    
     stringstream ss;
     
-    ss << "PointingPrePlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix
+    ss << "PointingPrePlan("
+       << "nsamp=" << nsamp
+       << ", nypix=" << nypix
+       << ", nxpix=" << nxpix
        << ", plan_nbytes=" << plan_nbytes << " (" << nbytes_to_str(plan_nbytes) << ")"
        << ", tmp_nbytes=" << plan_constructor_tmp_nbytes << " (" << nbytes_to_str(plan_constructor_tmp_nbytes) << ")"
-       << ", ntt=" << plan_ntt << ", nmt=" << plan_nmt << ", ratio=" << ratio
-       << ", rk=" << rk << ", nblocks=" << nblocks
+       << ", overhead=" << overhead
+       << ", ncl_per_threadblock=" << ncl_per_threadblock
+       << ", planner_blocks=" << planner_nblocks
        << ", nmt_per_threadblock=" << nmt_per_threadblock
        << ", pointing_nblocks=" << pointing_nblocks
        << ")";

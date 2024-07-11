@@ -231,7 +231,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     
     this->plan_mt = (ulong *) (buf.data);
     this->err_gpu = (uint *) (buf.data + mt_nbytes);
-    this->err_cpu = Array<uint> ({pp.nblocks}, af_rhost | af_zero);
+    this->err_cpu = Array<uint> ({pp.planner_nblocks}, af_rhost | af_zero);
 
     ulong *unsorted_mt = (ulong *) (tmp_buf.data);
     void *cub_tmp = (void *) (tmp_buf.data + mt_nbytes);
@@ -239,19 +239,19 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     // Number of warps in plan_kernel.
     constexpr int W = 4;
 
-    plan_kernel<T,W> <<< pp.nblocks, {32,W} >>>
+    plan_kernel<T,W> <<< pp.planner_nblocks, {32,W} >>>
 	(unsorted_mt,             // ulong *plan_mt,
 	 xpointing_gpu.data,      // const T *xpointing,
 	 pp.nmt_cumsum.data,      // uint *nmt_cumsum,
 	 pp.nsamp,                // uint nsamp,
-	 1 << pp.rk,              // uint nsamp_per_block,
+	 pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
 	 pp.nypix,                // int nypix,
 	 pp.nxpix,                // int nxpix,
 	 this->err_gpu);          // uint *errp)
 
     CUDA_PEEK("plan_kernel launch");
 
-    CUDA_CALL(cudaMemcpyAsync(err_cpu.data, err_gpu, pp.nblocks * sizeof(uint), cudaMemcpyDeviceToHost));
+    CUDA_CALL(cudaMemcpyAsync(err_cpu.data, err_gpu, pp.planner_nblocks * sizeof(uint), cudaMemcpyDeviceToHost));
 
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(
         cub_tmp,         // void *d_temp_storage
@@ -267,7 +267,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     cudaDeviceSynchronize();
 
     uint err = 0;
-    for (int b = 0; b < pp.nblocks; b++)
+    for (int b = 0; b < pp.planner_nblocks; b++)
 	err |= err_cpu.data[b];
 
     check_err(err, "PointingPlan constructor");
@@ -324,21 +324,22 @@ Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 
 string PointingPlan::str() const
 {
-    long plan_ntt = (nsamp / 32);
-    double ratio = double(pp.plan_nmt) / double(plan_ntt);
-    
-    stringstream ss;
-
     // FIXME reduce cut-and-paste with PointingPrePlan::str()
-    ss << "PointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix
-       << ", rk=" << pp.rk << ", nblocks=" << pp.nblocks
-       << ", ntt=" << plan_ntt << ", nmt=" << pp.plan_nmt << ", ratio=" << ratio
+    stringstream ss;
+    
+    ss << "PointingPlan("
+       << "nsamp=" << nsamp
+       << ", nypix=" << nypix
+       << ", nxpix=" << nxpix
        << ", plan_nbytes=" << pp.plan_nbytes << " (" << nbytes_to_str(pp.plan_nbytes) << ")"
+       << ", tmp_nbytes=" << pp.plan_constructor_tmp_nbytes << " (" << nbytes_to_str(pp.plan_constructor_tmp_nbytes) << ")"
+       << ", overhead=" << pp.overhead
+       << ", nmt_per_threadblock=" << pp.nmt_per_threadblock
+       << ", pointing_nblocks=" << pp.pointing_nblocks
        << ")";
 
     return ss.str();
 }
-
 
 
 // -------------------------------------------------------------------------------------------------

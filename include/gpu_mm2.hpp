@@ -105,31 +105,25 @@ struct PointingPrePlan
 
     long plan_nbytes = 0;                  // length of 'buf' argument to PointingPlan constructor
     long plan_constructor_tmp_nbytes = 0;  // length of 'tmp_buf' argument to PointingPlan constructor
-    // Forthcoming: plan_map2tod_tmp_nbytes
+    double overhead = 0.0;                 // typically ~0.3 (meaning that cell decomposition is a ~30% overhead)
 
-    // Used internally.
-    long rk = 0;            // number of TOD samples per threadblock is (2^rk)
-    long nblocks = 0;       // number of threadblocks 
-    long plan_nmt = 0;      // total number of mt-pairs in plan
-    size_t cub_nbytes = 0;  // number of bytes used in cub radix sort 'd_temp_storage'
+    // Used when launching planner/preplanner kernels.
+    long ncl_per_threadblock = 0;
+    long planner_nblocks = 0;
 
-    // Used when launching pointing (tod2map/map2tod) operations.
+    // Used when launching pointing (tod2map/map2tod) kernels.
     long nmt_per_threadblock = 0;
     long pointing_nblocks = 0;
 
+    // Used internally
+    long plan_nmt = 0;                     // total number of mt-pairs in plan
+    size_t cub_nbytes = 0;                 // number of bytes used in cub radix sort 'd_temp_storage'
+
     // Cumulative count of mt-pairs per threadblock.
-    // 1-d array of length nblocks, in GPU memory.
     // FIXME should be able to swap between host/GPU memory.
-    gputils::Array<uint> nmt_cumsum;
+    gputils::Array<uint> nmt_cumsum;   // length planner_nblocks
 
     std::string str() const;
-    
-    // Reminder: the plan will need to allocate
-    //   plan_mt[]
-    //   plan_tt[]
-    //   tmp buf for map2tod
-    //   sort input buffer
-    //   sort d_temp_storage
 };
 
 
@@ -296,8 +290,9 @@ struct ReferencePointingPlan
     long nsamp = 0;
     long nypix = 0;
     long nxpix = 0;
-    int nblocks = 0;
-    int rk = 0;
+    long plan_nmt = 0;
+    long ncl_per_threadblock = 0;
+    long planner_nblocks = 0;
 
     // All arrays are on the CPU.
     // (iypix, ixpix) = which map pixel does each time sample fall into?
@@ -306,11 +301,10 @@ struct ReferencePointingPlan
     gputils::Array<int> iypix_arr;   // length nsamp
     gputils::Array<int> ixpix_arr;   // length nsamp
 
-    gputils::Array<uint> nmt_cumsum;  // length nblocks, same meaning as PointingPrePlan::nmt_cumsum.
-    gputils::Array<ulong> sorted_mt;  // length nmt_cumsum[nblocks-1], see PointingPlan for 'mt' format.
+    gputils::Array<uint> nmt_cumsum;  // length planner_nblocks, same meaning as PointingPrePlan::nmt_cumsum.
+    gputils::Array<ulong> sorted_mt;  // length plan_nmt, see PointingPlan for 'mt' format.
 
     // Used temporarily in constructor.
-    std::vector<ulong> _mtvec;
     int _tmp_cells[128];
     int _ntmp_cells = 0;
     void _add_tmp_cell(int iypix, int ixcpix);

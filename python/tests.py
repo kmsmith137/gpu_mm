@@ -234,6 +234,7 @@ class PointingInstance:
 
         
     def test_all(self):
+        print(f'    {self.plan}')
         self.test_pointing_preplan()
         self.test_pointing_plan()
         self.test_pointing_plan_iterator()
