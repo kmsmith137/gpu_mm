@@ -30,22 +30,28 @@ __device__ void update_shmem(float *shmem, int idec, int ira, int cell_idec, int
     // __syncwarp();
 }
 
-
-__global__ void tod2map4_kernel(
+template<int W, bool Debug>
+__global__ void __launch_bounds__(32*W, 1)
+tod2map4_kernel(
     float *map,                              // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
     const float *tod,                        // Shape (nsamp,)
     const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
     const ulong *plan_mt,                    // See long comment above. Shape (plan_ncltod,)
     const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
     long nsamp,                              // Number of TOD samples (= detectors * times)
-    int nypix,                                // Length of map declination axis
-    int nxpix)                                 // Length of map RA axis
+    int nypix,                               // Length of map declination axis
+    int nxpix)                               // Length of map RA axis
 {
     __shared__ float shmem[3*64*64];
 
-    const int laneId = threadIdx.x & 31;
-    const int warpId = threadIdx.x >> 5;
-    const int nwarps = blockDim.x >> 5;
+    if constexpr (Debug) {
+	assert(blockDim.x == 32);
+	assert(blockDim.y == W);
+    }
+    
+    // Threadblock has shape (32,W), so threadIdx.x is the laneId, and threadIdx.y is the warpId.
+    const uint laneId = threadIdx.x;
+    const uint warpId = threadIdx.y;
     
     // Read quadruple for this block.
     // (After this, we don't need the 'plan_quadruples' pointer any more.)
@@ -56,33 +62,16 @@ __global__ void tod2map4_kernel(
     int icl_start = plan_quadruples[2];
     int icl_end = plan_quadruples[3];
 
-    // Shift map pointer to per-thread (not per-block) base location
-    const int idec_base = cell_idec + (threadIdx.x >> 6);
-    const int ira_base = cell_ira + (threadIdx.x & 63);
-    map += long(idec_base) * long(nxpix) + ira_base;
-        
-    // Read global memory -> shared.
-    // Assumes blockIdx.x is a multiple of 64.
-
-    const long npix = long(nypix) * long(nxpix);    
-    const int spix = (blockDim.x >> 6) * nxpix;  // Global memory "stride" in loop below
-    	
-    do {
-	const float *m = map;
-	for (int s = threadIdx.x; s < 64*64; s += blockDim.x) {
-	    shmem[s] = m[0];
-	    shmem[s + 64*64] = m[npix];
-	    shmem[s + 2*64*64] = m[2*npix];
-	    m += spix;
-	}
-    } while (0);
+    // Zero shared memmory
+    for (int s = 32*warpId + laneId; s < 3*64*64; s += 32*W)
+	shmem[s] = 0;
     
     __syncthreads();
 
     int cltod_rb = 0;
     int icl_rb = -1;
     
-    for (int icl = icl_start + warpId; icl < icl_end; icl += nwarps) {
+    for (int icl = icl_start + warpId; icl < icl_end; icl += W) {
 	int icl_base = icl & ~31;
 	
 	if (icl_rb != icl_base) {
@@ -90,11 +79,13 @@ __global__ void tod2map4_kernel(
 	    ulong mt = plan_mt[icl_rb + laneId];
 	    cltod_rb = int(mt >> 20);
 
-	    // bool valid = ((icl_rb + laneId >= icl_start) && (icl_rb + laneId < icl_end));
-	    // uint iy0_cell = ((mt >> 10) & ((1<<10) - 1)) << 6;
-	    // uint ix0_cell = (mt & ((1<<10) - 1)) << 6;
-	    // assert(!valid || (iy0_cell == cell_idec));
-	    // assert(!valid || (ix0_cell == cell_ira));
+	    if constexpr (Debug) {
+		bool valid = ((icl_rb + laneId >= icl_start) && (icl_rb + laneId < icl_end));
+		uint iy0_cell = ((mt >> 10) & ((1<<10) - 1)) << 6;
+		uint ix0_cell = (mt & ((1<<10) - 1)) << 6;
+		assert(!valid || (iy0_cell == cell_idec));
+	        assert(!valid || (ix0_cell == cell_ira));
+	    }
 	}
 	
 	// Value of 'cltod' is the same on each thread.
@@ -131,19 +122,23 @@ __global__ void tod2map4_kernel(
 
     
     __syncthreads();
-
-    // Write shared memory -> global
-    // Assumes blockIdx.x is a multiple of 64.
+	
+    // Shared -> global
     
-    do {
-	float *m = map;
-	for (int s = threadIdx.x; s < 64*64; s += blockDim.x) {
-	    m[0] = shmem[s];
-	    m[npix] = shmem[s + 64*64];
-	    m[2*npix] = shmem[s + 2*64*64];
-	    m += spix;
+    for (int y = warpId; y < 64; y += W) {
+	for (int x = laneId; x < 64; x += 32) {
+	    int ss = 64*y + x;                            // shared memory offset
+	    int sg = (cell_idec+y)*nxpix + (cell_ira+x);  // global memory offset
+	    
+	    float t = shmem[ss];
+	    if (!__reduce_or_sync(ALL_LANES, t != 0))
+		continue;
+
+	    atomicAdd(map + sg, t);
+	    atomicAdd(map + sg + nypix*nxpix, shmem[ss+64*64]);
+	    atomicAdd(map + sg + 2*nypix*nxpix, shmem[ss+2*64*64]);
 	}
-    } while (0);
+    }
 }
 
 
@@ -154,6 +149,9 @@ void launch_tod2map4(
     const gputils::Array<ulong> &plan_mt,        // Shape (plan_ncltod,)
     const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
+    static constexpr int W = 16;
+    static constexpr bool Debug = false;
+    
     long nsamp, nypix, nxpix;
     
     check_tod_and_init_nsamp(tod, nsamp, "launch_tod2map4", true);        // on_gpu=true
@@ -169,7 +167,7 @@ void launch_tod2map4(
     
     int nblocks = plan_quadruples.shape[0];
     
-    tod2map4_kernel<<< nblocks, 512 >>>
+    tod2map4_kernel<W,Debug> <<< nblocks, {32,W} >>>
 	(map.data, tod.data, xpointing.data, plan_mt.data, plan_quadruples.data, nsamp, nypix, nxpix);
     
     CUDA_PEEK("tod2map4_kernel");
