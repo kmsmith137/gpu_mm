@@ -63,75 +63,79 @@ tod2map4_kernel(
     int icl_end = plan_quadruples[3];
 
     PlanIteratorIrregular<W,Debug> iterator(plan_mt, icl_start, icl_end);
-    bool ret = iterator.get_cell();
+    int cell_count = 0;
 
-    if constexpr (Debug) {
-	assert(ret);
-	uint icell = iterator.icell;
-	uint iy0_cell = (icell >> 10) << 6;
-	uint ix0_cell = (icell & ((1<<10) - 1)) << 6;
-	assert(iy0_cell == cell_idec);
-	assert(ix0_cell == cell_ira);
-    }	
-    
-    // Zero shared memmory
-    for (int s = 32*warpId + laneId; s < 3*64*64; s += 32*W)
-	shmem[s] = 0;
-    
-    __syncthreads();
-
-    while (iterator.get_cl()) {
-	// Value of 'cltod' is the same on each thread.
-	int cltod = iterator.icl;
-
-	long s = (long(cltod) << 5) + laneId;
-	float x = tod[s];
-	float px_dec = xpointing[s];
-	float px_ra = xpointing[s + nsamp];
-	float alpha = xpointing[s + 2*nsamp];
+    while (iterator.get_cell()) {
+	cell_count++;
 	
-	float cos_2a = cosf(2.0f * alpha);
-	float sin_2a = sinf(2.0f * alpha);
-	
-	int idec = int(px_dec);
-	int ira = int(px_ra);
-	float ddec = px_dec - float(idec);
-	float dra = px_ra - float(ira);
-
-	if (Debug) {
-	    assert(idec >= 0);
-	    assert(idec < nypix-1);
-	    assert(ira >= 0);
-	    assert(ira < nxpix-1);
+	if constexpr (Debug) {
+	    uint icell = iterator.icell;
+	    uint iy0_cell = (icell >> 10) << 6;
+	    uint ix0_cell = (icell & ((1<<10) - 1)) << 6;
+	    assert(iy0_cell == cell_idec);
+	    assert(ix0_cell == cell_ira);
 	}
-	
-	update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
-	update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
-	update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
-	update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
-    }
+    
+	// Zero shared memmory
+	for (int s = 32*warpId + laneId; s < 3*64*64; s += 32*W)
+	    shmem[s] = 0;
+    
+	__syncthreads();
 
-    ret = iterator.get_cell();
-    if constexpr (Debug) assert(!ret);
-    
-    __syncthreads();
-	
-    // Shared -> global
-    
-    for (int y = warpId; y < 64; y += W) {
-	for (int x = laneId; x < 64; x += 32) {
-	    int ss = 64*y + x;                            // shared memory offset
-	    int sg = (cell_idec+y)*nxpix + (cell_ira+x);  // global memory offset
+	while (iterator.get_cl()) {
+	    // Value of 'cltod' is the same on each thread.
+	    int cltod = iterator.icl;
 	    
-	    float t = shmem[ss];
-	    if (!__reduce_or_sync(ALL_LANES, t != 0))
-		continue;
-
-	    atomicAdd(map + sg, t);
-	    atomicAdd(map + sg + nypix*nxpix, shmem[ss+64*64]);
-	    atomicAdd(map + sg + 2*nypix*nxpix, shmem[ss+2*64*64]);
+	    long s = (long(cltod) << 5) + laneId;
+	    float x = tod[s];
+	    float px_dec = xpointing[s];
+	    float px_ra = xpointing[s + nsamp];
+	    float alpha = xpointing[s + 2*nsamp];
+	    
+	    float cos_2a = cosf(2.0f * alpha);
+	    float sin_2a = sinf(2.0f * alpha);
+	    
+	    int idec = int(px_dec);
+	    int ira = int(px_ra);
+	    float ddec = px_dec - float(idec);
+	    float dra = px_ra - float(ira);
+	    
+	    if (Debug) {
+		assert(idec >= 0);
+		assert(idec < nypix-1);
+		assert(ira >= 0);
+		assert(ira < nxpix-1);
+	    }
+	    
+	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
+	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
+	    update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
+	    update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
 	}
+    
+	__syncthreads();
+	
+	// Shared -> global
+	
+	for (int y = warpId; y < 64; y += W) {
+	    for (int x = laneId; x < 64; x += 32) {
+		int ss = 64*y + x;                            // shared memory offset
+		int sg = (cell_idec+y)*nxpix + (cell_ira+x);  // global memory offset
+		
+		float t = shmem[ss];
+		if (!__reduce_or_sync(ALL_LANES, t != 0))
+		    continue;
+		
+		atomicAdd(map + sg, t);
+		atomicAdd(map + sg + nypix*nxpix, shmem[ss+64*64]);
+		atomicAdd(map + sg + 2*nypix*nxpix, shmem[ss+2*64*64]);
+	    }
+	}
+
+	__syncthreads();
     }
+
+    if constexpr (Debug) assert(cell_count == 1);
 }
 
 
