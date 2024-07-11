@@ -233,13 +233,31 @@ class PointingInstance:
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
 
         
+    def test_tod2map4(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        
+        m1 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        m2 = cp.copy(m1)
+
+        gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
+        cp.cuda.runtime.deviceSynchronize()
+
+        gpu_mm_pybind11.tod2map4(m2, tod, self.xpointing_gpu, self.old_plan.cltod_list, self.old_plan.quadruples)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(m1, m2)
+        print(f'    test_old_tod2map4: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+
+        
     def test_all(self):
         self.test_pointing_preplan()
         self.test_pointing_plan()
         self.test_pointing_plan_iterator()
         self.test_map2tod()
         self.test_tod2map()
-        self.test_old_tod2map()
+        self.test_tod2map4()
+        # self.test_old_tod2map()
 
         
     def time_pointing_preplan(self):
@@ -319,6 +337,18 @@ class PointingInstance:
             cp.cuda.runtime.deviceSynchronize()
             print(f'    time_tod2map3: {time.time()-t0} seconds')
 
+            
+    def time_tod2map4(self):
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        p = self.old_plan
+
+        for _ in range(10):
+            t0 = time.time()
+            gpu_mm_pybind11.tod2map4(m, tod, self.xpointing_gpu, p.cltod_list, p.quadruples)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_tod2map4: {time.time()-t0} seconds')
+
 
     def time_old_tod2map(self):
         xpointing_gpu = self.xpointing_gpu.reshape((3,1,self.nsamp))
@@ -341,4 +371,5 @@ class PointingInstance:
         self.time_simple_tod2map()
         self.time_tod2map()
         # self.time_tod2map3()
-        self.time_old_tod2map()
+        self.time_tod2map4()
+        # self.time_old_tod2map()

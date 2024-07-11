@@ -225,6 +225,15 @@ template<typename T>
 extern void launch_simple_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
 
 
+extern void launch_tod2map4(
+    gputils::Array<float> &map,                  // Shape (3, nypix, nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &tod,            // Shape (nsamp,)
+    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
+);
+
+
 template<typename T>
 struct ToyPointing
 {

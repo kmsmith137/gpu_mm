@@ -167,7 +167,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     m.def("old_tod2map", gpu_mm::launch_tod2map,
 	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
-    
+
+    m.def("tod2map4", gpu_mm2::launch_tod2map4,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
+	  
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
 	     py::arg("nsamp"), py::arg("nypix"), py::arg("nxpix"),
