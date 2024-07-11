@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <gputils/pybind11.hpp>
+#include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm2.hpp"
 #include "../include/PlanIterator2.hpp"
 
@@ -163,6 +164,9 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     
     m.def("simple_map2tod", _simple_map2tod,
 	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
+
+    m.def("old_tod2map", gpu_mm::launch_tod2map,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),

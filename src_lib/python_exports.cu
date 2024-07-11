@@ -32,16 +32,6 @@ void py_reference_tod2map(float *map, const float *tod, const float *xpointing, 
     gpu_mm::reference_tod2map(map, tod, xpointing, ndet, nt, ndec, nra);
 }
 
-void py_gpu_tod2map(float *map, const float *tod, const float *xpointing, const int *plan_cltod_list,
-		    const int *plan_quadruples, int plan_ncltod, int plan_nquadruples, int ndet, int nt,
-		    int ndec, int nra)
-{
-    // FIXME here and elsewhere in this file, get rid of cudaDeviceSynchronize()
-    CUDA_CALL(cudaDeviceSynchronize());
-    gpu_mm::launch_tod2map(map, tod, xpointing, plan_cltod_list, plan_quadruples, plan_ncltod, plan_nquadruples, ndet, nt, ndec, nra);
-    CUDA_CALL(cudaDeviceSynchronize());
-}
-
 // out[0] = cookie
 // out[1] = ncl_uninflated
 // out[2] = ncl_inflated

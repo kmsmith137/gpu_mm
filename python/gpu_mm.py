@@ -167,10 +167,6 @@ _gpu_map2tod = _libgpu_mm.py_gpu_map2tod
 _gpu_map2tod.argtypes = (_p, _p, _p, _i, _i, _i, _i)
 # _gpu_map2tod(tod, map, xpointing, ndet, nt, ndec, nra)
 
-_gpu_tod2map = _libgpu_mm.py_gpu_tod2map
-_gpu_tod2map.argtypes = (_p, _p, _p, _p, _p, _i, _i, _i, _i, _i, _i)
-# _gpu_tod2map(map, tod, xpointing, plan_cltod_list, plan_quadruples, plan_ncltod, plan_nquadruples, ndet, nt, ndec, nra)
-
 _construct_cpu_plan1 = _libgpu_mm.py_construct_cpu_plan1
 _construct_cpu_plan1.argtypes = (_p, _p, _i, _i, _i, _i, _i)
 # _construct_cpu_plan1(out, xpointing, ndet, nt, ndec, nra, verbose)
@@ -401,14 +397,8 @@ def gpu_tod2map(map_accum, tod_in, xpointing, plan):
     assert plan.ncl_uninflated == ((tod_in.shape[0] * tod_in.shape[1]) // 32)
     assert plan.ndec == map_accum.shape[1]
     assert plan.nra == map_accum.shape[2]
-    
-    ndet, nt = tod_in.shape
-    ndec, nra = map_accum.shape[1:]
 
-    # _gpu_tod2map(map, tod, xpointing, plan_cltod_list, plan_quadruples, plan_ncltod, plan_nquadruples, ndet, nt, ndec, nra)
-    _gpu_tod2map(map_accum.data.ptr, tod_in.data.ptr, xpointing.data.ptr,
-                 plan.cltod_list.data.ptr, plan.quadruples.data.ptr,
-                 plan.ncl_inflated, plan.num_quadruples, ndet, nt, ndec, nra)
+    gpu_mm_pybind11.old_tod2map(map_accum, tod_in, xpointing, plan.cltod_list, plan.quadruples)
 
 
 ####################################################################################################

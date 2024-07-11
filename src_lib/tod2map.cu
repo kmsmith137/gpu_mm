@@ -405,45 +405,11 @@ __global__ void tod2map_kernel(
 
 
 void launch_tod2map(
-    float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const float *tod,                        // Shape (ndet, nt)
-    const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const int *plan_cltod_list,              // See long comment above. Shape (plan_ncltod,)
-    const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
-    int plan_ncltod,                         // See long comment above.
-    int plan_nquadruples,                    // See long comment above.
-    int ndet,                                // Number of detectors
-    int nt,                                  // Number of time samples per detector
-    int ndec,                                // Length of map declination axis
-    int nra,                                 // Length of map RA axis
-    cudaStream_t stream,
-    int nthreads_per_block)
-{
-    _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
-    _check_tod2map_plan(plan_cltod_list, plan_quadruples, plan_ncltod, plan_nquadruples);
-    
-    assert(nthreads_per_block > 0);
-    assert((nthreads_per_block % 64) == 0);  // assumed by tod2map kernel, see above
-    assert(nthreads_per_block <= 1024);
-
-    int nblocks = plan_nquadruples;
-    long nsamp = long(ndet) * long(nt);
-    
-    tod2map_kernel<<< nblocks, nthreads_per_block, 0, stream >>>
-	(map, tod, xpointing, plan_cltod_list, plan_quadruples, nsamp, ndec, nra);
-    
-    CUDA_PEEK("tod2map_kernel");
-}
-
-
-void launch_tod2map(
     gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (ndet, nt)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
     const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples,  // Shape (plan_nquadruples, 4)
-    cudaStream_t stream,
-    int nthreads_per_block)
+    const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
     _check_tod2map_args(map, tod, xpointing);
     _check_tod2map_plan(plan_cltod_list, plan_quadruples);
@@ -453,13 +419,16 @@ void launch_tod2map(
     assert(xpointing.on_gpu());
     assert(plan_cltod_list.on_gpu());
     assert(plan_quadruples.on_gpu());
-
-    launch_tod2map(map.data, tod.data, xpointing.data,
-		   plan_cltod_list.data, plan_quadruples.data,
-		   plan_cltod_list.shape[0], plan_quadruples.shape[0],
-		   tod.shape[0], tod.shape[1],
-		   map.shape[1], map.shape[2],
-		   stream, nthreads_per_block);
+    
+    int nblocks = plan_quadruples.shape[0];
+    long nsamp = tod.shape[0] * tod.shape[1];
+    int ndec = map.shape[1];
+    int nra = map.shape[2];
+    
+    tod2map_kernel<<< nblocks, 512 >>>
+	(map.data, tod.data, xpointing.data, plan_cltod_list.data, plan_quadruples.data, nsamp, ndec, nra);
+    
+    CUDA_PEEK("tod2map_kernel");
 }
 
 
