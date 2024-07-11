@@ -42,6 +42,10 @@ __global__ void tod2map4_kernel(
     int nxpix)                                 // Length of map RA axis
 {
     __shared__ float shmem[3*64*64];
+
+    const int laneId = threadIdx.x & 31;
+    const int warpId = threadIdx.x >> 5;
+    const int nwarps = blockDim.x >> 5;
     
     // Read quadruple for this block.
     // (After this, we don't need the 'plan_quadruples' pointer any more.)
@@ -82,55 +86,49 @@ __global__ void tod2map4_kernel(
     
     __syncthreads();
 
-    // Outer loop over batches of 32 TOD cache lines.
-    // The value of 'icl_warp' is the same on each thread.
+    int cltod_rb = 0;
+    int icl_rb = -1;
     
-    const int laneId = threadIdx.x & 31;
-    
-    for (int icl_warp = (threadIdx.x & ~31); icl_warp < icl_end; icl_warp += blockDim.x) {
-	// Value of 'cltod_outer' is different on each thread.
-	int cltod_outer = plan_cltod_list[icl_warp + laneId];
-
-	// Values of (icl0, icl1) are the same on each thread.
-	int icl0 = max(icl_warp, icl_start);
-	int icl1 = min(icl_warp+32, icl_end);
+    for (int icl = icl_start + warpId; icl < icl_end; icl += nwarps) {
+	int icl_base = icl & ~31;
 	
-	// Inner loop over TOD cache lines ('cltod')
-	// The value of 'icl' is the same on each thread.
-	
-	for (int icl = icl0; icl < icl1; icl++) {
-	    // Value of 'cltod' is the same on each thread.
-	    int cltod = __shfl_sync(ALL_LANES, cltod_outer, icl & 31);
-
-	    // By convention, negative cltods are allowed, but ignored.
-	    if (cltod < 0)
-		continue;
-
-	    long s = (long(cltod) << 5) + laneId;
-	    float x = tod[s];
-	    float px_dec = xpointing[s];
-	    float px_ra = xpointing[s + nsamp];
-	    float alpha = xpointing[s + 2*nsamp];
-
-	    float cos_2a = cosf(2.0f * alpha);
-	    float sin_2a = sinf(2.0f * alpha);
-
-	    int idec = int(px_dec);
-	    int ira = int(px_ra);
-	    float ddec = px_dec - float(idec);
-	    float dra = px_ra - float(ira);
-
-	    // assert(idec >= 0);
-	    // assert(idec < nypix-1);
-	    // assert(ira >= 0);
-	    // assert(ira < nxpix-1);	    
-
-	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
-	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
-	    update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
-	    update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
+	if (icl_rb != icl_base) {
+	    icl_rb = icl_base;
+	    cltod_rb = plan_cltod_list[icl_rb + laneId];
 	}
+	
+	// Value of 'cltod' is the same on each thread.
+	int cltod = __shfl_sync(ALL_LANES, cltod_rb, icl & 31);
+
+	// By convention, negative cltods are allowed, but ignored.
+	if (cltod < 0)
+	    continue;
+
+	long s = (long(cltod) << 5) + laneId;
+	float x = tod[s];
+	float px_dec = xpointing[s];
+	float px_ra = xpointing[s + nsamp];
+	float alpha = xpointing[s + 2*nsamp];
+	
+	float cos_2a = cosf(2.0f * alpha);
+	float sin_2a = sinf(2.0f * alpha);
+	
+	int idec = int(px_dec);
+	int ira = int(px_ra);
+	float ddec = px_dec - float(idec);
+	float dra = px_ra - float(ira);
+	
+	// assert(idec >= 0);
+	// assert(idec < nypix-1);
+	// assert(ira >= 0);
+	// assert(ira < nxpix-1);	    
+	
+	update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
+	update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));
+	update_shmem(shmem, idec+1, ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (1.0f-dra));
+	update_shmem(shmem, idec+1, ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (ddec) * (dra));	    
     }
+
     
     __syncthreads();
 
