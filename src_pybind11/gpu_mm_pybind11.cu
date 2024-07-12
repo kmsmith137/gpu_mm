@@ -149,21 +149,21 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     
     // Select template specialization T=Tmm
-    auto _simple_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing)
+    auto _unplanned_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing)
     {
-	gpu_mm::launch_simple_map2tod(tod, map, xpointing);
+	gpu_mm::launch_unplanned_map2tod(tod, map, xpointing);
     };
     
     // Select template specialization T=Tmm
-    auto _simple_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
+    auto _unplanned_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
     {
-	gpu_mm::launch_simple_tod2map(map, tod, xpointing);
+	gpu_mm::launch_unplanned_tod2map(map, tod, xpointing);
     };
     
-    m.def("simple_map2tod", _simple_map2tod,
+    m.def("unplanned_map2tod", _unplanned_map2tod,
 	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
 
-    m.def("simple_tod2map", _simple_tod2map,
+    m.def("unplanned_tod2map", _unplanned_tod2map,
 	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
 
     m.def("reference_map2tod", gpu_mm::reference_map2tod,
@@ -228,4 +228,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 					   
     m.def("test_plan_iterator", &gpu_mm::test_plan_iterator,
 	  py::arg("plan_mt"), py::arg("nmt_per_block"), py::arg("warps_per_threadblock"));
+
+    m.def("make_random_plan_mt", &gpu_mm::make_random_plan_mt,
+	  py::arg("ncells"), py::arg("min_nmt_per_cell"), py::arg("max_nmt_per_cell"));
 }

@@ -291,9 +291,7 @@ void PointingPlan::map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &x
     check_tod(tod, nsamp, "PointingPlan::map2tod", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::map2tod", true);     // on_gpu=true
 
-    launch_map2tod2(tod.data, map.data, xpointing.data, this->plan_mt,
-		    this->nsamp, this->nypix, this->nxpix,
-		    this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
+    launch_map2tod(tod, map, xpointing, this->plan_mt, this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
 }
 
 
@@ -304,9 +302,7 @@ void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &x
     check_tod(tod, nsamp, "PointingPlan::tod2map", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::tod2map", true);     // on_gpu=true
     
-    launch_tod2map2(map.data, tod.data, xpointing.data, this->plan_mt,
-		    this->nsamp, this->nypix, this->nxpix,
-		    this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
+    launch_tod2map(map, tod, xpointing, this->plan_mt, this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
 }
 
 

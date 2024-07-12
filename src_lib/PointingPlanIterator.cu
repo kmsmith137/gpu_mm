@@ -112,6 +112,11 @@ static void launch_iterator_test_kernel(const Array<ulong> &plan_mt, Array<int> 
 }
 
 
+// -------------------------------------------------------------------------------------------------
+//
+// FIXME code below could get rewritten in python eventually
+
+
 void test_plan_iterator(const Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock)
 {
     xassert(plan_mt.ndim == 1);
@@ -159,6 +164,48 @@ void test_plan_iterator(const Array<ulong> &plan_mt, uint nmt_per_block, int war
     
     for (long i = 0; i < nmt; i++)
 	xassert(mt_counts.data[i] == 1);
+}
+
+
+Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell)
+{
+    assert(ncells > 0);
+    assert(ncells <= (1<<20));
+    assert(min_nmt_per_cell >= 1);
+    assert(min_nmt_per_cell <= max_nmt_per_cell);
+    assert(max_nmt_per_cell <= 16*1024);
+	   
+    auto all_cells = rand_permutation(1<<20);
+    
+    vector<uint> cells(ncells);
+    vector<uint> nmt_per_cell(ncells);
+    long nmt_tot = 0;
+    
+    for (int i = 0; i < ncells; i++) {
+	cells[i] = all_cells[i];
+	int nmt = rand_int(min_nmt_per_cell, max_nmt_per_cell+1);
+	nmt_per_cell[i] = nmt;
+	nmt_tot += nmt;
+    }
+
+    std::sort(cells.begin(), cells.end());
+
+    assert(nmt_tot <= (1<<30));
+    Array<ulong> plan_mt({nmt_tot}, af_rhost);
+
+    long imt = 0;
+    for (int i = 0; i < ncells; i++) {
+	ulong icell = cells[i];
+	for (uint j = 0; j < nmt_per_cell[i]; j++) {
+	    ulong icl = rand_int(0, 1<<26);
+	    ulong sec = rand_int(0, 1<<18);  // FIXME arbitrary for now
+	    assert(imt < nmt_tot);
+	    plan_mt.data[imt++] = icell | (icl << 20) | (sec << 46);
+	}
+    }
+    assert(imt == nmt_tot);
+
+    return plan_mt;
 }
 
 

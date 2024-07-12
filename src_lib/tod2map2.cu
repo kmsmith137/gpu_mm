@@ -30,8 +30,8 @@ __device__ void add_tqu(T *sp, int iy, int ix, int iy0_cell, int ix0_cell, T t, 
 
 template<typename T, int W, bool Debug>
 __global__ void __launch_bounds__(32*W, 1)
-    tod2map2_kernel(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
-		    uint nsamp, int nypix, int nxpix, uint nmt, uint nmt_per_block)
+tod2map_kernel(T *map, const T *tod, const T *xpointing, const ulong *plan_mt,
+	       uint nsamp, int nypix, int nxpix, uint nmt, uint nmt_per_block)
 {
     static constexpr T one = 1;
     static constexpr T two = 2;
@@ -121,38 +121,46 @@ __global__ void __launch_bounds__(32*W, 1)
 
 
 template<typename T>
-void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan_mt, 
-		     long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug)
+void launch_tod2map(gputils::Array<T> &map,
+		    const gputils::Array<T> &tod,
+		    const gputils::Array<T> &xpointing,
+		    const ulong *plan_mt, long nmt,
+		    long nmt_per_block, bool debug)
 {
     static constexpr int W = 16;  // warps per threadblock
-
-    check_nsamp(nsamp, "launch_tod2map2");
-    check_nypix(nypix, "launch_tod2map2");
-    check_nxpix(nxpix, "launch_tod2map2");
     
-    xassert(nmt > 0);
-    xassert(nmt_per_block > 0);
-    xassert((nmt_per_block % 32) == 0);   // Not necessary, but failure probably indicates a bug
+    long nsamp, nypix, nxpix;
+    check_tod_and_init_nsamp(tod, nsamp, "launch_map2tod", true);        // on_gpu=true
+    check_map_and_init_npix(map, nypix, nxpix, "launch_map2tod", true);  // on_gpu=true
+    check_xpointing(xpointing, nsamp, "launch_map2tod", true);           // on_gpu=true
 
-    int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
-    int shmem_nbytes = 3 * 64 * 64 * sizeof(T);
+    xassert(nmt > 0);
+    xassert(plan_mt != nullptr);
+    xassert(nmt_per_block > 0);
+    xassert((nmt_per_block % 32) == 0);  // Not necessary, but failure probably indicates a bug
+
+    long nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
+    long shmem_nbytes = 3 * 64 * 64 * sizeof(T);
     
     if (debug) {
-	tod2map2_kernel<T,W,true> <<< nblocks, {32,W}, shmem_nbytes >>>
-	    (map, tod, xpointing, plan_mt, nsamp, nypix, nxpix, nmt, nmt_per_block);
+	tod2map_kernel<T,W,true> <<< nblocks, {32,W}, shmem_nbytes >>>
+	    (map.data, tod.data, xpointing.data, plan_mt, nsamp, nypix, nxpix, nmt, nmt_per_block);
     }
     else {
-	tod2map2_kernel<T,W,false> <<< nblocks, {32,W}, shmem_nbytes >>>
-	    (map, tod, xpointing, plan_mt, nsamp, nypix, nxpix, nmt, nmt_per_block);
+	tod2map_kernel<T,W,false> <<< nblocks, {32,W}, shmem_nbytes >>>
+	    (map.data, tod.data, xpointing.data, plan_mt, nsamp, nypix, nxpix, nmt, nmt_per_block);
     }
 
-    CUDA_PEEK("tod2map2 kernel launch");
+    CUDA_PEEK("tod2map kernel launch");
 }
 
 
 #define INSTANTIATE(T) \
-    template void launch_tod2map2(T *map, const T *tod, const T *xpointing, const ulong *plan_mt, \
-				  long nsamp, long nypix, long nxpix, int nmt, int nmt_per_block, bool debug);
+    template void launch_tod2map(gputils::Array<T> &map, \
+				 const gputils::Array<T> &tod, \
+				 const gputils::Array<T> &xpointing, \
+				 const ulong *plan_mt, long nmt, \
+				 long nmt_per_block, bool debug)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

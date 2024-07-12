@@ -13,24 +13,7 @@ namespace gpu_mm {
 static constexpr unsigned int ALL_LANES = 0xffffffff;
 
 
-static void _check_tod2map_args(float *map, const float *tod, const float *xpointing, int ndet, int nt, int ndec, int nra)
-{
-    xassert(tod != nullptr);
-    xassert(map != nullptr);
-    xassert(xpointing != nullptr);
-    
-    xassert(ndet > 0);
-    xassert(nt > 0);
-    xassert(ndec > 0);
-    xassert(nra > 0);
-
-    xassert((nt % 32) == 0);
-    xassert((ndec % 64) == 0);
-    xassert((nra % 64) == 0);
-}
-
-
-static void _check_tod2map_args(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
+static void _check_tod2map_args(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing, int &ndet, int &nt, int &ndec, int &nra)
 {
     xassert(tod.ndim == 2);
     xassert(tod.is_fully_contiguous());
@@ -44,6 +27,20 @@ static void _check_tod2map_args(Array<float> &map, const Array<float> &tod, cons
     xassert(xpointing.shape[1] == tod.shape[0]);
     xassert(xpointing.shape[2] == tod.shape[1]);
     xassert(xpointing.is_fully_contiguous());
+
+    ndet = tod.shape[0];
+    nt = tod.shape[1];
+    ndec = map.shape[1];
+    nra = map.shape[2];
+    
+    xassert(ndet > 0);
+    xassert(nt > 0);
+    xassert(ndec > 0);
+    xassert(nra > 0);
+
+    xassert((nt % 32) == 0);
+    xassert((ndec % 64) == 0);
+    xassert((nra % 64) == 0);
 }
 
 
@@ -60,8 +57,7 @@ static void _check_tod2map_plan(const Array<int> &plan_cltod_list, const Array<i
 
 // -------------------------------------------------------------------------------------------------
 //
-// reference_tod2map(), take 1: without a plan.
-
+// reference_tod2map()
 
 
 // Helper function called by reference_tod2map()
@@ -75,21 +71,26 @@ inline void update_map(float *map, long ipix, long npix, float cos_2a, float sin
 }
 
 
-void reference_tod2map(float *map, const float *tod, const float *xpointing, int ndet, int nt, int ndec, int nra)
+void reference_tod2map(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
 {
+    xassert(map.on_host());
+    xassert(tod.on_host());
+    xassert(xpointing.on_host());
+
+    int ndet, nt, ndec, nra;
     _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
 
     // A "sample" is a (detector, time) pair.
-    long ns = long(ndet) * long(nt);
+    long nsamp = long(ndet) * long(nt);
     long npix = long(ndec) * long(nra);
 
     // No memset(out, ...) here, since we want to accumulate (not overwrite) output.
     
-    for (long s = 0; s < ns; s++) {
-	float x = tod[s];
-	float px_dec = xpointing[s];
-	float px_ra = xpointing[s + ns];
-	float alpha = xpointing[s + 2*ns];
+    for (long s = 0; s < nsamp; s++) {
+	float x = tod.data[s];
+	float px_dec = xpointing.data[s];
+	float px_ra = xpointing.data[s + nsamp];
+	float alpha = xpointing.data[s + 2*nsamp];
 	
 	float cos_2a = cosf(2*alpha);
 	float sin_2a = sinf(2*alpha);
@@ -106,24 +107,13 @@ void reference_tod2map(float *map, const float *tod, const float *xpointing, int
 	
 	long ipix = long(idec) * long(nra) + ira;
 
-	update_map(map, ipix,       npix, cos_2a, sin_2a, x * (1.0-ddec) * (1.0-dra));
-	update_map(map, ipix+1,     npix, cos_2a, sin_2a, x * (1.0-ddec) * (dra));
-	update_map(map, ipix+nra,   npix, cos_2a, sin_2a, x * (ddec) * (1.0-dra));
-	update_map(map, ipix+nra+1, npix, cos_2a, sin_2a, x * (ddec) * (dra));
+	update_map(map.data, ipix,       npix, cos_2a, sin_2a, x * (1.0-ddec) * (1.0-dra));
+	update_map(map.data, ipix+1,     npix, cos_2a, sin_2a, x * (1.0-ddec) * (dra));
+	update_map(map.data, ipix+nra,   npix, cos_2a, sin_2a, x * (ddec) * (1.0-dra));
+	update_map(map.data, ipix+nra+1, npix, cos_2a, sin_2a, x * (ddec) * (dra));
     }
 }
 
-
-void reference_tod2map(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
-{
-    xassert(map.on_host());
-    xassert(tod.on_host());
-    xassert(xpointing.on_host());
-    
-    _check_tod2map_args(map, tod, xpointing);
-    
-    reference_tod2map(map.data, tod.data, xpointing.data, tod.shape[0], tod.shape[1], map.shape[1], map.shape[2]);
-}
 
 
 // -------------------------------------------------------------------------------------------------
@@ -275,7 +265,8 @@ void launch_old_tod2map(
     const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
     const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
-    _check_tod2map_args(map, tod, xpointing);
+    int ndet, nt, ndec, nra;
+    _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
     _check_tod2map_plan(plan_cltod_list, plan_quadruples);
     
     xassert(map.on_gpu());
@@ -285,14 +276,12 @@ void launch_old_tod2map(
     xassert(plan_quadruples.on_gpu());
     
     int nblocks = plan_quadruples.shape[0];
-    long nsamp = tod.shape[0] * tod.shape[1];
-    int ndec = map.shape[1];
-    int nra = map.shape[2];
+    long nsamp = long(ndet) * long(nt);
     
     old_tod2map_kernel<<< nblocks, 512 >>>
 	(map.data, tod.data, xpointing.data, plan_cltod_list.data, plan_quadruples.data, nsamp, ndec, nra);
     
-    CUDA_PEEK("tod2map_kernel");
+    CUDA_PEEK("old_tod2map_kernel");
 }
 
 

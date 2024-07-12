@@ -9,6 +9,13 @@ namespace gpu_mm {
 #endif
 
 
+// plan_iterator_strict: some old code that was superseded by plan_iterator<>.
+//
+// The 'strict' version includes extra logic to avoid splitting map cells between
+// threadblocks (avoiding the need for global memory atomics entirely). I eventually
+// decided this approach was overcomplicated, and didn't actually lead to increased
+// performance.
+//
 // Usage of plan_iterator_strict<W> is best explained by the following pseudocode
 //
 //    plan_iterator_strict<W> iterator;
