@@ -1,5 +1,5 @@
-#include "../include/gpu_mm2.hpp"
-#include "../include/PlanIterator2.hpp"
+#include "../include/gpu_mm.hpp"
+#include "../include/plan_iterator.hpp"
 
 #include <cassert>
 #include <gputils/cuda_utils.hpp>

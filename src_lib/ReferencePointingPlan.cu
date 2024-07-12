@@ -1,5 +1,5 @@
-#include "../include/gpu_mm2.hpp"
-#include "../include/gpu_mm2_internals.hpp"
+#include "../include/gpu_mm.hpp"
+#include "../include/gpu_mm_internals.hpp"
 
 #include <gputils/cuda_utils.hpp>
 #include <algorithm>  // std::sort()

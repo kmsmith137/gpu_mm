@@ -1,4 +1,4 @@
-#include "../include/gpu_mm2.hpp"
+#include "../include/gpu_mm.hpp"
 
 using namespace std;
 using namespace gputils;

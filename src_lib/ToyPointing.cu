@@ -1,5 +1,6 @@
-#include "../include/gpu_mm2.hpp"
+#include "../include/gpu_mm.hpp"
 
+#include <iostream>
 #include <gputils/time_utils.hpp>
 #include <gputils/string_utils.hpp>
 

@@ -4,8 +4,7 @@
 #include <iostream>
 #include <gputils/pybind11.hpp>
 #include "../include/gpu_mm.hpp"
-#include "../include/gpu_mm2.hpp"
-#include "../include/PlanIterator2.hpp"
+#include "../include/plan_iterator.hpp"
 
 
 using namespace std;

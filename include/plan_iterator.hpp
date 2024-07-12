@@ -1,7 +1,7 @@
 #ifndef _GPU_MM2_PLAN_ITERATOR2_HPP
 #define _GPU_MM2_PLAN_ITERATOR2_HPP
 
-#include "gpu_mm2_internals.hpp"  // ALL_LANES
+#include "gpu_mm_internals.hpp"  // ALL_LANES
 
 namespace gpu_mm {
 #if 0

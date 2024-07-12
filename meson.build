@@ -6,9 +6,8 @@ project(
 
 header_files_toplevel = [
     'include/gpu_mm.hpp',
-    'include/gpu_mm2.hpp',
-    'include/gpu_mm2_internals.hpp',
-    'include/PlanIterator2.hpp'
+    'include/gpu_mm_internals.hpp',
+    'include/plan_iterator.hpp'
 ]
 
 lib_source_files = [
@@ -47,9 +46,7 @@ python_files_toplevel = [
 ]    
 
 # In src_bin/
-local_executables = [
-    'test-plan-iterator2'
-]
+# local_executables = [ ]
 
 
 ####################################################################################################
@@ -199,14 +196,14 @@ py3.install_sources(
     subdir: 'gpu_mm/include'
 )
 
-foreach x: local_executables
-    executable(
-        x,
-        'src_bin/' + x + '.cu',
-	dependencies: [gputils_lib],
-	include_directories: gputils_incdir,
-        cuda_args: cuda_args,
-	link_args: link_args,
-	link_with: gpu_mm_lib
-    )
-endforeach
+# foreach x: local_executables
+#     executable(
+#         x,
+#         'src_bin/' + x + '.cu',
+# 	  dependencies: [gputils_lib],
+# 	  include_directories: gputils_incdir,
+#         cuda_args: cuda_args,
+#	  link_args: link_args,
+# 	  link_with: gpu_mm_lib
+#     )
+# endforeach

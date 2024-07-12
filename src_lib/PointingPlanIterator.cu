@@ -1,6 +1,6 @@
-#include "../include/gpu_mm2.hpp"
-#include "../include/gpu_mm2_internals.hpp"  // ALL_LANES
-#include "../include/PlanIterator2.hpp"
+#include "../include/gpu_mm.hpp"
+#include "../include/gpu_mm_internals.hpp"  // ALL_LANES
+#include "../include/plan_iterator.hpp"
 
 #include <vector>
 #include <iostream>
