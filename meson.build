@@ -8,7 +8,6 @@ header_files_toplevel = [
     'include/gpu_mm.hpp',
     'include/gpu_mm2.hpp',
     'include/gpu_mm2_internals.hpp',
-    'include/PlanIterator.hpp',
     'include/PlanIterator2.hpp'
 ]
 
@@ -49,7 +48,6 @@ python_files_toplevel = [
 
 # In src_bin/
 local_executables = [
-    'test-plan-iterator',
     'test-plan-iterator2'
 ]
 
