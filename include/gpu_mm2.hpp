@@ -5,7 +5,7 @@
 #include <iostream>
 #include <gputils/Array.hpp>
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -183,13 +183,12 @@ struct PointingPlan
 };
 
 
-
 // -----------------------------------------------------------------------------
 //
 // Internals + testing
 
 
-// Bare-pointer interface to tod2map.
+// Array interface to map2tod.
 // You probably want to call PointingPlan::map2tod(), not this function!
 
 template<typename T>
@@ -318,6 +317,6 @@ struct ReferencePointingPlan
 };
 
 
-} // namespace gpu_mm2
+} // namespace gpu_mm
 
 #endif //  _GPU_MM2_HPP

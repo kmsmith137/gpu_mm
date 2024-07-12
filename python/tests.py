@@ -7,6 +7,24 @@ import numpy as np
 from . import gpu_mm
 from . import gpu_mm_pybind11
 
+####################################################################################################
+
+from .gpu_mm_pybind11 import reference_map2tod, reference_tod2map
+
+class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
+    def __init__(self, xpointing, ndec, nra, verbose=True):
+        gpu_mm_pybind11.OldPointingPlan.__init__(self, xpointing, ndec, nra, verbose)
+        self.plan_cltod_list = cp.asarray(self._plan_cltod_list)  # CPU -> GPU
+        self.plan_quadruples = cp.asarray(self._plan_quadruples)  # CPU -> GPU
+
+    def map2tod(self, tod, m, xpointing):
+        gpu_mm_pybind11.old_map2tod(tod.reshape((1,-1)), m, xpointing.reshape((3,1,-1)))
+            
+    def tod2map(self, m, tod, xpointing):
+        gpu_mm_pybind11.old_tod2map(m, tod.reshape((1,-1)), xpointing.reshape((3,1,-1)), self.plan_cltod_list, self.plan_quadruples)
+    
+
+####################################################################################################
 
 def is_sorted(arr):
     assert arr.ndim == 1
@@ -14,7 +32,8 @@ def is_sorted(arr):
 
 
 class PointingInstance:
-    def __init__(self, xpointing_gpu, nypix, nxpix, name):
+    def __init__(self, xpointing_cpu, xpointing_gpu, nypix, nxpix, name):
+        self.xpointing_cpu = xpointing_cpu
         self.xpointing_gpu = xpointing_gpu
         self.dtype = xpointing_gpu.dtype
         self.nsamp = xpointing_gpu.shape[1]
@@ -26,13 +45,13 @@ class PointingInstance:
     @classmethod
     def from_toy_pointing(cls, nsamp, nypix, nxpix, scan_speed, total_drift):
         tp = gpu_mm.ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
-        return PointingInstance(tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
 
     
     @classmethod
     def make_random(cls, nsamp_max):
         tp = gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
-        return PointingInstance(tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
 
     
     @classmethod
@@ -55,15 +74,16 @@ class PointingInstance:
         # Flatten (ndet, ntod) indices and round up to multiple of 32
         ns0 = xp.shape[1] * xp.shape[2]    # before padding
         nsamp = 32 * ((ns0 + 31) // 32)    # after padding
-        xp2 = np.zeros((3, nsamp), dtype=xp.dtype)
-        xp2[:,:ns0] = xp.reshape((3,ns0))
-        xp2[:,ns0:] = xp[:,-1,-1].reshape((3,1))
+        xpointing_cpu = np.zeros((3, nsamp), dtype=xp.dtype)
+        xpointing_cpu[:,:ns0] = xp.reshape((3,ns0))
+        xpointing_cpu[:,ns0:] = xp[:,-1,-1].reshape((3,1))
         
         assert ymin >= 0
         assert xmin >= 0
         
         return PointingInstance(
-            xpointing_gpu = cp.asarray(xp2),     # copy CPU -> CPU
+            xpointing_cpu = xpointing_cpu,
+            xpointing_gpu = cp.asarray(xpointing_cpu),
             nypix = 64*int(ymax//64) + 64,       # FIXME should be in npy file
             nxpix = 128*int(xmax//128) + 128,    # FIXME can be 64 after removing periodicity
             name = filename
@@ -130,12 +150,8 @@ class PointingInstance:
 
     @functools.cached_property
     def old_plan(self):
-        print('    Making OldPointingPlan (currently done on CPU and slow)')
-        t0 = time.time()
-        xpointing_cpu = cp.asnumpy(self.xpointing_gpu).reshape((3,1,self.nsamp))
-        plan = gpu_mm.OldPointingPlan(xpointing_cpu, self.nypix, self.nxpix)
-        print(f'    Plan creation time = {time.time()-t0} seconds')
-        return plan
+        print('    Making OldPointingPlan (slow, done on CPU)')
+        return  OldPointingPlan(self.xpointing_cpu.reshape((3,1,self.nsamp)), self.nypix, self.nxpix)
     
 
     def _compare_arrays(self, arr1, arr2):
@@ -175,158 +191,195 @@ class PointingInstance:
         print('    test_pointing_preplan: pass')
 
 
-    def test_pointing_plan_iterator(self):
+    def test_plan_iterator(self):
         plan_mt = self.plan.get_plan_mt()   # FIXME extra copy GPU -> CPU -> GPU
         nmt_per_threadblock = 32 * np.random.randint(1, 100)   # FIXME revisit
         warps_per_threadblock = 4 * np.random.randint(1,5)     # FIXME revisit
-        gpu_mm_pybind11.test_pointing_plan_iterator(plan_mt, nmt_per_threadblock, warps_per_threadblock)
-        print('    test_pointing_plan_iterator: pass')
+        gpu_mm_pybind11.test_plan_iterator(plan_mt, nmt_per_threadblock, warps_per_threadblock)
+        print('    test_plan_iterator: pass')
 
 
-    def test_map2tod(self):
+    def test_map2tod(self, test_old=False):
         m = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
-        tod1 = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        tod2 = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        
-        gpu_mm_pybind11.simple_map2tod(tod1, m, self.xpointing_gpu)
-        cp.cuda.runtime.deviceSynchronize()
-        
-        self.plan.map2tod(tod2, m, self.xpointing_gpu, debug=True)
-        cp.cuda.runtime.deviceSynchronize()
+        tod_ref = np.random.normal(size=self.nsamp)
+        tod_ref = np.asarray(tod_ref, dtype=self.dtype)
+        reference_map2tod(tod_ref.reshape((1,-1)), cp.asnumpy(m), self.xpointing_cpu.reshape((3,1,-1)))
+        tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
-        epsilon = self._compare_arrays(tod1, tod2)
+        tod_unplanned = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        gpu_mm_pybind11.simple_map2tod(tod_unplanned, m, self.xpointing_gpu)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(tod_ref, tod_unplanned)
+        print(f'    test_map2tod_unplanned: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        del tod_unplanned
+
+        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        self.plan.map2tod(tod, m, self.xpointing_gpu, debug=True)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(tod_ref, tod)
         print(f'    test_map2tod: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        del tod
+
+        if not test_old:
+            return
+
+        tod_old = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        self.old_plan.map2tod(tod_old, m, self.xpointing_gpu)
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(tod_ref, tod_old)
+        print(f'    test_map2tod_old: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
 
         
-    def test_tod2map(self):
+    def test_tod2map(self, test_old=False):
         tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        
-        m1 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
-        m2 = cp.copy(m1)
+        m0 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
 
-        gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
-        cp.cuda.runtime.deviceSynchronize()
-        
-        self.plan.tod2map(m2, tod, self.xpointing_gpu, debug=True)
+        m_ref = cp.asnumpy(m0)
+        reference_tod2map(m_ref, cp.asnumpy(tod).reshape((1,-1)), self.xpointing_cpu.reshape((3,1,-1)))
+        m_ref = cp.asarray(m_ref)  # CPU -> GPU
+
+        m_unplanned = cp.copy(m0)
+        gpu_mm_pybind11.simple_tod2map(m_unplanned, tod, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
 
-        epsilon = self._compare_arrays(m1, m2)
+        epsilon = self._compare_arrays(m_ref, m_unplanned)
+        print(f'    test_tod2map_unplanned: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        del m_unplanned
+
+        m = cp.copy(m0)
+        self.plan.tod2map(m, tod, self.xpointing_gpu, debug=True)
+        cp.cuda.runtime.deviceSynchronize()
+
+        epsilon = self._compare_arrays(m_ref, m)
         print(f'    test_tod2map: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        del m
 
+        if not test_old:
+            return
 
-    def test_old_tod2map(self):
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        
-        m1 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
-        m2 = cp.copy(m1)
-
-        gpu_mm_pybind11.simple_tod2map(m1, tod, self.xpointing_gpu)
+        m_old = cp.copy(m0)
+        self.old_plan.tod2map(m_old, tod, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
-        
-        gpu_mm.gpu_tod2map(m2, tod.reshape(1,self.nsamp), self.xpointing_gpu.reshape((3,1,self.nsamp)), self.old_plan)
-        cp.cuda.runtime.deviceSynchronize()
-        
-        epsilon = self._compare_arrays(m1, m2)
+
+        epsilon = self._compare_arrays(m_ref, m_old)
         print(f'    test_old_tod2map: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        del m_old
 
         
     def test_all(self):
+        test_old = True   # FIXME define command-line flag
         print(f'    {self.plan}')
         self.test_pointing_preplan()
         self.test_pointing_plan()
-        self.test_pointing_plan_iterator()
-        self.test_map2tod()
-        self.test_tod2map()
-        # self.test_old_tod2map()
+        self.test_plan_iterator()
+        self.test_map2tod(test_old=test_old)
+        self.test_tod2map(test_old=test_old)
 
         
     def time_pointing_preplan(self):
+        print()
         for _ in range(10):
             t0 = time.time()
             pp = gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
-            print(f'    time_pointing_preplan: {time.time()-t0} seconds')
+            print(f'    time_pointing_preplan: {1000*(time.time()-t0)} ms')
             del pp
 
             
     def time_pointing_plan(self):
         pp = self.preplan
         buf = cp.zeros(pp.plan_nbytes, dtype=np.uint8)
-        tmp_buf = cp.zeros(pp.plan_constructor_tmp_nbytes, dtype=np.uint8)
+        tmp_buf = cp.zeros(pp.plan_constructor_tmp_nbytes, dtype=np.uint8)        
+        print()
         
         for _ in range(10):
             t0 = time.time()
             p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
-            print(f'    time_pointing_plan: {time.time()-t0} seconds')
+            print(f'    time_pointing_plan: {1000*(time.time()-t0)} ms')
             del p
     
 
-    def time_simple_map2tod(self):
+    def time_map2tod(self, time_old=False):
         tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
         m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-
+        print()
+        
         for _ in range(10):
             t0 = time.time()
             gpu_mm_pybind11.simple_map2tod(tod, m, self.xpointing_gpu)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_simple_map2tod: {time.time()-t0} seconds')
+            print(f'    time_unplanned_map2tod: {1000*(time.time()-t0)} ms')
 
-
-    def time_map2tod(self):
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-        p = self.plan
-
+        plan = self.plan        
+        print()
+        
         for _ in range(10):
             t0 = time.time()
-            p.map2tod(tod, m, self.xpointing_gpu, debug=False)
+            plan.map2tod(tod, m, self.xpointing_gpu, debug=False)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_map2tod: {time.time()-t0} seconds')
+            print(f'    time_map2tod: {1000*(time.time()-t0)} ms')
 
-            
-    def time_simple_tod2map(self):
+        if not time_old:
+            return
+        
+        plan = self.old_plan
+        print()
+        
+        for _ in range(10):
+            t0 = time.time()
+            plan.map2tod(tod, m, self.xpointing_gpu)
+            cp.cuda.runtime.deviceSynchronize()
+            print(f'    time_old_map2tod: {1000*(time.time()-t0)} ms')
+
+
+    def time_tod2map(self, time_old=False):
+        # Note: we don't use a zeroed timestream, since tod2map() contains an optimization
+        # which may give artificially fast timings when run on an all-zeroes timestream.
+        
         tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
         m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-
+        print()
+        
         for _ in range(10):
             t0 = time.time()
             gpu_mm_pybind11.simple_tod2map(m, tod, self.xpointing_gpu)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_simple_tod2map: {time.time()-t0} seconds')
+            print(f'    time_unplanned_tod2map: {1000*(time.time()-t0)} ms')
 
-    
-    def time_tod2map(self):
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
-        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-        p = self.plan
+        plan = self.plan
+        print()
 
         for _ in range(10):
             t0 = time.time()
-            p.tod2map(m, tod, self.xpointing_gpu, debug=False)
+            plan.tod2map(m, tod, self.xpointing_gpu, debug=False)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_tod2map: {time.time()-t0} seconds')
+            print(f'    time_tod2map: {1000*(time.time()-t0)} ms')
 
+        if not time_old:
+            return
 
-    def time_old_tod2map(self):
-        xpointing_gpu = self.xpointing_gpu.reshape((3,1,self.nsamp))
-        tod = cp.random.normal(size=(1,self.nsamp), dtype=self.dtype)
-        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
-        p = self.old_plan
+        plan = self.old_plan
+        print()
 
         for _ in range(10):
             t0 = time.time()
-            gpu_mm.gpu_tod2map(m, tod, xpointing_gpu, p)
+            plan.tod2map(m, tod, self.xpointing_gpu)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_old_tod2map: {time.time()-t0} seconds')
+            print(f'    time_old_tod2map (uses plan computed on cpu): {1000*(time.time()-t0)} ms')
 
 
-    def time_all(self):
+    def time_all(self, ):
+        time_old = True    # FIXME define command-line flag
         self.time_pointing_preplan()
         self.time_pointing_plan()
-        self.time_simple_map2tod()
-        self.time_map2tod()
-        self.time_simple_tod2map()
-        self.time_tod2map()
-        # self.time_old_tod2map()
+        self.time_map2tod(time_old=time_old)
+        self.time_tod2map(time_old=time_old)
+

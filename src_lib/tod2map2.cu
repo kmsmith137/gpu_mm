@@ -6,7 +6,7 @@
 
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -49,7 +49,7 @@ __global__ void __launch_bounds__(32*W, 1)
     const uint laneId = threadIdx.x;
     const uint warpId = threadIdx.y;
     
-    PlanIterator2<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
+    plan_iterator<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
 
     // Outer loop over map cells
 
@@ -76,11 +76,11 @@ __global__ void __launch_bounds__(32*W, 1)
 	    T t = tod[s];
 
 	    // FIXME add 'status' argument, and calls to range_check_{xpix,ypix}().
-	    normalize_xpix(xpix, nxpix);   // defined in gpu_mm2_internals.hpp
+	    normalize_xpix(xpix, nxpix);   // defined in gpu_mm_internals.hpp
 
 	    int iy0, iy1, ix0, ix1;
-	    quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
-	    quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+	    quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	    quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 
 	    T dy = ypix - iy0;
 	    T dx = xpix - ix0;
@@ -158,4 +158,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

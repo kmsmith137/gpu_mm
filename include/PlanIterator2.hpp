@@ -3,19 +3,19 @@
 
 #include "gpu_mm2_internals.hpp"  // ALL_LANES
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
 
 
-// Defined in src_lib/PointingPlanIterator.cu
-extern void test_plan_iterator2(const gputils::Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock);
+// Defined in src_lib/test_plan_iterator.cu
+extern void test_plan_iterator(const gputils::Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock);
 
 
-// Usage of PlanIterator2<W> is best explained by the following pseudocode:
+// Usage of plan_iterator<W> is best explained by the following pseudocode:
 //
-//    PlanIterator2<W> iterator(plan_mt, nmt, nmt_per_block);
+//    plan_iterator<W> iterator(plan_mt, nmt, nmt_per_block);
 //
 //    while (iterator.get_cell()) {
 //        // Per-cell initialization (using value of iterator.icell)
@@ -30,10 +30,10 @@ extern void test_plan_iterator2(const gputils::Array<ulong> &plan_mt, uint nmt_p
 
 // The "irregular" PlanIterator allows each threadblock to use an arbitrary [imt_start, imt_end).
 // (This was temporarily useful during code development, but not sure if it has long-term usefulness.)
-// You probably want 'struct PlanIterator2' instead (see below).
+// You probably want 'struct plan_iterator' instead (see below).
 
 template<int W, bool Debug>
-struct PlanIteratorIrregular
+struct plan_iterator_irregular
 {
     // Initialized in constructor, constant after construction.
     const ulong *plan_mt;
@@ -57,7 +57,7 @@ struct PlanIteratorIrregular
     //   _load_mt_rb()            Called whenever 'imt_rb' changes. Updates 'mt_rb'.
     //   _init_next_cell_state()  Called whenever 'mt_rb' or 'icell' changes. Updates 'next_cell_*'.
 
-    __device__ PlanIteratorIrregular(const ulong *plan_mt_, uint imt_start, uint imt_end_)
+    __device__ plan_iterator_irregular(const ulong *plan_mt_, uint imt_start, uint imt_end_)
     {
 	if constexpr (Debug) {
 	    assert(imt_start <= imt_end_);
@@ -175,10 +175,10 @@ struct PlanIteratorIrregular
 
 
 template<int W, bool Debug>
-struct PlanIterator2 : public PlanIteratorIrregular<W,Debug>
+struct plan_iterator : public plan_iterator_irregular<W,Debug>
 {
-    __device__ PlanIterator2(const ulong *plan_mt_, uint nmt, uint nmt_per_block)
-	: PlanIteratorIrregular<W,Debug> (
+    __device__ plan_iterator(const ulong *plan_mt_, uint nmt, uint nmt_per_block)
+	: plan_iterator_irregular<W,Debug> (
 	      plan_mt_,
 	      blockIdx.x * nmt_per_block,                // imt_start
 	      min(nmt, (blockIdx.x+1) * nmt_per_block))  // imt_end
@@ -192,6 +192,6 @@ struct PlanIterator2 : public PlanIteratorIrregular<W,Debug>
 };
 
     
-}  // namespace gpu_mm2
+}  // namespace gpu_mm
 
 #endif  // _GPU_MM2_PLAN_ITERATOR2_HPP

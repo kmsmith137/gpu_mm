@@ -9,7 +9,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -137,17 +137,17 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	// For now, I'm including the range checks, even though they should be
 	// redundant with the preplan. (FIXME: does it affect running time?)
 	
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm2_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm2_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm2_internals.hpp
+	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
+	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 	 
 	int iypix0, iypix1, ixpix0, ixpix1;
-	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
-	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 	
 	int iycell_e, iycell_o, ixcell_e, ixcell_o;
-	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm2_internals.hpp
-	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm2_internals.hpp
+	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
+	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
 	
 	uint icell0, icell1, icell2, icell3;
 	uint amask0, amask1, amask2, amask3;
@@ -370,4 +370,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

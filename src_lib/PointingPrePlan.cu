@@ -8,7 +8,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -44,22 +44,22 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm2_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm2_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm2_internals.hpp
+	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
+	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 	
 	int iypix0, iypix1, ixpix0, ixpix1;
-	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
-	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 
 	int iycell_e, iycell_o, ixcell_e, ixcell_o;
-	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm2_internals.hpp
-	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm2_internals.hpp
+	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
+	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
 	
-	nmt += count_nmt(iycell_e, ixcell_e);  // defined in gpu_mm2_internals.hpp
-	nmt += count_nmt(iycell_e, ixcell_o);  // defined in gpu_mm2_internals.hpp
-	nmt += count_nmt(iycell_o, ixcell_e);  // defined in gpu_mm2_internals.hpp
-	nmt += count_nmt(iycell_o, ixcell_o);  // defined in gpu_mm2_internals.hpp
+	nmt += count_nmt(iycell_e, ixcell_e);  // defined in gpu_mm_internals.hpp
+	nmt += count_nmt(iycell_e, ixcell_o);  // defined in gpu_mm_internals.hpp
+	nmt += count_nmt(iycell_o, ixcell_e);  // defined in gpu_mm_internals.hpp
+	nmt += count_nmt(iycell_o, ixcell_o);  // defined in gpu_mm_internals.hpp
     }
     
     // Reduce across threads in the warp.
@@ -111,17 +111,16 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     
     // Launch params for planner/preplanner kernels.
     // Use at least 16 TOD cache lines per threadblock, and at most 1024 threadblocks.
-    
-    this->ncl_per_threadblock = max(16L, (nsamp+1023)/1024);
+
+    long ncl = (nsamp + 31) / 32;
+    this->ncl_per_threadblock = max(16L, (ncl+1023)/1024);
     this->ncl_per_threadblock = (ncl_per_threadblock + 3) & ~3;
-    
-    long nsamp_per_threadblock = 32 * ncl_per_threadblock;
-    this->planner_nblocks = (nsamp + nsamp_per_threadblock - 1) / nsamp_per_threadblock;
+    this->planner_nblocks = (ncl + ncl_per_threadblock - 1) / ncl_per_threadblock;
     
     Array<uint> arr_gpu({planner_nblocks}, af_gpu);
 
     preplan_kernel <<< planner_nblocks, 128 >>>
-	(arr_gpu.data, xpointing_gpu.data, nsamp, nsamp_per_threadblock, nypix, nxpix);
+	(arr_gpu.data, xpointing_gpu.data, nsamp, 32*ncl_per_threadblock, nypix, nxpix);
 
     CUDA_PEEK("preplan_kernel launch");
 
@@ -166,7 +165,7 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     assert(cub_nbytes > 0);
 
     // Initialize public members containing byte counts: plan_nbytes, plan_constructor_tmp_nbytes.
-    // Note: align128() is defined in gpu_mm2_internals.hpp
+    // Note: align128() is defined in gpu_mm_internals.hpp
 
     long mt_nbytes = align128(plan_nmt * sizeof(ulong));
     long err_nbytes = align128(planner_nblocks * sizeof(int));
@@ -207,4 +206,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

@@ -11,7 +11,7 @@
 
 using namespace std;
 using namespace gputils;
-using namespace gpu_mm2;
+using namespace gpu_mm;
 
 
 // -------------------------------------------------------------------------------------------------
@@ -46,7 +46,7 @@ __device__ void assert_equal_within_block(uint *sp, uint x)
 
 
 template<int W>
-__global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts, int *out_cell_counts)
+__global__ void strict_iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts, int *out_cell_counts)
 {
     __shared__ uint shmem[W];
 	
@@ -56,7 +56,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
     int laneId = threadIdx.x;
     int warpId = threadIdx.y;
     
-    PlanIterator<W,true> iterator;
+    plan_iterator_strict<W,true> iterator;
 
     if (!iterator.init(plan_mt, nmt, nmt_per_block))
 	return;
@@ -102,7 +102,7 @@ __global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_bloc
 // -------------------------------------------------------------------------------------------------
 
 
-static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
+static void test_strict_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
 {
     assert(plan_mt.ndim == 1);
     assert(plan_mt.is_fully_contiguous());
@@ -139,7 +139,7 @@ static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
     int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
     constexpr int W = 16;
     
-    iterator_test_kernel<W> <<< nblocks, {32,W} >>>
+    strict_iterator_test_kernel<W> <<< nblocks, {32,W} >>>
 	(plan_mt_gpu.data, nmt, nmt_per_block, mt_counts.data, cell_counts.data);
 
     CUDA_PEEK("iterator test kernel launch");
@@ -155,7 +155,7 @@ static void test_plan_iterator(const Array<ulong> plan_mt, uint nmt_per_block)
     for (long i = 0; i < (1<<20); i++)
 	assert(cell_counts.data[i] == expected_cell_counts.data[i]);
 
-    cout << "test_plan_iterator: pass" << endl;
+    cout << "test_strict_iterator_strict: pass" << endl;
 }
 
 
@@ -221,7 +221,7 @@ int main(int argc, char **argv)
 	     << ", nmt=" << plan_mt.size
 	     << ", nmt_per_block=" << nmt_per_block << endl;
 	
-	test_plan_iterator(plan_mt, nmt_per_block);
+	test_strict_iterator(plan_mt, nmt_per_block);
     }
 
     do {
@@ -237,7 +237,7 @@ int main(int argc, char **argv)
 	PointingPlan p(pp, tp.xpointing_gpu);
 	Array<ulong> plan_mt = p.get_plan_mt(true);  // gpu=true
 	
-	test_plan_iterator(plan_mt, nmt_per_block);  // last argument is nmt_per_block
+	test_strict_iterator(plan_mt, nmt_per_block);  // last argument is nmt_per_block
     } while (0);
 	
     return 0;

@@ -4,7 +4,7 @@
 #include <cassert>
 #include <gputils/Array.hpp>
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -139,6 +139,6 @@ static __device__ void analyze_cell_pair(int iycell, int ixcell, uint &icell, ui
 }
 
 
-} // namespace gpu_mm2
+} // namespace gpu_mm
 
 #endif //  _GPU_MM2_INTERNALS_HPP

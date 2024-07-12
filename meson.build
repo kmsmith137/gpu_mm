@@ -27,7 +27,6 @@ lib_source_files = [
     'src_lib/map2tod2.cu',
     'src_lib/misc.cu',
     'src_lib/pycufft.cu',
-    'src_lib/python_exports.cu',
     'src_lib/simple_map2tod.cu',
     'src_lib/simple_tod2map.cu',
     'src_lib/tod2map.cu',           # old
@@ -51,9 +50,7 @@ python_files_toplevel = [
 # In src_bin/
 local_executables = [
     'test-plan-iterator',
-    'test-plan-iterator2',
-    'time-plan-iterator',
-    'time-simple-tod2map'
+    'test-plan-iterator2'
 ]
 
 

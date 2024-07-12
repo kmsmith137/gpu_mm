@@ -11,7 +11,7 @@
 
 using namespace std;
 using namespace gputils;
-using namespace gpu_mm2;
+using namespace gpu_mm;
 
 
 static Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell)
@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 	     << ", warps_per_threadblock=" << warps_per_threadblock
 	     << endl;
 	
-	test_plan_iterator2(plan_mt, nmt_per_block, warps_per_threadblock);
+	test_plan_iterator(plan_mt, nmt_per_block, warps_per_threadblock);
     }
 
     do {
@@ -93,7 +93,7 @@ int main(int argc, char **argv)
 	PointingPlan p(pp, tp.xpointing_gpu);
 	Array<ulong> plan_mt = p.get_plan_mt(true);  // gpu=true
 	
-	test_plan_iterator2(plan_mt, nmt_per_block, warps_per_threadblock);
+	test_plan_iterator(plan_mt, nmt_per_block, warps_per_threadblock);
     } while (0);
 	
     return 0;

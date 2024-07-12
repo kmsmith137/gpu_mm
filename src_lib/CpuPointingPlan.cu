@@ -66,19 +66,24 @@ inline void _add_triple(vector<Triple> &v, size_t prev_size, int idec, int ira, 
 
 
 
-CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, int nra, bool verbose)
+OldPointingPlan::OldPointingPlan(const Array<float> &xpointing, int ndec, int nra, bool verbose)
 {
-    assert(ndet > 0);
-    assert(nt > 0);
-    assert(ndec > 0);
-    assert(nra > 0);
+    xassert(xpointing.on_host());
+    xassert(xpointing.ndim == 3);
+    xassert(xpointing.shape[0] == 3);
+    xassert(xpointing.is_fully_contiguous());
+
+    long ns = xpointing.shape[1] * xpointing.shape[2];
+    xassert(ns > 0);
+    xassert(ndec > 0);
+    xassert(nra > 0);
 
     // Assumed by current implementation, but could be relaxed.
-    assert((nt % 32) == 0);
-    assert((ndec % 64) == 0);
-    assert((nra % 64) == 0);
-    
-    long ns = long(ndet) * long(nt);
+    xassert((ns % 32) == 0);
+    xassert((ndec % 64) == 0);
+    xassert((nra % 64) == 0);
+
+    const float *xp = xpointing.data;
     
     // Step 1: Construct and sort a vector<Triple>.
     
@@ -97,10 +102,10 @@ CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, in
 	    float ddec = px_dec - float(idec);
 	    float dra = px_ra - float(ira);
 	
-	    assert(idec >= 0);
-	    assert(idec < ndec-1);
-	    assert(ira >= 0);
-	    assert(ira < nra-1);
+	    xassert(idec >= 0);
+	    xassert(idec < ndec-1);
+	    xassert(ira >= 0);
+	    xassert(ira < nra-1);
 
 	    _add_triple(tvec, prev_size, idec, ira, cltod);
 	    _add_triple(tvec, prev_size, idec, ira+1, cltod);
@@ -141,24 +146,24 @@ CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, in
     // Note that qvec[0] is a sentinel, and the "real" qvec starts at 1.
 
     long nq = qvec.size()-1;
-    assert(nq > 0);
-    assert(qvec[1].icl_start == 0);
-    assert(qvec[nq].icl_end == ncl_inflated);
+    xassert(nq > 0);
+    xassert(qvec[1].icl_start == 0);
+    xassert(qvec[nq].icl_end == ncl_inflated);
 
     for (long q = 1; q < nq; q++)
-	assert(qvec[q].icl_end == qvec[q+1].icl_start);
+	xassert(qvec[q].icl_end == qvec[q+1].icl_start);
 
     for (long q = 1; q <= nq; q++) {
 	int icl0 = qvec[q].icl_start;
 	int icl1 = qvec[q].icl_end;
 	
-	assert(icl0 >= 0);
-	assert(icl0 < icl1);
-	assert(icl1 <= ncl_inflated);
+	xassert(icl0 >= 0);
+	xassert(icl0 < icl1);
+	xassert(icl1 <= ncl_inflated);
 	
 	for (int icl = icl0; icl < icl1; icl++) {
-	    assert(tvec[icl].cell_idec == qvec[q].cell_idec);
-	    assert(tvec[icl].cell_ira == qvec[q].cell_ira);
+	    xassert(tvec[icl].cell_idec == qvec[q].cell_idec);
+	    xassert(tvec[icl].cell_ira == qvec[q].cell_ira);
 	}
     }
 
@@ -182,7 +187,7 @@ CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, in
     if (!verbose)
 	return;
   /*
-    cout << "CpuPointingPlan:\n"
+    cout << "OldPointingPlan:\n"
 	 << "    ncl_uninflated = " << ncl_uninflated << "\n"
 	 << "    ncl_inflated = " << ncl_inflated << "\n"
 	 << "    num_quadruples = " << num_quadruples << " (i.e. nonempty cells)\n"
@@ -190,25 +195,6 @@ CpuPointingPlan::CpuPointingPlan(const float *xp, int ndet, int nt, int ndec, in
 	 << "    cache lines per nonempty cell = " << (double(ncl_inflated) / double(num_quadruples)) << endl;
 	*/
 }
-
-
-// Helper for constructor delegation.
-const float *_get_xpointer(const Array<float> &xpointing)
-{
-    assert(xpointing.on_host());
-    assert(xpointing.ndim == 3);
-    assert(xpointing.shape[0] == 3);
-    assert(xpointing.is_fully_contiguous());
-    return xpointing.data;
-}
-
-
-CpuPointingPlan::CpuPointingPlan(const Array<float> &xpointing, int ndec, int nra, bool verbose)
-    : CpuPointingPlan(_get_xpointer(xpointing),  // const float *xp
-		      xpointing.shape[1],        // int ndet
-		      xpointing.shape[2],        // int nt
-		      ndec, nra, verbose)
-{ }
 
 
 }  // namespace gpu_mm

@@ -45,8 +45,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     // ---------------------------------------------------------------------------------------------
 
     
-    using PointingPrePlan = gpu_mm2::PointingPrePlan;
-    using PointingPlan = gpu_mm2::PointingPlan;
+    using PointingPrePlan = gpu_mm::PointingPrePlan;
+    using PointingPlan = gpu_mm::PointingPlan;
 
     string pp_suffix =
 	"Reminder: plan creation is factored into two steps:\n"
@@ -139,34 +139,46 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     //
     // Only used in unit tests
 
-    using ToyPointing = gpu_mm2::ToyPointing<Tmm>;
-    using ReferencePointingPlan = gpu_mm2::ReferencePointingPlan;
+    using ToyPointing = gpu_mm::ToyPointing<Tmm>;
+    using ReferencePointingPlan = gpu_mm::ReferencePointingPlan;
+    using OldPointingPlan = gpu_mm::OldPointingPlan;
 
     // FIXME write longer docstring
     const char *reference_pointing_plan_docstring =
 	"ReferencePointingPlan: A utility class used in unit tests.\n";
-    
-    // Select template specialization T=Tmm
-    auto _simple_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
-    {
-	gpu_mm2::launch_simple_tod2map(map, tod, xpointing);
-    };
+
     
     // Select template specialization T=Tmm
     auto _simple_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing)
     {
-	gpu_mm2::launch_simple_map2tod(tod, map, xpointing);
+	gpu_mm::launch_simple_map2tod(tod, map, xpointing);
     };
-
-    m.def("simple_tod2map", _simple_tod2map,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
+    
+    // Select template specialization T=Tmm
+    auto _simple_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
+    {
+	gpu_mm::launch_simple_tod2map(map, tod, xpointing);
+    };
     
     m.def("simple_map2tod", _simple_map2tod,
 	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
 
-    m.def("old_tod2map", gpu_mm::launch_tod2map,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
+    m.def("simple_tod2map", _simple_tod2map,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
+
+    m.def("reference_map2tod", gpu_mm::reference_map2tod,
+	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
+    
+    m.def("reference_tod2map", gpu_mm::reference_tod2map,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
 	  
+    m.def("old_map2tod", gpu_mm::launch_old_map2tod,
+	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
+
+    m.def("old_tod2map", gpu_mm::launch_old_tod2map,
+	  py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
+
+    
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
 	     py::arg("nsamp"), py::arg("nypix"), py::arg("nxpix"),
@@ -206,6 +218,14 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def("__str__", &ReferencePointingPlan::str)
     ;
 
-    m.def("test_pointing_plan_iterator", &gpu_mm2::test_plan_iterator2,
+    py::class_<OldPointingPlan>(m, "OldPointingPlan")
+	.def(py::init<const Array<float> &, int, int, bool>(),
+	     py::arg("xpointing"), py::arg("ndec"), py::arg("nra"), py::arg("verbose") = false)
+
+	.def_readonly("_plan_cltod_list", &OldPointingPlan::plan_cltod_list)
+	.def_readonly("_plan_quadruples", &OldPointingPlan::plan_quadruples)
+    ;
+					   
+    m.def("test_plan_iterator", &gpu_mm::test_plan_iterator,
 	  py::arg("plan_mt"), py::arg("nmt_per_block"), py::arg("warps_per_threadblock"));
 }

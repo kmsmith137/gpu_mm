@@ -8,7 +8,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -43,11 +43,11 @@ __global__ void simple_tod2map_kernel(T *map, const T *tod, const T *xpointing, 
 	T t = tod[s];
 
 	// FIXME add 'status' argument, and calls to range_check_{xpix,ypix}().
-	normalize_xpix(xpix, nxpix);   // defined in gpu_mm2_internals.hpp
+	normalize_xpix(xpix, nxpix);   // defined in gpu_mm_internals.hpp
 	
 	int iy0, iy1, ix0, ix1;
-	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
-	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 
 	T dy = ypix - iy0;
 	T dx = xpix - ix0;
@@ -92,4 +92,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

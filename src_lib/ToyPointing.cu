@@ -6,7 +6,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -124,4 +124,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

@@ -12,7 +12,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -50,7 +50,7 @@ __device__ void assert_equal_within_block(uint *sp, uint x)
 
 
 template<int W>
-__global__ void iterator2_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts)
+__global__ void iterator_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_block, int *out_mt_counts)
 {
     __shared__ uint shmem[W];
 	
@@ -60,7 +60,7 @@ __global__ void iterator2_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_blo
     int laneId = threadIdx.x;
     // int warpId = threadIdx.y;
     
-    PlanIterator2<W,true> iterator(plan_mt, nmt, nmt_per_block);
+    plan_iterator<W,true> iterator(plan_mt, nmt, nmt_per_block);
     
     while (iterator.get_cell()) {
 	uint icell = iterator.icell;
@@ -100,19 +100,19 @@ __global__ void iterator2_test_kernel(ulong *plan_mt, uint nmt, uint nmt_per_blo
 }
 
 
-// Helper for test_plan_iterator2()
+// Helper for test_plan_iterator()
 template<int W>
 static void launch_iterator_test_kernel(const Array<ulong> &plan_mt, Array<int> &mt_counts, int nmt_per_block)
 {
     int nmt = plan_mt.size;
     int nblocks = (nmt + nmt_per_block - 1) / nmt_per_block;
     
-    iterator2_test_kernel<W> <<< nblocks, {32,W} >>>
+    iterator_test_kernel<W> <<< nblocks, {32,W} >>>
 	(plan_mt.data, nmt, nmt_per_block, mt_counts.data);
 }
 
 
-void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock)
+void test_plan_iterator(const Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock)
 {
     xassert(plan_mt.ndim == 1);
     xassert(plan_mt.is_fully_contiguous());
@@ -148,9 +148,9 @@ void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int wa
     else if (warps_per_threadblock == 16)
 	launch_iterator_test_kernel<16> (plan_mt, mt_counts, nmt_per_block);
     else
-	throw runtime_error("test_plan_iterator2: unsupported value of warps_per_threadblock");
+	throw runtime_error("test_plan_iterator: unsupported value of warps_per_threadblock");
 
-    CUDA_PEEK("iterator2 test kernel launch");
+    CUDA_PEEK("iterator_test kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
 
     // Check results
@@ -162,4 +162,4 @@ void test_plan_iterator2(const Array<ulong> &plan_mt, uint nmt_per_block, int wa
 }
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm

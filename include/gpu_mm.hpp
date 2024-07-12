@@ -22,46 +22,14 @@ namespace gpu_mm {
 // In particular, map2tod doesn't know that the ra coordinate should be periodic.
 
 
-// map2tod high-level interface
-
-extern void launch_map2tod(
+extern void launch_old_map2tod(
     gputils::Array<float> &tod,              // shape (ndet, nt)
     const gputils::Array<float> &map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &xpointing,  // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    cudaStream_t stream = nullptr,
-    int nthreads_per_block = 512,
-    int nt_per_block = 16384
+    const gputils::Array<float> &xpointing   // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
 );
-
-
-// map2tod low-level interface
-
-extern void launch_map2tod(
-    float *tod,              // shape (ndet, nt)
-    const float *map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const float *xpointing,  // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    int ndet,                // Number of detectors
-    int nt,                  // Number of time samples per detector
-    int ndec,                // Length of map declination axis
-    int nra,                 // Length of map RA axis
-    cudaStream_t stream = nullptr,
-    int nthreads_per_block = 512,
-    int nt_per_block = 16384
-);
-
 
 
 // Slow single-threaded CPU map2tod, for testing
-
-extern void reference_map2tod(
-    float *tod,              // shape (ndet, nt)
-    const float *map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const float *xpointing,  // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    int ndet,                // Number of detectors
-    int nt,                  // Number of time samples per detector
-    int ndec,                // Length of map declination axis
-    int nra                  // Length of map RA axis
-);
 
 extern void reference_map2tod(
     gputils::Array<float> &tod,              // shape (ndet, nt)
@@ -112,7 +80,7 @@ extern void reference_map2tod(
 //     which overlap with the given map cell.
 
 
-extern void launch_tod2map(
+extern void launch_old_tod2map(
     gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (ndet, nt)
     const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
@@ -122,18 +90,6 @@ extern void launch_tod2map(
 
 
 // Slow single-threaded CPU tod2map, for testing.
-// (There are 4 versions, depending on whether you want to use a plan,
-//  and whether you want to use gputils::Array<> versus bare pointers.)
-
-extern void reference_tod2map(
-    float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const float *tod,                        // Shape (ndet, nt)
-    const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    int ndet,                                // Number of detectors
-    int nt,                                  // Number of time samples per detector
-    int ndec,                                // Length of map declination axis
-    int nra                                  // Length of map RA axis
-);
 
 extern void reference_tod2map(
     gputils::Array<float> &map,              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
@@ -141,38 +97,14 @@ extern void reference_tod2map(
     const gputils::Array<float> &xpointing   // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
 );
 
-extern void reference_tod2map(
-    float *map,                              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const float *tod,                        // Shape (ndet, nt)
-    const float *xpointing,                  // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const int *plan_cltod_list,              // See long comment above. Shape (plan_ncltod,)
-    const int *plan_quadruples,              // See long comment above. Shape (plan_nquadruples, 4)
-    int plan_ncltod,                         // See long comment above.
-    int plan_nquadruples,                    // See long comment above.
-    int ndet,                                // Number of detectors
-    int nt,                                  // Number of time samples per detector
-    int ndec,                                // Length of map declination axis
-    int nra                                  // Length of map RA axis
-);
-
-
-extern void reference_tod2map(
-    gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,            // Shape (ndet, nt)
-    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
-);
-
 
 // -------------------------------------------------------------------------------------------------
 
 
 // Temporary hack: construct pointing plans on CPU.
-struct CpuPointingPlan
+struct OldPointingPlan
 {
-    CpuPointingPlan(const gputils::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
-    CpuPointingPlan(const float *xpointing, int ndet, int nt, int ndec, int nra, bool verbose=true);
+    OldPointingPlan(const gputils::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
 
     long ncl_uninflated = 0;
     long ncl_inflated = 0;     // same as 'plan_ncltod' argument to tod2map()

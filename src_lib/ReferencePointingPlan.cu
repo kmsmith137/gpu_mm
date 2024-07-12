@@ -7,7 +7,7 @@
 using namespace std;
 using namespace gputils;
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
@@ -32,13 +32,13 @@ __global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint
 	T ypix = xpointing[s];
 	T xpix = xpointing[s+nsamp];
 
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm2_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm2_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm2_internals.hpp
+	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
+	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 
 	int iy0, iy1, ix0, ix1;
-	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm2_internals.hpp
-	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm2_internals.hpp
+	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 
 	ixpix[s] = ix0;
 	iypix[s] = iy0;
@@ -207,4 +207,4 @@ INSTANTIATE(float);
 INSTANTIATE(double);
 
 
-} // namespace gpu_mm2
+} // namespace gpu_mm

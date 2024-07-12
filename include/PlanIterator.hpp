@@ -3,15 +3,15 @@
 
 #include "gpu_mm2_internals.hpp"  // ALL_LANES
 
-namespace gpu_mm2 {
+namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
 
 
-// Usage of PlanIterator<W> is best explained by the following pseudocode
+// Usage of plan_iterator_strict<W> is best explained by the following pseudocode
 //
-//    PlanIterator<W> iterator;
+//    plan_iterator_strict<W> iterator;
 //    
 //    if (!iterator.init())
 //	  return;
@@ -32,7 +32,7 @@ namespace gpu_mm2 {
 
 
 template<int W, bool Debug>
-struct PlanIterator
+struct plan_iterator_strict
 {
     const ulong *plan_mt;
     
@@ -275,6 +275,6 @@ struct PlanIterator
 };
 
 
-}  // namespace gpu_mm2
+}  // namespace gpu_mm
 
 #endif  // _GPU_MM2_PLAN_ITERATOR_HPP
