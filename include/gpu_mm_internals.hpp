@@ -1,5 +1,5 @@
-#ifndef _GPU_MM2_INTERNALS_HPP
-#define _GPU_MM2_INTERNALS_HPP
+#ifndef _GPU_MM_INTERNALS_HPP
+#define _GPU_MM_INTERNALS_HPP
 
 #include <cassert>
 #include <gputils/Array.hpp>
@@ -141,4 +141,4 @@ static __device__ void analyze_cell_pair(int iycell, int ixcell, uint &icell, ui
 
 } // namespace gpu_mm
 
-#endif //  _GPU_MM2_INTERNALS_HPP
+#endif //  _GPU_MM_INTERNALS_HPP

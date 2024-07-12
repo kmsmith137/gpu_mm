@@ -1,5 +1,5 @@
-#ifndef _GPU_MM2_PLAN_ITERATOR2_HPP
-#define _GPU_MM2_PLAN_ITERATOR2_HPP
+#ifndef _GPU_MM_PLAN_ITERATOR_HPP
+#define _GPU_MM_PLAN_ITERATOR_HPP
 
 #include "gpu_mm_internals.hpp"  // ALL_LANES
 
@@ -195,4 +195,4 @@ struct plan_iterator : public plan_iterator_irregular<W,Debug>
     
 }  // namespace gpu_mm
 
-#endif  // _GPU_MM2_PLAN_ITERATOR2_HPP
+#endif  // _GPU_MM_PLAN_ITERATOR_HPP
