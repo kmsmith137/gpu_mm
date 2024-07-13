@@ -68,34 +68,24 @@ inline void _add_triple(vector<Triple> &v, size_t prev_size, int idec, int ira, 
 
 OldPointingPlan::OldPointingPlan(const Array<float> &xpointing, int ndec, int nra, bool verbose)
 {
-    xassert(xpointing.on_host());
-    xassert(xpointing.ndim == 3);
-    xassert(xpointing.shape[0] == 3);
-    xassert(xpointing.is_fully_contiguous());
-
-    long ns = xpointing.shape[1] * xpointing.shape[2];
-    xassert(ns > 0);
-    xassert(ndec > 0);
-    xassert(nra > 0);
-
-    // Assumed by current implementation, but could be relaxed.
-    xassert((ns % 32) == 0);
-    xassert((ndec % 64) == 0);
-    xassert((nra % 64) == 0);
+    long nsamp;
+    check_xpointing_and_init_nsamp(xpointing, nsamp, "OldPointingPlan constructor", false);  // on_gpu=false
+    check_nypix(ndec, "OldPointingPlanConstructor");
+    check_nxpix(nra, "OldPointingPlanConstructor");
 
     const float *xp = xpointing.data;
     
     // Step 1: Construct and sort a vector<Triple>.
     
     vector<Triple> tvec;
-    this->ncl_uninflated = ns / 32;
+    this->ncl_uninflated = nsamp / 32;
     
     for (long cltod = 0; cltod < ncl_uninflated; cltod++) {
 	size_t prev_size = tvec.size();
 
 	for (long s = 32*cltod; s < 32*(cltod+1); s++) {
 	    float px_dec = xp[s];
-	    float px_ra = xp[s+ns];
+	    float px_ra = xp[s+nsamp];
 	    
 	    int idec = int(px_dec);
 	    int ira = int(px_ra);

@@ -18,10 +18,10 @@ class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
         self.plan_quadruples = cp.asarray(self._plan_quadruples)  # CPU -> GPU
 
     def map2tod(self, tod, m, xpointing):
-        gpu_mm_pybind11.old_map2tod(tod.reshape((1,-1)), m, xpointing.reshape((3,1,-1)))
+        gpu_mm_pybind11.old_map2tod(tod, m, xpointing)
             
     def tod2map(self, m, tod, xpointing):
-        gpu_mm_pybind11.old_tod2map(m, tod.reshape((1,-1)), xpointing.reshape((3,1,-1)), self.plan_cltod_list, self.plan_quadruples)
+        gpu_mm_pybind11.old_tod2map(m, tod, xpointing, self.plan_cltod_list, self.plan_quadruples)
     
 
 ####################################################################################################
@@ -46,18 +46,20 @@ def test_plan_iterator(niter=100):
         
 class PointingInstance:
     def __init__(self, xpointing_cpu, xpointing_gpu, nypix, nxpix, name):
+        """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
+
         self.xpointing_cpu = xpointing_cpu
         self.xpointing_gpu = xpointing_gpu
         self.dtype = xpointing_gpu.dtype
-        self.nsamp = xpointing_gpu.shape[1]
+        self.tod_shape = xpointing_gpu.shape[1:]
         self.nypix = nypix
         self.nxpix = nxpix
         self.name = name
 
 
     @classmethod
-    def from_toy_pointing(cls, nsamp, nypix, nxpix, scan_speed, total_drift):
-        tp = gpu_mm.ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
+    def from_toy_pointing(cls, ndet, nt, nypix, nxpix, scan_speed, total_drift):
+        tp = gpu_mm.ToyPointing(ndet, nt, nypix, nxpix, scan_speed, total_drift)
         return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
 
     
@@ -74,22 +76,22 @@ class PointingInstance:
         f = np.load(filename)
         xp = f['xpointing']
         assert (xp.ndim == 3) and (xp.shape[0] == 3)   # ({x,y,a}, ndet, ntod)
+        ndet = xp.shape[1]
+        ntu = xp.shape[2]            # unpadded
+        ntp = 32 * ((ntu+31) // 32)  # padded to multiple of 32
 
-        # FIXME this swap is horrible
-        xp = np.array([ xp[1], xp[0], xp[2] ])
+        # FIXME should convert dtype here, to whatever has been compiled.
+        xpointing_cpu = np.zeros((3,ndet,ntp), dtype=xp.dtype)
+        xpointing_cpu[0,:,:ntu] = xp[1,:,:]    # FIXME (0,1) index swap here is horrible
+        xpointing_cpu[1,:,:ntu] = xp[0,:,:]    # FIXME (0,1) index swap here is horrible
+        xpointing_cpu[2,:,:ntu] = xp[2,:,:]
+        xpointing_cpu[:,:,ntu:] = xpointing_cpu[:,:,ntu-1].reshape((3,-1,1))
 
-        ymin = np.min(xp[0,:])
-        ymax = np.max(xp[0,:])
-        xmin = np.min(xp[1,:])
-        xmax = np.max(xp[1,:])
-        print(f'{filename}: {xp.shape=}, ymin={float(ymin)} ymax={float(ymax)} xmin={float(xmin)} xmax={float(xmax)}')
-
-        # Flatten (ndet, ntod) indices and round up to multiple of 32
-        ns0 = xp.shape[1] * xp.shape[2]    # before padding
-        nsamp = 32 * ((ns0 + 31) // 32)    # after padding
-        xpointing_cpu = np.zeros((3, nsamp), dtype=xp.dtype)
-        xpointing_cpu[:,:ns0] = xp.reshape((3,ns0))
-        xpointing_cpu[:,ns0:] = xp[:,-1,-1].reshape((3,1))
+        ymin = np.min(xpointing_cpu[0,:])
+        ymax = np.max(xpointing_cpu[0,:])
+        xmin = np.min(xpointing_cpu[1,:])
+        xmax = np.max(xpointing_cpu[1,:])
+        print(f'{filename}: {xpointing_cpu.shape=}, ymin={float(ymin)} ymax={float(ymax)} xmin={float(xmin)} xmax={float(xmax)}')
         
         assert ymin >= 0
         assert xmin >= 0
@@ -118,7 +120,8 @@ class PointingInstance:
     @classmethod
     def generate_timing_instances(cls):
         yield cls.from_toy_pointing(
-            nsamp = 256*1024*1024,
+            ndet = None,
+            nt = 256*1024*1024,
             nypix = 8*1024,
             nxpix = 32*1024,
             scan_speed = 0.5,    # pixels per TOD sample
@@ -164,9 +167,9 @@ class PointingInstance:
     @functools.cached_property
     def old_plan(self):
         print('    Making OldPointingPlan (slow, done on CPU)')
-        return  OldPointingPlan(self.xpointing_cpu.reshape((3,1,self.nsamp)), self.nypix, self.nxpix)
+        return  OldPointingPlan(self.xpointing_cpu, self.nypix, self.nxpix)
     
-
+    
     def _compare_arrays(self, arr1, arr2):
         num = cp.sum(cp.abs(arr1-arr2))
         den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
@@ -214,12 +217,12 @@ class PointingInstance:
 
     def test_map2tod(self, test_old=False):
         m = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
-        tod_ref = np.random.normal(size=self.nsamp)
+        tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
-        reference_map2tod(tod_ref.reshape((1,-1)), cp.asnumpy(m), self.xpointing_cpu.reshape((3,1,-1)))
+        reference_map2tod(tod_ref, cp.asnumpy(m), self.xpointing_cpu)
         tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
-        tod_unplanned = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod_unplanned = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         gpu_mm_pybind11.unplanned_map2tod(tod_unplanned, m, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
         
@@ -228,7 +231,7 @@ class PointingInstance:
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
         del tod_unplanned
 
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         self.plan.map2tod(tod, m, self.xpointing_gpu, debug=True)
         cp.cuda.runtime.deviceSynchronize()
         
@@ -240,7 +243,7 @@ class PointingInstance:
         if not test_old:
             return
 
-        tod_old = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod_old = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         self.old_plan.map2tod(tod_old, m, self.xpointing_gpu)
         cp.cuda.runtime.deviceSynchronize()
         
@@ -250,11 +253,11 @@ class PointingInstance:
 
         
     def test_tod2map(self, test_old=False):
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m0 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
 
         m_ref = cp.asnumpy(m0)
-        reference_tod2map(m_ref, cp.asnumpy(tod).reshape((1,-1)), self.xpointing_cpu.reshape((3,1,-1)))
+        reference_tod2map(m_ref, cp.asnumpy(tod), self.xpointing_cpu)
         m_ref = cp.asarray(m_ref)  # CPU -> GPU
 
         m_unplanned = cp.copy(m0)
@@ -321,7 +324,7 @@ class PointingInstance:
     
 
     def time_map2tod(self, time_old=False):
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
         print()
         
@@ -357,7 +360,7 @@ class PointingInstance:
         # Note: we don't use a zeroed timestream, since tod2map() contains an optimization
         # which may give artificially fast timings when run on an all-zeroes timestream.
         
-        tod = cp.random.normal(size=self.nsamp, dtype=self.dtype)
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
         print()
         

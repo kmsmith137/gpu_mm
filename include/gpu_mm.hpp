@@ -189,15 +189,15 @@ struct PointingPlan
 // Slow single-threaded CPU map2tod/tod2map, for testing.
 
 extern void reference_map2tod(
-    gputils::Array<float> &tod,              // shape (ndet, nt)
-    const gputils::Array<float> &map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &xpointing   // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    gputils::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<float> &map,        // shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
 );
 
 extern void reference_tod2map(
-    gputils::Array<float> &map,              // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,        // Shape (ndet, nt)
-    const gputils::Array<float> &xpointing   // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    gputils::Array<float> &map,              // Shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &tod,        // Shape (nsamp,) or (ndet,nt)
+    const gputils::Array<float> &xpointing   // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
 );
 
 
@@ -236,19 +236,22 @@ struct ToyPointing
     // Scans currently go at 45 degrees, and cover the full y-range.
 
     // Version of constructor which allocates xpointing arrays.
-    ToyPointing(long nsamp, long nypix, long nxpix,
+    // If ndet <= 0, then the xpointing arrays will have shape (3,nt).
+    // If ndet > 0, then the xpointing arrays will have shape (3,ndet,nt).
+    
+    ToyPointing(long ndet, long nt,
+		long nypix, long nxpix,
 		double scan_speed,     // map pixels per TOD sample
 		double total_drift,    // total drift over full TOD, in x-pixels
 		bool noisy = true);
 
     // Version of constructor with externally allocated xpointing arrays (intended for python)
-    ToyPointing(long nsamp, long nypix, long nxpix,
+    ToyPointing(long nypix, long nxpix,
 		double scan_speed, double total_drift,
 		const gputils::Array<T> &xpointing_cpu,
 		const gputils::Array<T> &xpointing_gpu,
 		bool noisy = true);
 
-    long nsamp;
     long nypix;
     long nxpix;
     double scan_speed;    // map pixels per TOD sample
@@ -266,6 +269,8 @@ struct ToyPointing
 
 
 // Argument checking (defined in check_arguments.cu)
+// Note that TODs can have either shape (nsamp,) or (ndet,nt).
+// Similarly, xpointing arrays can have either shape (3,nsamp) or (3,ndet,nt).
 
 extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix(long nypix, const char *where);
@@ -388,18 +393,18 @@ struct ReferencePointingPlan
 
 
 extern void launch_old_map2tod(
-    gputils::Array<float> &tod,              // shape (ndet, nt)
-    const gputils::Array<float> &map,        // shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &xpointing   // shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    gputils::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<float> &map,        // shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
 );
 
 
 extern void launch_old_tod2map(
-    gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,            // Shape (ndet, nt)
-    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    gputils::Array<float> &map,                  // Shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &tod,            // Shape (nsamp,) or (ndet,nt)
+    const gputils::Array<float> &xpointing,      // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
     const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, v4)
+    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
 );
 
 

@@ -12,47 +12,13 @@ namespace gpu_mm {
 #endif
 
 
-static void _check_map2tod_args(Array<float> &tod, const Array<float> &map, const Array<float> &xpointing, int &ndet, int &nt, int &ndec, int &nra)
-{
-    xassert(tod.ndim == 2);
-    xassert(tod.is_fully_contiguous());
-    
-    xassert(map.ndim == 3);
-    xassert(map.shape[0] == 3);
-    xassert(map.is_fully_contiguous());
-    
-    xassert(xpointing.ndim == 3);
-    xassert(xpointing.shape[0] == 3);
-    xassert(xpointing.shape[1] == tod.shape[0]);
-    xassert(xpointing.shape[2] == tod.shape[1]);
-    xassert(xpointing.is_fully_contiguous());
-
-    ndet = tod.shape[0];
-    nt = tod.shape[1];
-    ndec = map.shape[1];
-    nra = map.shape[2];
-     
-    xassert(ndet > 0);
-    xassert(nt > 0);
-    xassert(ndec > 0);
-    xassert(nra > 0);
-
-    xassert((nt % 32) == 0);
-    xassert((ndec % 64) == 0);
-    xassert((nra % 64) == 0);    
-}
-
-
 void reference_map2tod(Array<float> &tod, const Array<float> &map, const Array<float> &xpointing)
 {
-    xassert(tod.on_host());
-    xassert(map.on_host());
-    xassert(xpointing.on_host());
+    long nsamp, ndec, nra;
+    check_tod_and_init_nsamp(tod, nsamp, "reference_map2tod", false);     // on_gpu=false
+    check_map_and_init_npix(map, ndec, nra, "reference_map2tod", false);  // on_gpu=false
+    check_xpointing(xpointing, nsamp, "reference_map2tod", false);        // on_gpu=false
 
-    int ndet, nt, ndec, nra;
-    _check_map2tod_args(tod, map, xpointing, ndet, nt, ndec, nra);
-    
-    long nsamp = long(ndet) * long(nt);
     long npix = long(ndec) * long(nra);
 
     for (long s = 0; s < nsamp; s++) {
@@ -103,23 +69,21 @@ void reference_map2tod(Array<float> &tod, const Array<float> &map, const Array<f
 // -------------------------------------------------------------------------------------------------
 
 
-__global__ void old_map2tod_kernel(float *tod, const float *map, const float *xpointing,
-				   int ndet, int nt, int ndec, int nra, int nt_per_block)
+__global__ void old_map2tod_kernel(float *tod, const float *map, const float *xpointing, long nsamp, int ndec, int nra, int nt_per_block)
 {
     // Number of blocks should be: ceil(ns / nt_per_block)
-    long ns = long(ndet) * long(nt);
     long s0 = long(blockIdx.x) * long(nt_per_block);
 
     tod += s0;
     xpointing += s0;
     
-    int n = min(ns-s0, long(nt_per_block));
+    int n = min(nsamp-s0, long(nt_per_block));
     int npix = ndec * nra;
     
     for (int i = threadIdx.x; i < n; i += blockDim.x) {
 	float px_dec = xpointing[i];
-	float px_ra = xpointing[i + ns];
-	float alpha = xpointing[i + 2*ns];
+	float px_ra = xpointing[i + nsamp];
+	float alpha = xpointing[i + 2*nsamp];
 	float cos_2a = cosf(2.0f * alpha);
 	float sin_2a = sinf(2.0f * alpha);
 
@@ -166,18 +130,16 @@ void launch_old_map2tod(Array<float> &tod, const Array<float> &map, const Array<
     static constexpr int nt_per_block = 16384;
     static constexpr int nthreads_per_block = 512;
 
-    xassert(tod.on_gpu());
-    xassert(map.on_gpu());
-    xassert(xpointing.on_gpu());
-	
-    int ndet, nt, ndec, nra;
-    _check_map2tod_args(tod, map, xpointing, ndet, nt, ndec, nra);
+    long nsamp, ndec, nra;
+    check_tod_and_init_nsamp(tod, nsamp, "old_map2tod", true);     // on_gpu=true
+    check_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
+    check_xpointing(xpointing, nsamp, "old_map2tod", true);        // on_gpu=true
 
-    long nblocks = (long(ndet) * long(nt) + nt_per_block - 1) / nt_per_block;
+    long nblocks = (long(nsamp) + nt_per_block - 1) / nt_per_block;
     xassert(nblocks < (1L << 31));
 
     old_map2tod_kernel<<< nblocks, nthreads_per_block >>>
-	(tod.data, map.data, xpointing.data, ndet, nt, ndec, nra, nt_per_block);
+	(tod.data, map.data, xpointing.data, nsamp, ndec, nra, nt_per_block);
 
     CUDA_PEEK("old_map2tod_kernel");
 }

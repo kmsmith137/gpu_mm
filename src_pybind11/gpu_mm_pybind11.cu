@@ -179,13 +179,13 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     
     py::class_<ToyPointing>(m, "ToyPointing")
-	.def(py::init<long, long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
-	     py::arg("nsamp"), py::arg("nypix"), py::arg("nxpix"),
+	.def(py::init<long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
+	     py::arg("nypix"), py::arg("nxpix"),
 	     py::arg("scan_speed"), py::arg("total_drift"),
 	     py::arg("xpointing_cpu"), py::arg("xpointing_gpu"),
 	     py::arg("noisy"))
 
-	.def_readonly("nsamp", &ToyPointing::nsamp, "Number of TOD samples")
+	// .def_readonly("nsamp", &ToyPointing::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &ToyPointing::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &ToyPointing::nxpix, "Number of x-pixels")
 	.def_readonly("scan_speed", &ToyPointing::scan_speed, "Scan speed in map pixels per TOD sample")

@@ -19,7 +19,7 @@ namespace gpu_mm {
 //  - bit 1: 1 if xpix out of bounds
 //  - next 30 bits: total number of (map cell, tod cache line) pairs in threadblock ("nmt")
 //
-// xpointing: shape (3, nsamp)
+// xpointing: shape (3,nsamp)
 //
 // nsamp: must be a multiple of 32
 // nsamp_per_block: must be a multiple of 32

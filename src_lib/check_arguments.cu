@@ -1,4 +1,5 @@
 #include "../include/gpu_mm.hpp"
+#include <iostream>
 
 using namespace std;
 using namespace gputils;
@@ -91,10 +92,10 @@ void check_map(const gputils::Array<T> &map, long nypix_expected, long nxpix_exp
 template<typename T>
 void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu)
 {
-    xassert(tod.ndim == 1);
+    xassert((tod.ndim == 1) || (tod.ndim == 2));
     xassert(tod.is_fully_contiguous());
 
-    nsamp = tod.shape[0];
+    nsamp = (tod.ndim == 1) ? tod.shape[0] : (tod.shape[0] * tod.shape[1]);
     check_nsamp(nsamp, where);
 
     _check_location(tod.aflags, where, "tod", on_gpu);
@@ -113,11 +114,11 @@ void check_tod(const Array<T> &tod, long nsamp_expected, const char *where, bool
 template<typename T>
 void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 {
-    xassert(xpointing.ndim == 2);
+    xassert((xpointing.ndim == 2) || (xpointing.ndim == 3));
     xassert(xpointing.shape[0] == 3);
     xassert(xpointing.is_fully_contiguous());
 
-    nsamp = xpointing.shape[1];
+    nsamp = (xpointing.ndim == 2) ? xpointing.shape[1] : (xpointing.shape[1] * xpointing.shape[2]);
     check_nsamp(nsamp, where);
 
     _check_location(xpointing.aflags, where, "xpointing", on_gpu);

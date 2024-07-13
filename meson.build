@@ -20,13 +20,13 @@ lib_source_files = [
     'src_lib/cuts.cu',
     'src_lib/gpu_point.cu',
     'src_lib/gpu_utils.cu',
-    'src_lib/map2tod2.cu',
+    'src_lib/map2tod.cu',
     'src_lib/map2tod_old.cu',
     'src_lib/map2tod_unplanned.cu',
     'src_lib/misc.cu',
     'src_lib/pycufft.cu',
     'src_lib/test_plan_iterator.cu',
-    'src_lib/tod2map2.cu',
+    'src_lib/tod2map.cu',
     'src_lib/tod2map_old.cu',
     'src_lib/tod2map_unplanned.cu'
 ]

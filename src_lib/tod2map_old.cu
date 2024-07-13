@@ -1,4 +1,5 @@
 #include "../include/gpu_mm.hpp"
+#include "../include/gpu_mm_internals.hpp"  // ALL_LANES
 #include <gputils/cuda_utils.hpp>
 
 using namespace gputils;
@@ -7,52 +8,6 @@ namespace gpu_mm {
 #if 0
 }   // pacify editor auto-indent
 #endif
-
-
-// For __shfl_sync()
-static constexpr unsigned int ALL_LANES = 0xffffffff;
-
-
-static void _check_tod2map_args(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing, int &ndet, int &nt, int &ndec, int &nra)
-{
-    xassert(tod.ndim == 2);
-    xassert(tod.is_fully_contiguous());
-    
-    xassert(map.ndim == 3);
-    xassert(map.shape[0] == 3);
-    xassert(map.is_fully_contiguous());
-    
-    xassert(xpointing.ndim == 3);
-    xassert(xpointing.shape[0] == 3);
-    xassert(xpointing.shape[1] == tod.shape[0]);
-    xassert(xpointing.shape[2] == tod.shape[1]);
-    xassert(xpointing.is_fully_contiguous());
-
-    ndet = tod.shape[0];
-    nt = tod.shape[1];
-    ndec = map.shape[1];
-    nra = map.shape[2];
-    
-    xassert(ndet > 0);
-    xassert(nt > 0);
-    xassert(ndec > 0);
-    xassert(nra > 0);
-
-    xassert((nt % 32) == 0);
-    xassert((ndec % 64) == 0);
-    xassert((nra % 64) == 0);
-}
-
-
-static void _check_tod2map_plan(const Array<int> &plan_cltod_list, const Array<int> &plan_quadruples)
-{
-    xassert(plan_cltod_list.ndim == 1);
-    xassert(plan_cltod_list.is_fully_contiguous());
-
-    xassert(plan_quadruples.ndim == 2);
-    xassert(plan_quadruples.shape[1] == 4);
-    xassert(plan_quadruples.is_fully_contiguous());
-}
 
 
 // -------------------------------------------------------------------------------------------------
@@ -73,15 +28,11 @@ inline void update_map(float *map, long ipix, long npix, float cos_2a, float sin
 
 void reference_tod2map(Array<float> &map, const Array<float> &tod, const Array<float> &xpointing)
 {
-    xassert(map.on_host());
-    xassert(tod.on_host());
-    xassert(xpointing.on_host());
+    long nsamp, ndec, nra;
+    check_tod_and_init_nsamp(tod, nsamp, "reference_tod2map", false);     // on_gpu=false
+    check_map_and_init_npix(map, ndec, nra, "reference_tod2map", false);  // on_gpu=false
+    check_xpointing(xpointing, nsamp, "reference_tod2map", false);        // on_gpu=false
 
-    int ndet, nt, ndec, nra;
-    _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
-
-    // A "sample" is a (detector, time) pair.
-    long nsamp = long(ndet) * long(nt);
     long npix = long(ndec) * long(nra);
 
     // No memset(out, ...) here, since we want to accumulate (not overwrite) output.
@@ -265,18 +216,12 @@ void launch_old_tod2map(
     const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
     const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
-    int ndet, nt, ndec, nra;
-    _check_tod2map_args(map, tod, xpointing, ndet, nt, ndec, nra);
-    _check_tod2map_plan(plan_cltod_list, plan_quadruples);
-    
-    xassert(map.on_gpu());
-    xassert(tod.on_gpu());
-    xassert(xpointing.on_gpu());
-    xassert(plan_cltod_list.on_gpu());
-    xassert(plan_quadruples.on_gpu());
+    long nsamp, ndec, nra;
+    check_tod_and_init_nsamp(tod, nsamp, "old_map2tod", true);     // on_gpu=true
+    check_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
+    check_xpointing(xpointing, nsamp, "old_map2tod", true);        // on_gpu=true
     
     int nblocks = plan_quadruples.shape[0];
-    long nsamp = long(ndet) * long(nt);
     
     old_tod2map_kernel<<< nblocks, 512 >>>
 	(map.data, tod.data, xpointing.data, plan_cltod_list.data, plan_quadruples.data, nsamp, ndec, nra);

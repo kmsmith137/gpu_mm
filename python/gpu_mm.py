@@ -68,8 +68,6 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf)
 
             
-    
-
 ####################################################################################################
 
 
@@ -85,6 +83,8 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
     Python members:
       self.xpointing_cpu    shape (3,nsamp) numpy array
       self.xpointing_gpu    shape (3,nsamp) numpy array
+      self.ndet             can be None
+      self.nt               int
 
     Inherits from C++ base class:
         self.nsamp          int
@@ -96,23 +96,35 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
         self.__str__()
     """
 
-    def __init__(self, nsamp, nypix, nxpix, scan_speed, total_drift, noisy=True):
-        assert nsamp > 0
-        self.xpointing_cpu = np.zeros((3,nsamp), mm_dtype)
-        self.xpointing_gpu = cp.zeros((3,nsamp), mm_dtype)
-        gpu_mm_pybind11.ToyPointing.__init__(self, nsamp, nypix, nxpix, scan_speed, total_drift, self.xpointing_cpu, self.xpointing_gpu, noisy)
+    def __init__(self, ndet, nt, nypix, nxpix, scan_speed, total_drift, noisy=True):
+        xpointing_shape = (3,ndet,nt) if (ndet is not None) else (3,nt)
+        self.xpointing_cpu = np.zeros(xpointing_shape, mm_dtype)
+        self.xpointing_gpu = cp.zeros(xpointing_shape, mm_dtype)
+        gpu_mm_pybind11.ToyPointing.__init__(self, nypix, nxpix, scan_speed, total_drift, self.xpointing_cpu, self.xpointing_gpu, noisy)
 
 
     @staticmethod
     def make_random(nsamp_max, noisy=True):
         assert nsamp_max >= 64*1024
+        
+        if np.random.randint(0,2):
+            # Case 1: TOD arrays have shape (nsamp)
+            ndet = None
+            nt = 32 * np.random.randint(nsamp_max//64, nsamp_max//32)
+        else:
+            # Case 2: TOD arrays have shape (ndet,nt)
+            r = np.random.randint(0,6)
+            s = int((nsamp_max/32.)**0.5)
+            ndet = 2**r * np.random.randint(s//2,s+1)
+            nt = 2**(5-r) * np.random.randint(s//2,s+1)
+            
         npix_max = min(nsamp_max//128, 16384)
-        nsamp = 32 * np.random.randint(nsamp_max//64, nsamp_max//32)
         nypix = 64 * np.random.randint(npix_max//512, npix_max//128)
         nxpix = 128 * np.random.randint(nypix//128 + 2, npix_max//128)
         scan_speed = np.random.uniform(0.1, 0.5)
         total_drift = np.random.uniform(0.1*(nxpix-nypix), (nxpix-nypix)-2)
-        return ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
+                    
+        return ToyPointing(ndet, nt, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
 
 
 class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
