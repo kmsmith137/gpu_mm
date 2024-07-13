@@ -81,7 +81,7 @@ absorb_mt(ulong *plan_mt, int *shmem,        // pointers
 
     nmt_local -= 32;
     mt_local = mt_new;
-    err = (nout < nmt_max) ? err : (err | 4);
+    err = (nout < nmt_max) ? err : (err | errflag_inconsistent_nmt);
 }
 
 
@@ -139,7 +139,6 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	
 	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
 	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 	 
 	int iypix0, iypix1, ixpix0, ixpix1;
 	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
@@ -204,7 +203,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	plan_mt[nout] = mt_local;
 
     bool fail = (warpId == (W-1)) && (laneId == 0) && ((nout + nmt_local) != nmt_max);
-    err = fail ? (err | 4) : err;
+    err = fail ? (err | errflag_inconsistent_nmt) : err;
 
     errp[b] = err;
 }

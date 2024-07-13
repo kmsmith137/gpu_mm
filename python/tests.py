@@ -99,8 +99,8 @@ class PointingInstance:
         return PointingInstance(
             xpointing_cpu = xpointing_cpu,
             xpointing_gpu = cp.asarray(xpointing_cpu),
-            nypix = 64*int(ymax//64) + 64,       # FIXME should be in npy file
-            nxpix = 128*int(xmax//128) + 128,    # FIXME can be 64 after removing periodicity
+            nypix = 64*int(ymax//64) + 64,      # FIXME should be in npy fileshould be in npy file
+            nxpix = 64*int(xmax//64) + 64,      # FIXME 
             name = filename
         )
 

@@ -1,5 +1,6 @@
-#include "../include/gpu_mm.hpp"
 #include <iostream>
+#include "../include/gpu_mm.hpp"
+#include "../include/gpu_mm_internals.hpp"   // errflags
 
 using namespace std;
 using namespace gputils;
@@ -34,17 +35,15 @@ void check_nxpix(long nxpix, const char *where)
 {
     xassert(nxpix > 0);
     xassert(nxpix <= 64*1024);
-    xassert((nxpix % 128) == 0);  // FIXME will be 64 after making x-coordinate non-periodic
+    xassert((nxpix % 64) == 0);
 }
 
 
 void check_err(uint err, const char *where)
 {
-    if (err & 0x1)
-	throw runtime_error(string(where) + ": ypix out of range");
-    if (err & 0x2)
-	throw runtime_error(string(where) + ": xpix out of range");
-    if (err & 0x4)
+    if (err & errflag_pixel_outlier)
+	throw runtime_error(string(where) + ": pixel coordinates in xpointing array are outside bounding box");
+    if (err & errflag_inconsistent_nmt)
 	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
 }
 

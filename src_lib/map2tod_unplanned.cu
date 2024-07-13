@@ -38,8 +38,13 @@ __global__ void unplanned_map2tod_kernel(T *tod, const T *map, const T *xpointin
 	T xpix = xpointing[s + nsamp];
 	T alpha = xpointing[s + 2*nsamp];
 
-	// FIXME add 'status' argument, and calls to range_check_{xpix,ypix}().
-	normalize_xpix(xpix, nxpix);   // defined in gpu_mm_internals.hpp
+	// FIXME remove this code
+	if (1) {
+	    uint err = 0;
+	    range_check_ypix(ypix, nypix, err);
+	    range_check_xpix(xpix, nxpix, err);
+	    assert(err == 0);
+	}
 	
 	int iy0, iy1, ix0, ix1;
 	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp

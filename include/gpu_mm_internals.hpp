@@ -18,6 +18,11 @@ inline long align128(long n)
     return (n + 127L) & ~127L;
 }
 
+
+static constexpr int errflag_pixel_outlier = 0x1;
+static constexpr int errflag_inconsistent_nmt = 0x4;
+	
+
 // -------------------------------------------------------------------------------------------------
 //
 // Some boilerplate, used to support T=float and T=double with the same C++ template.
@@ -55,23 +60,15 @@ template<typename T>
 static __device__ void range_check_ypix(T ypix, int nypix, uint &err)
 {
     bool valid = (ypix >= 0) && (ypix <= nypix-1);
-    err = valid ? err : (err | 1);
+    err = valid ? err : (err | errflag_pixel_outlier);
 }
 
 
 template<typename T>
 static __device__ void range_check_xpix(T xpix, int nxpix, uint &err)
 {
-    bool valid = (xpix >= -nxpix) && (xpix <= 2*nxpix);
-    err = valid ? err : (err | 2);
-}
-
-
-template<typename T>
-static __device__ void normalize_xpix(T &xpix, int nxpix)
-{
-    xpix = (xpix >= 0) ? xpix : (xpix + nxpix);
-    xpix = (xpix <= nxpix) ? xpix : (xpix - nxpix);
+    bool valid = (xpix >= 0) && (xpix <= nxpix-1);
+    err = valid ? err : (err | errflag_pixel_outlier);
 }
 
 

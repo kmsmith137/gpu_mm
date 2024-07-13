@@ -46,7 +46,6 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 
 	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
 	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 	
 	int iypix0, iypix1, ixpix0, ixpix1;
 	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp

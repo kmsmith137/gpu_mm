@@ -34,7 +34,6 @@ __global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint
 
 	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
 	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
-	normalize_xpix(xpix, nxpix);         // defined in gpu_mm_internals.hpp
 
 	int iy0, iy1, ix0, ix1;
 	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp
