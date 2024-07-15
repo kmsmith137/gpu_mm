@@ -14,33 +14,30 @@ namespace gpu_mm {
 #endif
 
 
-// out: 1-d array of length nblocks.
-//  - bit 0: 1 if ypix out of bounds
-//  - bit 1: 1 if xpix out of bounds
-//  - next 30 bits: total number of (map cell, tod cache line) pairs in threadblock ("nmt")
-//
+// nmt_out, errflags: 1-d arrays of length nblocks.
 // xpointing: shape (3,nsamp)
 //
 // nsamp: must be a multiple of 32
 // nsamp_per_block: must be a multiple of 32
 
-// FIXME check for 32-bit overflows
 
-
-template<typename T>
-__global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint nsamp_per_block, int nypix, int nxpix)
+template<typename T, int W>
+__global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing, long nsamp, long nsamp_per_block, int nypix, int nxpix)
 {
-    __shared__ uint shmem[32];
+    __shared__ uint shmem[2*W];
+
+    int warpId = threadIdx.x >> 5;
+    int laneId = threadIdx.x & 31;
     
-    uint err = 0;
     uint nmt = 0;
+    uint err = 0;
     
     // Range of TOD samples to be processed by this threadblock.
     int b = blockIdx.x;
     uint s0 = b * nsamp_per_block;
     uint s1 = min(nsamp, (b+1) * nsamp_per_block);
 
-    for (uint s = s0 + threadIdx.x; s < s1; s += blockDim.x) {
+    for (long s = s0 + 32*warpId + laneId; s < s1; s += 32*W) {
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
@@ -62,36 +59,34 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
     }
     
     // Reduce across threads in the warp.
-    err = __reduce_or_sync(ALL_LANES, err);
+    
     nmt = __reduce_add_sync(ALL_LANES, nmt);
-    uint out = err | (nmt << 2);
+    err = __reduce_or_sync(ALL_LANES, err);
 
     // Reduce across warps in the block.
-
-    int nwarps = blockDim.x >> 5;
-    int warpId = threadIdx.x >> 5;
-    int laneId = threadIdx.x & 31;
     
-    if (laneId == 0)
-	shmem[warpId] = out;
+    if (laneId == 0) {
+	shmem[warpId] = nmt;
+	shmem[warpId+W] = err;
+    }
 
     __syncthreads();
 
     if (warpId != 0)
 	return;
 
-    out = shmem[laneId];
-    out = (laneId < nwarps) ? out : 0;
-    err = out & 3;
-    nmt = out >> 2;
-
-    // FIXME use subset of lanes
-    err = __reduce_or_sync(ALL_LANES, err);
+    nmt = (laneId < W) ? shmem[laneId] : 0;
+    err = (laneId < W) ? shmem[laneId+W] : 0;
+    
     nmt = __reduce_add_sync(ALL_LANES, nmt);
-    out = err | (nmt << 2);
-
-    if (laneId == 0)
-	outp[b] = out;
+    err = __reduce_or_sync(ALL_LANES, err);
+    
+    // Write to global memory.
+    
+    if (laneId == 0) {
+	nmt_out[b] = nmt;
+	errflags[b] = err;
+    }
 }
 
 
@@ -100,54 +95,81 @@ __global__ void preplan_kernel(uint *outp, const T *xpointing, uint nsamp, uint 
 
 template<typename T>
 PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_)
+    // Delegate to version of constructor which uses externally allocated arrays.
+    : PointingPrePlan(xpointing_gpu, nypix_, nxpix_,
+		      Array<uint> ({preplan_size}, af_gpu),
+		      Array<uint> ({preplan_size}, af_gpu))
+{ }
+
+
+template<typename T>
+PointingPrePlan::PointingPrePlan(
+    const Array<T> &xpointing_gpu,
+    long nypix_, long nxpix_,
+    const Array<uint> &nmt_gpu,
+    const Array<uint> &err_gpu)
 {
+    // Warps per threadblock in preplan_kernel
+    constexpr int W = 4;
+    
     this->nypix = nypix_;
     this->nxpix = nxpix_;
+    this->nmt_cumsum = nmt_gpu;
     
     check_xpointing_and_init_nsamp(xpointing_gpu, this->nsamp, "PointingPrePlan constructor", true);  // on_gpu=true
     check_nypix(nypix, "PointingPrePlan constructor");
     check_nxpix(nxpix, "PointingPrePlan constructor");
+
+    xassert(nmt_gpu.is_fully_contiguous());
+    xassert(nmt_gpu.size == preplan_size);
+    xassert(nmt_gpu.on_gpu());
+
+    xassert(err_gpu.is_fully_contiguous());
+    xassert(err_gpu.size == preplan_size);
+    xassert(err_gpu.on_gpu());
     
     // Launch params for planner/preplanner kernels.
-    // Use at least 16 TOD cache lines per threadblock, and at most 1024 threadblocks.
+    // Use at least 16 TOD cache lines per threadblock, and at most PointingPrePlan::preplan_size threadblocks.
 
     long ncl = (nsamp + 31) / 32;
-    this->ncl_per_threadblock = max(16L, (ncl+1023)/1024);
+    this->ncl_per_threadblock = max(16L, (ncl + preplan_size - 1) / preplan_size);
     this->ncl_per_threadblock = (ncl_per_threadblock + 3) & ~3;
     this->planner_nblocks = (ncl + ncl_per_threadblock - 1) / ncl_per_threadblock;
     
-    Array<uint> arr_gpu({planner_nblocks}, af_gpu);
-
-    preplan_kernel <<< planner_nblocks, 128 >>>
-	(arr_gpu.data, xpointing_gpu.data, nsamp, 32*ncl_per_threadblock, nypix, nxpix);
+    xassert(planner_nblocks > 0);
+    xassert(planner_nblocks <= preplan_size);
+    
+    preplan_kernel<T,W> <<< planner_nblocks, 32*W >>>
+	(nmt_gpu.data, err_gpu.data, xpointing_gpu.data, nsamp, 32*ncl_per_threadblock, nypix, nxpix);
 
     CUDA_PEEK("preplan_kernel launch");
 
-    Array<uint> arr_cpu = arr_gpu.to_host();
-    uint *p = arr_cpu.data;
+    Array<uint> a({ 2*preplan_size }, af_rhost | af_zero);
+    uint *nmt_cpu = a.data;
+    uint *err_cpu = a.data + preplan_size;
+    
+    CUDA_CALL(cudaMemcpyAsync(nmt_cpu, nmt_gpu.data, preplan_size * sizeof(uint), cudaMemcpyDefault));
+    CUDA_CALL(cudaMemcpy(err_cpu, err_gpu.data, preplan_size * sizeof(uint), cudaMemcpyDefault));
+
+    long nmt = 0;
     uint err = 0;
-    ulong nmt = 0;
     
     for (long i = 0; i < planner_nblocks; i++) {
-	err |= (p[i] & 3);
-	nmt += (p[i] >> 2);
-	p[i] = nmt;
+	nmt += nmt_cpu[i];
+	err |= err_cpu[i];
+	nmt_cpu[i] = nmt;
     }
 
+    for (long i = planner_nblocks; i < preplan_size; i++)
+	nmt_cpu[i] = nmt;
+    
     check_err(err, "PointingPrePlan constructor");
     
     if (nmt >= 0x80000000U)
 	throw runtime_error("internal error: plan is unexpectedly large");  // FIXME arbitrary threshold -- what is best here?
 
-    arr_gpu.fill(arr_cpu);
-    this->nmt_cumsum = arr_gpu;
-    this->plan_nmt = nmt;
+    CUDA_CALL(cudaMemcpyAsync(nmt_gpu.data, nmt_cpu, preplan_size * sizeof(uint), cudaMemcpyDefault));
     
-    // Used when launching pointing (tod2map/map2tod) operations.
-    this->nmt_per_threadblock = sqrt(plan_nmt);
-    this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
-    this->pointing_nblocks = (plan_nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
-
     // Initialize this->cub_nbytes.
     
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(
@@ -162,17 +184,33 @@ PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, lon
     ));
 
     assert(cub_nbytes > 0);
+    
+    // Launch params for pointing (map2tod/tod2map) operations.
+    // (These must be initialized after 'nmt' is computed.)
+    
+    this->nmt_per_threadblock = sqrt(nmt);
+    this->nmt_per_threadblock = (nmt_per_threadblock + 32) & ~31;
+    this->pointing_nblocks = (nmt + nmt_per_threadblock - 1) / nmt_per_threadblock;
 
-    // Initialize public members containing byte counts: plan_nbytes, plan_constructor_tmp_nbytes.
+    // Initialize remaining public members.
     // Note: align128() is defined in gpu_mm_internals.hpp
 
     long max_nblocks = max(planner_nblocks, pointing_nblocks);
-    long mt_nbytes = align128(plan_nmt * sizeof(ulong));
+    long mt_nbytes = align128(nmt * sizeof(ulong));
     long err_nbytes = align128(max_nblocks * sizeof(uint));
     
+    this->plan_nmt = nmt;
     this->plan_nbytes = mt_nbytes + err_nbytes;
     this->plan_constructor_tmp_nbytes = mt_nbytes + align128(cub_nbytes);
-    this->overhead = 32*plan_nmt/double(nsamp) - 1.0;
+    this->overhead = 32*nmt/double(nsamp) - 1.0;
+}
+
+
+Array<uint> PointingPrePlan::get_nmt_cumsum() const
+{
+    Array<uint> ret({planner_nblocks}, af_rhost | af_zero);
+    CUDA_CALL(cudaMemcpy(ret.data, nmt_cumsum.data, planner_nblocks * sizeof(uint), cudaMemcpyDefault));
+    return ret;
 }
 
 
@@ -200,7 +238,8 @@ string PointingPrePlan::str() const
 // -------------------------------------------------------------------------------------------------
 
 #define INSTANTIATE(T) \
-    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix)
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix); \
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, const Array<uint> &buf, const Array<uint> &tmp)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

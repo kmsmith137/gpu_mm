@@ -112,9 +112,20 @@ struct LocalPixelization
 
 struct PointingPrePlan
 {
+    static constexpr int preplan_size = 1024;
+    
+    // This constructor uses externally allocated GPU memory.
+    // Intended for "cupy constructor gymnastics", i.e. ensuring that all allocation goes through the cupy allocator.
+    // The 'nmt_gpu' and 'err_gpu' arrays should have length preplan_size.
+    
+    template<typename T>
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix,
+		    const gputils::Array<uint> &nmt_gpu, const gputils::Array<uint> &err_gpu);
+
+    // This constructor allocates GPU memory.
     template<typename T>
     PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
-
+    
     long nsamp = 0;
     long nypix = 0;
     long nxpix = 0;
@@ -136,9 +147,12 @@ struct PointingPrePlan
     size_t cub_nbytes = 0;                 // number of bytes used in cub radix sort 'd_temp_storage'
 
     // Cumulative count of mt-pairs per threadblock.
-    // FIXME should be able to swap between host/GPU memory.
-    gputils::Array<uint> nmt_cumsum;   // length planner_nblocks
+    gputils::Array<uint> nmt_cumsum;
 
+    // Copies nmt_cumsum array to host, and returns it as a numpy array.
+    // Temporary hack, used in tests.test_pointing_preplan().
+    gputils::Array<uint> get_nmt_cumsum() const;
+    
     std::string str() const;
 };
 

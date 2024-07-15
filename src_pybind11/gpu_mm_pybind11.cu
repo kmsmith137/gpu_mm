@@ -82,20 +82,21 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	self.tod2map(lmap, tod, xpointing, lpix, allow_outlier_pixels, debug);
     };
 
-    // If updating this wrapper, don't forget to update comment in gpu_mm.py,
-    // listing members/methods.
+
+    
     py::class_<LocalPixelization>(m, "LocalPixelization",
 				  "LocalPixelization: represents a set of map cells, held on a single GPU")
 	.def(py::init<const Array<long> &, long, long>(),
 	     py::arg("cell_offsets"), py::arg("ystride"), py::arg("polstride"))
 	;
 
-    // If updating this wrapper, don't forget to update comment in gpu_mm.py,
-    // listing members/methods.
+    
     py::class_<PointingPrePlan>(m, "PointingPrePlan", xstrdup(pointing_preplan_docstring))
-	.def(py::init<const Array<Tmm>&, long, long>(),
-	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"))
-	
+	.def(py::init<const Array<Tmm>&, long, long, Array<uint>&, Array<uint>&>(),
+	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"), py::arg("nmt_gpu"), py::arg("err_gpu"))
+
+	.def_static("_get_preplan_size", []() { return PointingPrePlan::preplan_size; })
+
 	.def_readonly("nsamp", &PointingPrePlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &PointingPrePlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &PointingPrePlan::nxpix, "Number of x-pixels")
@@ -113,14 +114,12 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("plan_nmt", &PointingPrePlan::plan_nmt, "Total number of mt-pairs in plan")
 	.def_readonly("cub_nbytes", &PointingPrePlan::cub_nbytes, "Number of bytes used in cub radix sort 'd_temp_storage'")
 
-	// FIXME temporary hack, used in tests.test_pointing_preplan().
-	// To be replaced later by systematic API for shuffling between GPU/CPU.
-	.def("get_nmt_cumsum", [](const PointingPrePlan &pp) { return pp.nmt_cumsum.to_host(); },
-	     "Copies nmt_cumsum array to host, and returns it as a numpy array")
+	.def("get_nmt_cumsum", &PointingPrePlan::get_nmt_cumsum, "Copies nmt_cumsum array to host, and returns it as a numpy array.")
 	
 	.def("__str__", &PointingPrePlan::str)
     ;
-        
+
+    
     py::class_<PointingPlan>(m, "PointingPlan", xstrdup(pointing_plan_docstring))
 	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &, const Array<unsigned char> &>(),
 	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("buf"), py::arg("tmp_buf"))

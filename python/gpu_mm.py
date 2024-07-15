@@ -38,21 +38,44 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         return LocalPixelization(cell_offsets, ystride=nxpix, polstride=nypix*nxpix)
 
 
-# PointingPrePlan: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
-# or read docstrings in the python interpreter).
-#
-# class PointingPrePlan:
-#     self.__init__(xpointing_gpu, nypix, nxpix)
-#     self.nsamp
-#     self.nypix
-#     self.nxpix
-#     self.plan_nbytes
-#     self.plan_constructor_tmp_nbytes
-#     self.rk
-#     self.nblocks
-#     self.plan_nmt
-#     self.cub_nbytes
-#     self.get_nmt_cumsum()
+class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
+    """
+    PointingPrePlan(xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None)
+
+    Constructor arguments:
+        preplan             instance of type gpu_mm.PointingPrePlan
+        xpointing_gpu       shape (3, preplan.nsamp) array, on GPU
+        buf                 1-d uint32 array with length PointingPrePlan.preplan_size
+        tmp_buf             1-d uint32 array with length PointingPrePlan.preplan_size
+
+    FIXME explain difference between 'buf' and 'tmp_buf'.
+
+    Inherits from C++ base class:
+        self.nsamp
+        self.nypix
+        self.nxpix
+        self.plan_nbytes
+        self.plan_constructor_tmp_nbytes
+        self.overhead
+        self.ncl_per_threadblock
+        self.planner_nblocks
+        self.nmt_per_threadblock
+        self.pointing_nblocks
+        self.plan_nmt
+        self.cub_nbytes
+        self.get_nmt_cumsum()     intended for unit tests
+    """
+
+    # static member
+    preplan_size = gpu_mm_pybind11.PointingPrePlan._get_preplan_size()
+    
+    def __init__(self, xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None):
+        if buf is None:
+            buf = cp.empty(self.preplan_size, dtype=cp.uint32)
+        if tmp_buf is None:
+            tmp_buf = cp.empty(self.preplan_size, dtype=cp.uint32)
+
+        gpu_mm_pybind11.PointingPrePlan.__init__(self, xpointing_gpu, nypix, nxpix, buf, tmp_buf)
 
 
 class PointingPlan(gpu_mm_pybind11.PointingPlan):
