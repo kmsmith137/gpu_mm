@@ -44,6 +44,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     // ---------------------------------------------------------------------------------------------
 
     
+    using LocalPixelization = gpu_mm::LocalPixelization;
     using PointingPrePlan = gpu_mm::PointingPrePlan;
     using PointingPlan = gpu_mm::PointingPlan;
 
@@ -70,16 +71,24 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	+ pp_suffix;
 
     // Select template specialization T=Tmm
-    auto _map2tod = [](const PointingPlan &self, Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing, bool debug)
+    auto _map2tod = [](const PointingPlan &self, Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outlier_pixels, bool debug)
     {
-	self.map2tod(tod, map, xpointing, debug);
+	self.map2tod(tod, lmap, xpointing, lpix, allow_outlier_pixels, debug);
     };
 
     // Select template specialization T=Tmm
-    auto _tod2map = [](const PointingPlan &self, Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing, bool debug)
+    auto _tod2map = [](const PointingPlan &self, Array<Tmm> &lmap, const Array<Tmm> &tod, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outlier_pixels, bool debug)
     {
-	self.tod2map(map, tod, xpointing, debug);
+	self.tod2map(lmap, tod, xpointing, lpix, allow_outlier_pixels, debug);
     };
+
+    // If updating this wrapper, don't forget to update comment in gpu_mm.py,
+    // listing members/methods.
+    py::class_<LocalPixelization>(m, "LocalPixelization",
+				  "LocalPixelization: represents a set of map cells, held on a single GPU")
+	.def(py::init<const Array<long> &, long, long>(),
+	     py::arg("cell_offsets"), py::arg("ystride"), py::arg("polstride"))
+	;
 
     // If updating this wrapper, don't forget to update comment in gpu_mm.py,
     // listing members/methods.
@@ -120,8 +129,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")
 	.def_readonly("nxpix", &PointingPlan::nxpix, "Number of x-pixels")
 
-	.def("map2tod", _map2tod, py::arg("tod"), py::arg("map"), py::arg("xpointing"), py::arg("debug") = false)
-	.def("tod2map", _tod2map, py::arg("map"), py::arg("tod"), py::arg("xpointing"), py::arg("debug") = false)
+	.def("map2tod", _map2tod, py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels") = false, py::arg("debug") = false)
+	.def("tod2map", _tod2map, py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels") = false, py::arg("debug") = false)
 
 	// We wrap get_plan_mt() with the constraint on_gpu=false.
 	// This is necessary because I wrote a to-python converter for numpy arrays, but not cupy arrays.
@@ -132,7 +141,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	     
 	.def("__str__", &PointingPlan::str)
     ;
-
+    
     
     // ---------------------------------------------------------------------------------------------
     //
@@ -147,29 +156,39 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	"ReferencePointingPlan: A utility class used in unit tests.\n";
 
     
-    // Select template specialization T=Tmm
-    auto _unplanned_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &map, const Array<Tmm> &xpointing)
+    // Select template specializations T=Tmm
+    auto _reference_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outliers)
     {
-	gpu_mm::launch_unplanned_map2tod(tod, map, xpointing);
+	gpu_mm::reference_map2tod(tod, lmap, xpointing, lpix, allow_outliers);
     };
     
-    // Select template specialization T=Tmm
-    auto _unplanned_tod2map = [](Array<Tmm> &map, const Array<Tmm> &tod, const Array<Tmm> &xpointing)
+    auto _reference_tod2map = [](Array<Tmm> &lmap, const Array<Tmm> &tod, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outliers)
     {
-	gpu_mm::launch_unplanned_tod2map(map, tod, xpointing);
+	gpu_mm::reference_tod2map(lmap, tod, xpointing, lpix, allow_outliers);
+    };
+	
+    auto _unplanned_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix)
+    {
+	gpu_mm::launch_unplanned_map2tod(tod, lmap, xpointing, lpix);
+    };
+	
+    auto _unplanned_tod2map = [](Array<Tmm> &lmap, const Array<Tmm> &tod, const Array<Tmm> &xpointing, const LocalPixelization &lpix)
+    {
+	gpu_mm::launch_unplanned_tod2map(lmap, tod, xpointing, lpix);
     };
     
-    m.def("unplanned_map2tod", _unplanned_map2tod,
-	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
 
-    m.def("unplanned_tod2map", _unplanned_tod2map,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
+    m.def("reference_map2tod", _reference_map2tod,
+	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels")=false);
 
-    m.def("reference_map2tod", gpu_mm::reference_map2tod,
-	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
-    
-    m.def("reference_tod2map", gpu_mm::reference_tod2map,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"));
+    m.def("reference_tod2map", _reference_tod2map,
+	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels")=false);
+
+    m.def("unplanned_map2tod", _unplanned_map2tod, "Warning: only implemented for allow_outlier_pixels=true!",
+	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"));
+
+    m.def("unplanned_tod2map", _unplanned_tod2map, "Warning: only implemented for allow_outlier_pixels=true!",
+	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"));
 	  
     m.def("old_map2tod", gpu_mm::launch_old_map2tod,
 	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));

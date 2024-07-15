@@ -11,6 +11,7 @@ header_files_toplevel = [
 ]
 
 lib_source_files = [
+    'src_lib/LocalPixelization.cu',
     'src_lib/OldPointingPlan.cu',
     'src_lib/PointingPlan.cu',
     'src_lib/PointingPrePlan.cu',

@@ -92,6 +92,24 @@ namespace gpu_mm {
 // PointingPlans will typically be created and destroyed on the fly.
 
 
+
+struct LocalPixelization
+{
+    LocalPixelization(const gputils::Array<long> &cell_offsets, long ystride, long polstride);
+    
+    // Constructor arguments.
+    gputils::Array<long> cell_offsets_cpu;
+    gputils::Array<long> cell_offsets_gpu;
+    long ystride;
+    long polstride;
+
+    // Derived arguments, computed by constructor.
+    long nycells;   // same as cell_offsets.shape[0]
+    long nxcells;   // same as cell_offsets.shape[1]
+    long npix;      // counts only pixels in occupied cells, does not include factor 3 from TQU.
+};
+
+
 struct PointingPrePlan
 {
     template<typename T>
@@ -132,19 +150,17 @@ struct PointingPlan
     const long nxpix;
 
     const PointingPrePlan pp;
-
-    // Reminder: mt bit layout is
-    //   Low 10 bits = Global xcell index
-    //   Next 10 bits = Global ycell index
-    //   Next 26 bits = Primary TOD cache line index
-    //   Next bit = mflag (does cache line overlap multiple map cells?)
-    //   Next bit = zflag (mflag && first appearance of cache line)
     
     gputils::Array<unsigned char> buf;
-    ulong *plan_mt = nullptr;
-    uint *err_gpu = nullptr;
 
-    gputils::Array<uint> err_cpu;
+    // The 'buf' array logically consists of two buffers:
+    //   ulong plan_mt[nmt];    // where nmt = pp.plan_nmt
+    //   uint err[B];           // where B = max(pp.planner_nblocks, pp.pointing_nblocks)
+    //
+    // The 'plan_mt' and 'err_gpu' pointers point directly to these buffers, for convenience.
+   
+    ulong *plan_mt = nullptr;
+    uint *err_gpu = nullptr;    // 128-byte aligned
 
     // This constructor uses externally allocated GPU memory.
     template<typename T>
@@ -162,15 +178,19 @@ struct PointingPlan
     // All arrays must be on the GPU.
     template<typename T>
     void map2tod(gputils::Array<T> &tod,
-		 const gputils::Array<T> &map,
+		 const gputils::Array<T> &local_map,
 		 const gputils::Array<T> &xpointing,
+		 const LocalPixelization &local_pixelization,
+		 bool allow_outlier_pixels = false,
 		 bool debug = false) const;
-
+    
     // All arrays must be on the GPU.
     template<typename T>
-    void tod2map(gputils::Array<T> &map,
+    void tod2map(gputils::Array<T> &local_map,
 		 const gputils::Array<T> &tod,
 		 const gputils::Array<T> &xpointing,
+		 const LocalPixelization &local_pixelization,
+		 bool allow_outlier_pixels = false,
 		 bool debug = false) const;
 
     
@@ -188,16 +208,22 @@ struct PointingPlan
 
 // Slow single-threaded CPU map2tod/tod2map, for testing.
 
+template<typename T>
 extern void reference_map2tod(
-    gputils::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<float> &map,        // shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    gputils::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
+    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const LocalPixelization &local_pixelization,
+    bool allow_outlier_pixels
 );
 
+template<typename T>
 extern void reference_tod2map(
-    gputils::Array<float> &map,              // Shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,        // Shape (nsamp,) or (ndet,nt)
-    const gputils::Array<float> &xpointing   // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
+    gputils::Array<T> &local_map,        // total size (3 * local_pixelization.npix)
+    const gputils::Array<T> &tod,        // Shape (nsamp,) or (ndet,nt)
+    const gputils::Array<T> &xpointing,  // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
+    const LocalPixelization &local_pixelization,
+    bool allow_outlier_pixels
 );
 
 
@@ -206,25 +232,43 @@ extern void reference_tod2map(
 
 template<typename T>
 extern void launch_map2tod(gputils::Array<T> &tod,
-			   const gputils::Array<T> &map,
+			   const gputils::Array<T> &local_map,
 			   const gputils::Array<T> &xpointing,
-			   const ulong *plan_mt, long nmt,
-			   long nmt_per_block, bool debug);
+			   const LocalPixelization &local_pixelization,
+			   const ulong *plan_mt, uint *errflags,
+			   long nmt, long nmt_per_block, long nblocks,
+			   bool allow_outlier_pixels, bool debug);
 
 // Bare-pointer interface to tod2map.
 // You probably want to call PointingPlan::tod2map(), not this function!
 
 template<typename T>
-extern void launch_tod2map(gputils::Array<T> &map,
+extern void launch_tod2map(gputils::Array<T> &local_map,
 			   const gputils::Array<T> &tod,
 			   const gputils::Array<T> &xpointing,
-			   const ulong *plan_mt, long nmt,
-			   long nmt_per_block, bool debug);
+			   const LocalPixelization &local_pixelization,
+			   const ulong *plan_mt, uint *errflags,
+			   long nmt, long nmt_per_block, long nblocks,
+			   bool allow_outlier_pixels, bool debug);
 
-// "Plan-free" SHTs (intended for testing)
+// "Unplanned" SHTs (intended for testing)
+// Note: only allow_outlier_pixels=true is implemented!
 
 template<typename T>
-extern void launch_unplanned_map2tod(gputils::Array<T> &tod, const gputils::Array<T> &map, const gputils::Array<T> &xpointing);
+extern void launch_unplanned_map2tod(
+    gputils::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
+    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const LocalPixelization &local_pixelization
+);
+
+template<typename T>
+extern void launch_unplanned_tod2map(
+    gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
+    const gputils::Array<T> &tod,  // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const LocalPixelization &local_pixelization
+);
 
 template<typename T>
 extern void launch_unplanned_tod2map(gputils::Array<T> &map, const gputils::Array<T> &tod, const gputils::Array<T> &xpointing);
@@ -275,12 +319,15 @@ struct ToyPointing
 extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix(long nypix, const char *where);
 extern void check_nxpix(long nxpix, const char *where);
+
 extern void check_err(uint err, const char *where);
+extern void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore = 0);
 
 // Check (map, tod, xpointing) arrays, in a case where we know the dimensions in advance.
 template<typename T> extern void check_map(const gputils::Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_local_map(const gputils::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
 
 // Check (map, tod, xpointing) arrays, in a case where we do not know the dimensions in advance.
 template<typename T> extern void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu);

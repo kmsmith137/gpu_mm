@@ -19,9 +19,38 @@ inline long align128(long n)
 }
 
 
+// Flags for communicating errors from GPU to CPU.
 static constexpr int errflag_pixel_outlier = 0x1;
 static constexpr int errflag_inconsistent_nmt = 0x4;
-	
+
+
+// write_errflags(): called from device code, to write errflags to global CPU memory.
+// Warning: Assumes thread layout is {32,W,1}, and block layout is {B,1,1}!
+// Warning: caller may need to call __syncthreads() before and/or after.
+
+static __device__ void write_errflags(uint *gp, uint *sp, uint local_err)
+{
+    int laneId = threadIdx.x;
+    int warpId = threadIdx.y;
+    int nwarps = blockDim.y;
+    
+    local_err = __reduce_or_sync(ALL_LANES, local_err);
+    
+    if (laneId == 0)
+	sp[warpId] = local_err;
+    
+    __syncthreads();
+
+    if (warpId != 0)
+	return;
+    
+    local_err = (laneId < nwarps) ? sp[laneId] : 0;
+    local_err = __reduce_or_sync(ALL_LANES, local_err);
+    
+    if (laneId == 0)
+	gp[blockIdx.x] = local_err;
+}
+
 
 // -------------------------------------------------------------------------------------------------
 //
@@ -33,7 +62,7 @@ template<typename T> struct dtype {};
 template<> struct dtype<float>
 {
     // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__SINGLE.html
-    static __device__ void xsincos(float x, float *sptr, float *cptr) { sincosf(x, sptr, cptr); }
+    static __host__ __device__ void xsincos(float x, float *sptr, float *cptr) { sincosf(x, sptr, cptr); }
     static __device__ float *get_shmem() { extern __shared__ float shmem_f[]; return shmem_f; }
 };
 
@@ -41,7 +70,7 @@ template<> struct dtype<float>
 template<> struct dtype<double>
 {
     // https://docs.nvidia.com/cuda/cuda-math-api/group__CUDA__MATH__DOUBLE.html
-    static __device__ void xsincos(double x, double *sptr, double *cptr) { sincos(x, sptr, cptr); }
+    static __host__ __device__ void xsincos(double x, double *sptr, double *cptr) { sincos(x, sptr, cptr); }
     static __device__ double *get_shmem() { extern __shared__ double shmem_d[]; return shmem_d; }
 };
 
@@ -54,6 +83,19 @@ template<> struct dtype<int>
 // -------------------------------------------------------------------------------------------------
 //
 // FIXME these functions could use some comments!
+
+
+// Returns integer in the range -2 <= ix <= npix.
+template<typename T>
+static __host__ __device__ inline int quantize_pixel(T xpix, int npix)
+{
+    // Clamp xpix so that integer conversion can't go haywire, ensuring roundoff-robustness.
+    xpix = max(xpix, T(-1.5));
+    xpix = min(xpix, npix + T(0.5));
+
+    // The +/- 2 ensures that int(...) always rounds down (since it gets applied to a positive number).
+    return int(xpix + T(2)) - 2;
+}
 
 
 template<typename T>

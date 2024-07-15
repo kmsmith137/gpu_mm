@@ -1,6 +1,8 @@
-#include <iostream>
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"   // errflags
+
+#include <iostream>
+#include <gputils/cuda_utils.hpp>  // CUDA_CALL()
 
 using namespace std;
 using namespace gputils;
@@ -47,6 +49,21 @@ void check_err(uint err, const char *where)
 	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
 }
 
+void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore)
+{
+    xassert(errflags_gpu != nullptr);
+    xassert(nelts > 0);
+    
+    Array<uint> errflags_host({nelts}, af_rhost | af_zero);
+    CUDA_CALL(cudaMemcpy(errflags_host.data, errflags_gpu, nelts * sizeof(uint), cudaMemcpyDefault));
+
+    uint err = 0;
+    for (int i = 0; i < nelts; i++)
+	err |= errflags_host.data[i];
+
+    check_err(err & ~errflags_to_ignore, where);
+}
+
 static void _check_location(int aflags, const char *where, const char *arr_name, bool on_gpu)
 {
     if (on_gpu && gputils::af_on_gpu(aflags))
@@ -61,7 +78,7 @@ static void _check_location(int aflags, const char *where, const char *arr_name,
 
 
 template<typename T>
-void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu)
+void check_map_and_init_npix(const Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu)
 {
     xassert(map.ndim == 3);
     xassert(map.shape[0] == 3);
@@ -78,13 +95,23 @@ void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nx
 
 
 template<typename T>
-void check_map(const gputils::Array<T> &map, long nypix_expected, long nxpix_expected, const char *where, bool on_gpu)
+void check_map(const Array<T> &map, long nypix_expected, long nxpix_expected, const char *where, bool on_gpu)
 {
     long nypix_actual, nxpix_actual;
     check_map_and_init_npix(map, nypix_actual, nxpix_actual, where, on_gpu);
 
     xassert_eq(nypix_expected, nypix_actual);
     xassert_eq(nypix_expected, nypix_actual);
+}
+
+
+template<typename T>
+void check_local_map(const Array<T> &map, const LocalPixelization &local_pixelization, const char *where, bool on_gpu)
+{
+    // For local maps, we currently allow any shape which is contiguous and has the correct total size.
+    xassert(map.is_fully_contiguous());
+    xassert_eq(map.size, 3 * local_pixelization.npix);
+    _check_location(map.aflags, where, "map", on_gpu);
 }
 
 
@@ -159,6 +186,7 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
     template void check_map(const Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu); \
     template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
     template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
+    template void check_local_map(const Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu); \
     template void check_map_and_init_npix(const Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu); \
     template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
     template void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)

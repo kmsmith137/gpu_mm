@@ -15,6 +15,28 @@ from .gpu_mm_pybind11 import PointingPrePlan
 # FIXME eventually, should wrap both.
 mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
+        
+class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
+    def __init__(self, cell_offsets, ystride, polstride):
+        gpu_mm_pybind11.LocalPixelization.__init__(self, cell_offsets, ystride, polstride)
+
+        
+    @staticmethod
+    def make_rectangle(nypix, nxpix):
+        assert nypix > 0
+        assert nxpix > 0
+        assert nypix % 64 == 0
+        assert nxpix % 64 == 0
+
+        nycells = nypix // 64
+        nxcells = nxpix // 64
+
+        cell_offsets = np.empty((nycells, nxcells), dtype=int)
+        cell_offsets[:,:] = 64 * np.arange(nxcells).reshape((1,-1))
+        cell_offsets[:,:] += 64 * nxpix * np.arange(nycells).reshape((-1,1))
+
+        return LocalPixelization(cell_offsets, ystride=nxpix, polstride=nypix*nxpix)
+
 
 # PointingPrePlan: imported from gpu_mm_pybind11 (for details, see src_pybind11/gpu_mm_pybind11.cu,
 # or read docstrings in the python interpreter).

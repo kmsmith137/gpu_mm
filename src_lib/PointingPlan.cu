@@ -224,13 +224,17 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     check_buffer(buf, preplan.plan_nbytes, "PointingPlan constructor", "buf");
     check_buffer(tmp_buf, preplan.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
     check_xpointing(xpointing_gpu, preplan.nsamp, "PointingPlan constructor", true);   // on_gpu=true
-    
+
+    long max_nblocks = max(preplan.planner_nblocks, preplan.pointing_nblocks);
     long mt_nbytes = align128(preplan.plan_nmt * sizeof(ulong));
+    long err_nbytes = align128(max_nblocks * sizeof(uint));
     size_t cub_nbytes = pp.cub_nbytes;
     
+    xassert(preplan.plan_nbytes == mt_nbytes + err_nbytes);
+    xassert(preplan.plan_constructor_tmp_nbytes == mt_nbytes + align128(cub_nbytes));
+
     this->plan_mt = (ulong *) (buf.data);
     this->err_gpu = (uint *) (buf.data + mt_nbytes);
-    this->err_cpu = Array<uint> ({pp.planner_nblocks}, af_rhost | af_zero);
 
     ulong *unsorted_mt = (ulong *) (tmp_buf.data);
     void *cub_tmp = (void *) (tmp_buf.data + mt_nbytes);
@@ -250,8 +254,6 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 
     CUDA_PEEK("plan_kernel launch");
 
-    CUDA_CALL(cudaMemcpyAsync(err_cpu.data, err_gpu, pp.planner_nblocks * sizeof(uint), cudaMemcpyDeviceToHost));
-
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(
         cub_tmp,         // void *d_temp_storage
 	cub_nbytes,      // size_t &temp_storage_bytes
@@ -263,13 +265,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 	// cudaStream_t stream = 0
     ));
     
-    cudaDeviceSynchronize();
-
-    uint err = 0;
-    for (int b = 0; b < pp.planner_nblocks; b++)
-	err |= err_cpu.data[b];
-
-    check_err(err, "PointingPlan constructor");
+    check_gpu_errflags(this->err_gpu, pp.planner_nblocks, "PointingPlan constructor");
 }
 
 
@@ -282,26 +278,43 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 { }
 
 
-
 template<typename T>
-void PointingPlan::map2tod(Array<T> &tod, const Array<T> &map, const Array<T> &xpointing, bool debug) const
+void PointingPlan::map2tod(
+    Array<T> &tod,
+    const Array<T> &local_map,
+    const Array<T> &xpointing,
+    const LocalPixelization &lpix,
+    bool allow_outlier_pixels,
+    bool debug) const
 {
-    check_map(map, nypix, nxpix, "PointingPlan::map2tod", true);          // on_gpu=true
     check_tod(tod, nsamp, "PointingPlan::map2tod", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::map2tod", true);     // on_gpu=true
 
-    launch_map2tod(tod, map, xpointing, this->plan_mt, this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
+    launch_map2tod(
+        tod, local_map, xpointing, lpix, this->plan_mt, this->err_gpu,
+	this->pp.plan_nmt, this->pp.nmt_per_threadblock, this->pp.pointing_nblocks,
+	allow_outlier_pixels, debug
+    );
 }
 
 
 template<typename T>
-void PointingPlan::tod2map(Array<T> &map, const Array<T> &tod, const Array<T> &xpointing, bool debug) const
+void PointingPlan::tod2map(
+    Array<T> &local_map,
+    const Array<T> &tod,
+    const Array<T> &xpointing,
+    const LocalPixelization &lpix,
+    bool allow_outlier_pixels,
+    bool debug) const
 {
-    check_map(map, nypix, nxpix, "PointingPlan::tod2map", true);          // on_gpu=true
     check_tod(tod, nsamp, "PointingPlan::tod2map", true);                 // on_gpu=true
     check_xpointing(xpointing, nsamp, "PointingPlan::tod2map", true);     // on_gpu=true
-    
-    launch_tod2map(map, tod, xpointing, this->plan_mt, this->pp.plan_nmt, this->pp.nmt_per_threadblock, debug);
+
+    launch_tod2map(
+	local_map, tod, xpointing, lpix, this->plan_mt, this->err_gpu,
+	this->pp.plan_nmt, this->pp.nmt_per_threadblock, this->pp.pointing_nblocks,
+	allow_outlier_pixels, debug
+    );
 }
 
 
@@ -346,18 +359,25 @@ string PointingPlan::str() const
 	const gputils::Array<T> &xpointing_gpu, \
 	const gputils::Array<unsigned char> &buf, \
 	const gputils::Array<unsigned char> &tmp_buf); \
+    \
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu); \
+    \
     template void PointingPlan::map2tod( \
 	gputils::Array<T> &tod, \
-	const gputils::Array<T> &map, \
+	const gputils::Array<T> &local_map, \
 	const gputils::Array<T> &xpointing, \
+	const LocalPixelization &lpix, \
+	bool allow_outlier_pixels, \
 	bool debug) const; \
+    \
     template void PointingPlan::tod2map( \
-	gputils::Array<T> &map, \
+	gputils::Array<T> &local_map, \
 	const gputils::Array<T> &tod, \
 	const gputils::Array<T> &xpointing, \
+	const LocalPixelization &lpix, \
+	bool allow_outlier_pixels, \
 	bool debug) const
 
 
