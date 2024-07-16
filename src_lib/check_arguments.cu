@@ -25,19 +25,19 @@ void check_nsamp(long nsamp, const char *where)
 }
 
 
-void check_nypix(long nypix, const char *where)
+void check_nypix_global(long nypix_global, const char *where)
 {
-    xassert(nypix > 0);
-    xassert(nypix <= 64*1024);
-    xassert((nypix % 64) == 0);
+    xassert(nypix_global > 0);
+    xassert(nypix_global <= 64*1024);
+    xassert((nypix_global % 64) == 0);
 }
 
 
-void check_nxpix(long nxpix, const char *where)
+void check_nxpix_global(long nxpix_global, const char *where)
 {
-    xassert(nxpix > 0);
-    xassert(nxpix <= 64*1024);
-    xassert((nxpix % 64) == 0);
+    xassert(nxpix_global > 0);
+    xassert(nxpix_global <= 64*1024);
+    xassert((nxpix_global % 64) == 0);
 }
 
 
@@ -46,7 +46,7 @@ void check_err(uint err, const char *where)
     // Note: errflag_bad_{xy}pix should come before errflag_not_in_pixelization.
     
     if (err & errflag_bad_ypix)
-	throw runtime_error(string(where) + ": xpointing y-value is outside range [1,nypix-2].");
+	throw runtime_error(string(where) + ": xpointing y-value is outside range [1,nypix_global-2].");
     if (err & errflag_bad_xpix)
 	throw runtime_error(string(where) + ": xpointing x-value is outside range, perhaps you want the 'periodic_xcoord' flag?");
     if (err & errflag_inconsistent_nmt)
@@ -86,30 +86,30 @@ static void _check_location(int aflags, const char *where, const char *arr_name,
 
 
 template<typename T>
-void check_map_and_init_npix(const Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu)
+void check_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu)
 {
     xassert(map.ndim == 3);
     xassert(map.shape[0] == 3);
     xassert(map.is_fully_contiguous());
 
-    nypix = map.shape[1];
-    nxpix = map.shape[2];
+    nypix_global = map.shape[1];
+    nxpix_global = map.shape[2];
     
-    check_nypix(nypix, where);
-    check_nxpix(nxpix, where);
+    check_nypix_global(nypix_global, where);
+    check_nxpix_global(nxpix_global, where);
     
     _check_location(map.aflags, where, "map", on_gpu);
 }
 
 
 template<typename T>
-void check_map(const Array<T> &map, long nypix_expected, long nxpix_expected, const char *where, bool on_gpu)
+void check_map(const Array<T> &map, long nypix_global_expected, long nxpix_global_expected, const char *where, bool on_gpu)
 {
-    long nypix_actual, nxpix_actual;
-    check_map_and_init_npix(map, nypix_actual, nxpix_actual, where, on_gpu);
+    long nypix_global_actual, nxpix_global_actual;
+    check_map_and_init_npix(map, nypix_global_actual, nxpix_global_actual, where, on_gpu);
 
-    xassert_eq(nypix_expected, nypix_actual);
-    xassert_eq(nypix_expected, nypix_actual);
+    xassert_eq(nypix_global_expected, nypix_global_actual);
+    xassert_eq(nypix_global_expected, nypix_global_actual);
 }
 
 
@@ -168,6 +168,33 @@ void check_xpointing(const Array<T> &xpointing, long nsamp_expected, const char 
 }
 
 
+void check_cell_offsets_and_init_ncells(const Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu)
+{
+    xassert(cell_offsets.ndim == 2);
+    xassert(cell_offsets.is_fully_contiguous());
+
+    nycells = cell_offsets.shape[0];
+    nxcells = cell_offsets.shape[1];
+    
+    xassert(nycells > 0);
+    xassert(nxcells > 0);
+    xassert_le(nycells, 1024);
+    xassert_le(nxcells, 1024);
+
+    _check_location(cell_offsets.aflags, where, "cell_offsets", on_gpu);
+}
+
+
+void check_cell_offsets(const Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu)
+{
+    long nycells_actual, nxcells_actual;
+    check_cell_offsets_and_init_ncells(cell_offsets, nycells_actual, nxcells_actual, where, on_gpu);
+    
+    xassert_eq(nycells_expected, nycells_actual);
+    xassert_eq(nxcells_expected, nxcells_actual);
+}
+
+
 void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname)
 {
     if ((buf.ndim != 1) || (buf.size < min_nbytes)) {
@@ -191,11 +218,11 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 
 
 #define INSTANTIATE(T) \
-    template void check_map(const Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu); \
+    template void check_map(const Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu); \
     template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
     template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
     template void check_local_map(const Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu); \
-    template void check_map_and_init_npix(const Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu); \
+    template void check_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu); \
     template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
     template void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
 

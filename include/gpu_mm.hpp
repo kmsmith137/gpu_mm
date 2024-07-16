@@ -15,18 +15,18 @@ namespace gpu_mm {
 //
 // A "global" pixel-space map is an array
 //
-//    map[3][nypix][nxpix].
+//    map[3][nypix_global][nxpix_global].
 //
 // The 'y' coordinate is non-periodic, and is usually declination.
 // The 'x' coordinate is periodic, and is usually RA.
 //
-// Currently we require nypix to be a multiple of 64, and nxpix
+// Currently we require nypix_global to be a multiple of 64, and nxpix_global
 // to be a multiple of 128. (FIXME: I hope to improve this soon.)
 // We also require nxcells and nycells to be <= 1024.
 //
 // We divide maps into 64-by-64 cells. Thus the number of cells is:
-//   nycells = ceil(nypix / 64)
-//   nxcells = ceil(nxpix / 64)
+//   nycells = ceil(nypix_global / 64)
+//   nxcells = ceil(nxpix_global / 64)
 //
 // --------------------------------------------------
 //               LOCAL PIXEL-SPACE MAPS
@@ -95,15 +95,35 @@ namespace gpu_mm {
 
 struct LocalPixelization
 {
-    LocalPixelization(const gputils::Array<long> &cell_offsets, long ystride, long polstride);
+    // This constructor is intended to be called from C++.
+    // The 'cell_offsets' array can be either on the CPU or GPU.
     
-    // Constructor arguments.
-    gputils::Array<long> cell_offsets_cpu;
-    gputils::Array<long> cell_offsets_gpu;
-    long ystride;
-    long polstride;
+    LocalPixelization(long nypix_global, long nxpix_global,
+		      const gputils::Array<long> &cell_offsets,
+		      long ystride, long polstride,
+		      bool periodic_xcoord = true);
 
-    // Derived arguments, computed by constructor.
+    // This constructor is intended to be called from python.
+    // The caller is responsible for ensuring that the 'cell_offsets_cpu'
+    // and 'cell_offsets_gpu' arrays have the same contents!
+    
+    LocalPixelization(long nypix_global, long nxpix_global,
+		      const gputils::Array<long> &cell_offsets_cpu,
+		      const gputils::Array<long> &cell_offsets_gpu,
+		      long ystride, long polstride,
+		      bool periodic_xcoord = true);
+
+    // Global pixelization
+    const long nypix_global;
+    const long nxpix_global;
+    const bool periodic_xcoord;
+
+    // Local pixelization
+    const gputils::Array<long> cell_offsets_cpu;
+    const gputils::Array<long> cell_offsets_gpu;
+    const long ystride;
+    const long polstride;
+    
     long nycells;   // same as cell_offsets.shape[0]
     long nxcells;   // same as cell_offsets.shape[1]
     long npix;      // counts only pixels in occupied cells, does not include factor 3 from TQU.
@@ -113,23 +133,25 @@ struct LocalPixelization
 struct PointingPrePlan
 {
     static constexpr int preplan_size = 1024;
+
+    // This constructor allocates GPU memory, and is intended to be called from C++.
     
-    // This constructor uses externally allocated GPU memory.
-    // Intended for "cupy constructor gymnastics", i.e. ensuring that all allocation goes through the cupy allocator.
+    template<typename T>
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
+		    bool periodic_xcoord = true, bool debug = false);
+    
+    // This constructor uses externally allocated GPU memory, and is intended to be called from python.
     // The 'nmt_gpu' and 'err_gpu' arrays should have length preplan_size.
     
     template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix,
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
 		    const gputils::Array<uint> &nmt_gpu, const gputils::Array<uint> &err_gpu,
-		    bool debug = false);
-
-    // This constructor allocates GPU memory.
-    template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix, bool debug=false);
+		    bool periodic_xcoord = true, bool debug = false);
     
     long nsamp = 0;
-    long nypix = 0;
-    long nxpix = 0;
+    long nypix_global = 0;
+    long nxpix_global = 0;
+    bool periodic_xcoord;
 
     long plan_nbytes = 0;                  // length of 'buf' argument to PointingPlan constructor
     long plan_constructor_tmp_nbytes = 0;  // length of 'tmp_buf' argument to PointingPlan constructor
@@ -161,8 +183,9 @@ struct PointingPrePlan
 struct PointingPlan
 {
     const long nsamp;
-    const long nypix;
-    const long nxpix;
+    const long nypix_global;
+    const long nxpix_global;
+    const bool periodic_xcoord;
 
     const PointingPrePlan pp;
     
@@ -303,20 +326,21 @@ struct ToyPointing
     // If ndet > 0, then the xpointing arrays will have shape (3,ndet,nt).
     
     ToyPointing(long ndet, long nt,
-		long nypix, long nxpix,
+		long nypix_global,
+		long nxpix_global,
 		double scan_speed,     // map pixels per TOD sample
 		double total_drift,    // total drift over full TOD, in x-pixels
 		bool noisy = true);
 
     // Version of constructor with externally allocated xpointing arrays (intended for python)
-    ToyPointing(long nypix, long nxpix,
+    ToyPointing(long nypix_global, long nxpix_global,
 		double scan_speed, double total_drift,
 		const gputils::Array<T> &xpointing_cpu,
 		const gputils::Array<T> &xpointing_gpu,
 		bool noisy = true);
 
-    long nypix;
-    long nxpix;
+    long nypix_global;
+    long nxpix_global;
     double scan_speed;    // map pixels per TOD sample
     double total_drift;   // total drift over full TOD, in x-pixels
     double drift_speed;   // drift (in x-pixels) per TOD sample
@@ -336,24 +360,25 @@ struct ToyPointing
 // Similarly, xpointing arrays can have either shape (3,nsamp) or (3,ndet,nt).
 
 extern void check_nsamp(long nsamp, const char *where);
-extern void check_nypix(long nypix, const char *where);
-extern void check_nxpix(long nxpix, const char *where);
+extern void check_nypix_global(long nypix_global, const char *where);
+extern void check_nxpix_global(long nxpix_global, const char *where);
 
 extern void check_err(uint err, const char *where);
 extern void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore = 0);
 
-// Check (map, tod, xpointing) arrays, in a case where we know the dimensions in advance.
-template<typename T> extern void check_map(const gputils::Array<T> &map, long nypix, long nxpix, const char *where, bool on_gpu);
+// Check arrays, in cases where we know the dimensions in advance.
+template<typename T> extern void check_map(const gputils::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_local_map(const gputils::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
+extern void check_cell_offsets(const gputils::Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu);
+extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
-// Check (map, tod, xpointing) arrays, in a case where we do not know the dimensions in advance.
-template<typename T> extern void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix, long &nxpix, const char *where, bool on_gpu);
+// Check arrays, in cases where we do not know the dimensions in advance.
+template<typename T> extern void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_tod_and_init_nsamp(const gputils::Array<T> &tod, long &nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing_and_init_nsamp(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu);
-
-extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
+extern void check_cell_offsets_and_init_ncells(const gputils::Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu);
 
 
 // ReferencePointingPlan: used in unit tests.
@@ -377,8 +402,8 @@ struct ReferencePointingPlan
 
     // Same meaning as in PointingPrePlan.
     long nsamp = 0;
-    long nypix = 0;
-    long nxpix = 0;
+    long nypix_global = 0;
+    long nxpix_global = 0;
     long plan_nmt = 0;
     long ncl_per_threadblock = 0;
     long planner_nblocks = 0;
@@ -460,13 +485,13 @@ struct ReferencePointingPlan
 
 extern void launch_old_map2tod(
     gputils::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<float> &map,        // shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    const gputils::Array<float> &map,        // shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
 );
 
 
 extern void launch_old_tod2map(
-    gputils::Array<float> &map,                  // Shape (3,nypix,nxpix)   where axis 0 = {I,Q,U}
+    gputils::Array<float> &map,                  // Shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
     const gputils::Array<float> &tod,            // Shape (nsamp,) or (ndet,nt)
     const gputils::Array<float> &xpointing,      // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
     const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)

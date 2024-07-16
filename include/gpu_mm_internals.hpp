@@ -106,40 +106,40 @@ static __host__ __device__ inline int quantize_pixel(T xpix, int npix)
 
 
 template<typename T>
-static __device__ void range_check_ypix(T ypix, int nypix, uint &err)
+static __device__ void range_check_ypix(T ypix, int nypix_global, uint &err)
 {
-    bool valid = (ypix >= 0) && (ypix <= nypix-1);
+    bool valid = (ypix >= 0) && (ypix <= nypix_global-1);
     err = valid ? err : (err | errflag_pixel_outlier);
 }
 
 
 template<typename T>
-static __device__ void range_check_xpix(T xpix, int nxpix, uint &err)
+static __device__ void range_check_xpix(T xpix, int nxpix_global, uint &err)
 {
-    bool valid = (xpix >= 0) && (xpix <= nxpix-1);
+    bool valid = (xpix >= 0) && (xpix <= nxpix_global-1);
     err = valid ? err : (err | errflag_pixel_outlier);
 }
 
 
 template<typename T>
-static __device__ void quantize_ypix(int &iypix0, int &iypix1, T ypix, int nypix)
+static __device__ void quantize_ypix(int &iypix0, int &iypix1, T ypix, int nypix_global)
 {
     // Assumes range_check_ypix() has been called.
     iypix0 = int(ypix);
     iypix0 = (iypix0 >= 0) ? iypix0 : 0;
-    iypix0 = (iypix0 <= nypix-2) ? iypix0 : (nypix-2);
+    iypix0 = (iypix0 <= nypix_global-2) ? iypix0 : (nypix_global-2);
     iypix1 = iypix0 + 1;
 }
 
 
 template<typename T>
-static __device__ void quantize_xpix(int &ixpix0, int &ixpix1, T xpix, int nxpix)
+static __device__ void quantize_xpix(int &ixpix0, int &ixpix1, T xpix, int nxpix_global)
 {
     // Assumes range_check_xpix() and normalize_xpix() have been called.
     ixpix0 = int(xpix);
     ixpix0 = (ixpix0 >= 0) ? ixpix0 : 0;
-    ixpix0 = (ixpix0 <= nxpix-1) ? ixpix0 : (nxpix-1);
-    ixpix1 = (ixpix0 < (nxpix-1)) ? (ixpix0+1) : 0;
+    ixpix0 = (ixpix0 <= nxpix_global-1) ? ixpix0 : (nxpix_global-1);
+    ixpix1 = (ixpix0 < (nxpix_global-1)) ? (ixpix0+1) : 0;
 }
 
 
@@ -158,45 +158,45 @@ static __device__ void set_up_cell_pair(int &icell_e, int &icell_o, int ipix0, i
 template<typename T>
 struct pixel_locator
 {
-    const int nypix;
-    const int nxpix;
+    const int nypix_global;
+    const int nxpix_global;
     const bool periodic_xcoord;
     
     // Pixel indices and offsets are omputed in locate().
     // Note: if (ypix, xpix) are bad, then locate() sets the pixel indices (iy0, iy1, ix0, ix1)
     // to something in-range, but sets errflag_bad_{xy}pix, so that an exception gets thrown later.
     
-    int iy0, iy1;  // will always satisfy (0 <= iy < nypix), even if 'ypix' is bad.
-    int ix0, ix1;  // will always satisfy (0 <= iy < nypix), even if 'xpix' is bad.
+    int iy0, iy1;  // will always satisfy (0 <= iy < nypix_global), even if 'ypix' is bad.
+    int ix0, ix1;  // will always satisfy (0 <= iy < nypix_global), even if 'xpix' is bad.
     T dy, dx;
     
-    __host__ __device__ inline pixel_locator(int nypix_, int nxpix_, bool periodic_xcoord_)
-	: nypix(nypix_), nxpix(nxpix_), periodic_xcoord(periodic_xcoord_)
+    __host__ __device__ inline pixel_locator(int nypix_global_, int nxpix_global_, bool periodic_xcoord_)
+	: nypix_global(nypix_global_), nxpix_global(nxpix_global_), periodic_xcoord(periodic_xcoord_)
     { }
 
     __host__ __device__ inline void locate(T ypix, T xpix, uint &err)
     {
 	iy0 = int(ypix);
 	iy0 = max(iy0, 0);
-	iy0 = min(iy0, nypix-2);
+	iy0 = min(iy0, nypix_global-2);
 	iy1 = iy0 + 1;
 	dy = ypix - iy0;
 
-	bool yvalid = (ypix >= 0) && (ypix <= nypix-1);
+	bool yvalid = (ypix >= 0) && (ypix <= nypix_global-1);
 	err = yvalid ? err : (err | errflag_bad_ypix);
 	
-	const int ix0_max = periodic_xcoord ? (nxpix-1) : (nxpix-2);
-	const T xmin = periodic_xcoord ? (-nxpix) : 0;
-	const T xmax = periodic_xcoord ? (2*nxpix) : (nxpix-1);
+	const int ix0_max = periodic_xcoord ? (nxpix_global-1) : (nxpix_global-2);
+	const T xmin = periodic_xcoord ? (-nxpix_global) : 0;
+	const T xmax = periodic_xcoord ? (2*nxpix_global) : (nxpix_global-1);
 
-	xpix = (xpix >= 0) ? xpix : (xpix + nxpix);
-	xpix = (xpix <= nxpix) ? xpix : (xpix - nxpix);
+	xpix = (xpix >= 0) ? xpix : (xpix + nxpix_global);
+	xpix = (xpix <= nxpix_global) ? xpix : (xpix - nxpix_global);
 	
 	ix0 = int(xpix);
 	ix0 = max(ix0, 0);
 	ix0 = min(ix0, ix0_max);
 	ix1 = ix0 + 1;
-	ix1 = (ix1 < nxpix) ? ix1 : 0;   // wrap around (periodic case only)
+	ix1 = (ix1 < nxpix_global) ? ix1 : 0;   // wrap around (periodic case only)
 	dx = xpix - ix0;
 	
 	bool xvalid = (xpix >= xmin) && (xpix <= xmax);
@@ -226,8 +226,8 @@ struct cell_enumerator
 
     pixel_locator<T> _px;
 
-    __device__ inline cell_enumerator(int nypix_, int nxpix_, bool periodic_xcoord_)
-	: _px(nypix_, nxpix_, periodic_xcoord_)
+    __device__ inline cell_enumerator(int nypix_global_, int nxpix_global_, bool periodic_xcoord_)
+	: _px(nypix_global_, nxpix_global_, periodic_xcoord_)
     { }
 
     // Helper for enumerate()

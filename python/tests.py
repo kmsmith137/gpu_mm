@@ -45,31 +45,31 @@ def test_plan_iterator(niter=100):
 
         
 class PointingInstance:
-    def __init__(self, xpointing_cpu, xpointing_gpu, nypix, nxpix, name, debug_plan=False):
+    def __init__(self, xpointing_cpu, xpointing_gpu, nypix_global, nxpix_global, name, debug_plan=False):
         """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
 
         self.xpointing_cpu = xpointing_cpu
         self.xpointing_gpu = xpointing_gpu
         self.dtype = xpointing_gpu.dtype
         self.tod_shape = xpointing_gpu.shape[1:]
-        self.nypix = nypix
-        self.nxpix = nxpix
+        self.nypix_global = nypix_global
+        self.nxpix_global = nxpix_global
         self.name = name
         self.debug_plan = debug_plan
 
         # FIXME temporary convenience
-        self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix, nxpix)
+        self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix_global, nxpix_global)
 
     @classmethod
-    def from_toy_pointing(cls, ndet, nt, nypix, nxpix, scan_speed, total_drift, debug_plan=False):
-        tp = gpu_mm.ToyPointing(ndet, nt, nypix, nxpix, scan_speed, total_drift)
-        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp), debug_plan)        
+    def from_toy_pointing(cls, ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, debug_plan=False):
+        tp = gpu_mm.ToyPointing(ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift)
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix_global, tp.nxpix_global, str(tp), debug_plan)        
 
     
     @classmethod
     def make_random(cls, nsamp_max, debug_plan=False):
         tp = gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
-        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp), debug_plan)
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix_global, tp.nxpix_global, str(tp), debug_plan)
 
     
     @classmethod
@@ -102,8 +102,8 @@ class PointingInstance:
         return PointingInstance(
             xpointing_cpu = xpointing_cpu,
             xpointing_gpu = cp.asarray(xpointing_cpu),
-            nypix = 64*int(ymax//64) + 64,      # FIXME should be in npy fileshould be in npy file
-            nxpix = 64*int(xmax//64) + 64,      # FIXME 
+            nypix_global = 64*int(ymax//64) + 64,      # FIXME should be in npy fileshould be in npy file
+            nxpix_global = 64*int(xmax//64) + 64,      # FIXME 
             name = filename,
             debug_plan = debug_plan
         )
@@ -126,8 +126,8 @@ class PointingInstance:
         yield cls.from_toy_pointing(
             ndet = None,
             nt = 256*1024*1024,
-            nypix = 8*1024,
-            nxpix = 32*1024,
+            nypix_global = 8*1024,
+            nxpix_global = 32*1024,
             scan_speed = 0.5,    # pixels per TOD sample
             total_drift = 1024   # x-pixels
         )
@@ -158,7 +158,7 @@ class PointingInstance:
 
     @functools.cached_property
     def preplan(self):
-        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix, debug=self.debug_plan)
+        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix_global, self.nxpix_global, debug=self.debug_plan)
 
     @functools.cached_property
     def plan(self):
@@ -171,7 +171,7 @@ class PointingInstance:
     @functools.cached_property
     def old_plan(self):
         print('    Making OldPointingPlan (slow, done on CPU)')
-        return  OldPointingPlan(self.xpointing_cpu, self.nypix, self.nxpix)
+        return  OldPointingPlan(self.xpointing_cpu, self.nypix_global, self.nxpix_global)
     
     
     def _compare_arrays(self, arr1, arr2):
@@ -220,7 +220,7 @@ class PointingInstance:
 
 
     def test_map2tod(self, test_old=False):
-        m = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        m = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
@@ -259,7 +259,7 @@ class PointingInstance:
         
     def test_tod2map(self, test_old=False):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        m0 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
+        m0 = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
 
         m_ref = cp.asnumpy(m0)
         reference_tod2map(m_ref, cp.asnumpy(tod), self.xpointing_cpu, self.lpix)
@@ -310,7 +310,7 @@ class PointingInstance:
         print()
         for _ in range(10):
             t0 = time.time()
-            pp = gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
+            pp = gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix_global, self.nxpix_global)
             print(f'    time_pointing_preplan: {1000*(time.time()-t0)} ms')
             del pp
 
@@ -330,7 +330,7 @@ class PointingInstance:
 
     def time_map2tod(self, time_old=False):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         print()
         
         for _ in range(10):
@@ -366,7 +366,7 @@ class PointingInstance:
         # which may give artificially fast timings when run on an all-zeroes timestream.
         
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        m = cp.zeros((3, self.nypix, self.nxpix), dtype=self.dtype)
+        m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         print()
         
         for _ in range(10):

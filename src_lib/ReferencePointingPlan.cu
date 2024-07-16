@@ -21,7 +21,7 @@ namespace gpu_mm {
 // errp: array of length (B*W), where B=nblocks and W=warps_per_threadblock
 
 template<typename T>
-__global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint nsamp, uint nsamp_per_block, int nypix, int nxpix, uint *errp)
+__global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint nsamp, uint nsamp_per_block, int nypix_global, int nxpix_global, uint *errp)
 {
     int b = blockIdx.x;
     uint s0 = b * nsamp_per_block;
@@ -32,12 +32,12 @@ __global__ void quantize_kernel(int *iypix, int *ixpix, const T *xpointing, uint
 	T ypix = xpointing[s];
 	T xpix = xpointing[s+nsamp];
 
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	range_check_ypix(ypix, nypix_global, err);  // defined in gpu_mm_internals.hpp
+	range_check_xpix(xpix, nxpix_global, err);  // defined in gpu_mm_internals.hpp
 
 	int iy0, iy1, ix0, ix1;
-	quantize_ypix(iy0, iy1, ypix, nypix);  // defined in gpu_mm_internals.hpp
-	quantize_xpix(ix0, ix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
+	quantize_ypix(iy0, iy1, ypix, nypix_global);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ix0, ix1, xpix, nxpix_global);  // defined in gpu_mm_internals.hpp
 
 	ixpix[s] = ix0;
 	iypix[s] = iy0;
@@ -60,8 +60,8 @@ template<typename T>
 ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Array<T> &xpointing_gpu, const Array<unsigned char> &tmp)
 {
     this->nsamp = pp.nsamp;
-    this->nypix = pp.nypix;
-    this->nxpix = pp.nxpix;
+    this->nypix_global = pp.nypix_global;
+    this->nxpix_global = pp.nxpix_global;
     this->plan_nmt = pp.plan_nmt;
     this->ncl_per_threadblock = pp.ncl_per_threadblock;
     this->planner_nblocks = pp.planner_nblocks;
@@ -90,7 +90,7 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
     Array<uint> err_arr = Array<uint> ({quantize_nerr}, af_rhost);
 
     quantize_kernel <<< quantize_nblocks, 32*warps_per_threadblock >>>
-	(iypix_gpu, ixpix_gpu, xpointing_gpu.data, nsamp, nsamp_per_block, nypix, nxpix, err_gpu);
+	(iypix_gpu, ixpix_gpu, xpointing_gpu.data, nsamp, nsamp_per_block, nypix_global, nxpix_global, err_gpu);
 
     CUDA_PEEK("quantize_kernel launch");
     CUDA_CALL(cudaDeviceSynchronize());
@@ -122,7 +122,7 @@ ReferencePointingPlan::ReferencePointingPlan(const PointingPrePlan &pp, const Ar
 	    for (long s = s0; s < s0+32; s++) {
 		int iypix = iypix_arr.data[s];
 		int ixpix = ixpix_arr.data[s];
-		int ixpix1 = (ixpix < (nxpix-1)) ? (ixpix+1) : 0;
+		int ixpix1 = (ixpix < (nxpix_global-1)) ? (ixpix+1) : 0;
 		
 		this->_add_tmp_cell(iypix, ixpix);
 		this->_add_tmp_cell(iypix, ixpix1);
@@ -170,8 +170,8 @@ long ReferencePointingPlan::get_constructor_tmp_nbytes(const PointingPrePlan &pp
 // Helper for constructor.
 void ReferencePointingPlan::_add_tmp_cell(int iypix, int ixpix)
 {
-    xassert((iypix >= 0) && (iypix < nypix));
-    xassert((ixpix >= 0) && (ixpix < nxpix));
+    xassert((iypix >= 0) && (iypix < nypix_global));
+    xassert((ixpix >= 0) && (ixpix < nxpix_global));
     
     int ycell = iypix >> 6;
     int xcell = ixpix >> 6;
@@ -189,7 +189,7 @@ void ReferencePointingPlan::_add_tmp_cell(int iypix, int ixpix)
 string ReferencePointingPlan::str() const
 {
     stringstream ss;
-    ss << "ReferencePointingPlan(nsamp=" << nsamp << ", nypix=" << nypix << ", nxpix=" << nxpix << ")";
+    ss << "ReferencePointingPlan(nsamp=" << nsamp << ", nypix_global=" << nypix_global << ", nxpix_global=" << nxpix_global << ")";
     return ss.str();
 }
 

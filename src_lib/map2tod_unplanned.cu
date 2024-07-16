@@ -22,8 +22,8 @@ __global__ void unplanned_map2tod_kernel(
     const long *cell_offsets,
     long nsamp,
     uint nsamp_per_block,
-    int nypix,
-    int nxpix,
+    int nypix_global,
+    int nxpix_global,
     int nycells,
     int nxcells,
     long ystride,
@@ -33,7 +33,7 @@ __global__ void unplanned_map2tod_kernel(
 {
     // 'map_evaluator' and 'pixel_locator' are defined in gpu_mm_internals.hpp.
     map_evaluator<T,true> mev(lmap, cell_offsets, nycells, nxcells, ystride, polstride, partial_pixelization);
-    pixel_locator<T> px(nypix, nxpix, periodic_xcoord);
+    pixel_locator<T> px(nypix_global, nxpix_global, periodic_xcoord);
     
     const long s0 = blockIdx.x * long(nsamp_per_block);
     const long s1 = min(nsamp, s0 + long(nsamp_per_block));
@@ -76,8 +76,8 @@ void launch_unplanned_map2tod(
 	 local_pixelization.cell_offsets_gpu.data,
 	 nsamp,
 	 nsamp_per_block,
-	 local_pixelization.nycells << 6,   // FIXME nypix
-	 local_pixelization.nxcells << 6,   // FIXME nxpix
+	 local_pixelization.nycells << 6,   // FIXME nypix_global
+	 local_pixelization.nxcells << 6,   // FIXME nxpix_global
 	 local_pixelization.nycells,
 	 local_pixelization.nxcells,
 	 local_pixelization.ystride,

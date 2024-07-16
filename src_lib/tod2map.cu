@@ -40,8 +40,8 @@ tod2map_kernel(
     const ulong *plan_mt,
     uint *errflags,
     long nsamp,
-    int nypix,
-    int nxpix,
+    int nypix_global,
+    int nxpix_global,
     int nycells,
     int nxcells,
     long ystride,
@@ -66,7 +66,7 @@ tod2map_kernel(
     uint err = 0;
     
     plan_iterator<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
-    pixel_locator<T> px(nypix, nxpix, periodic_xcoord);
+    pixel_locator<T> px(nypix_global, nxpix_global, periodic_xcoord);
 
     // Outer loop over map cells
 
@@ -175,8 +175,8 @@ void launch_tod2map(gputils::Array<T> &local_map,
 	     plan_mt,
 	     errflags,
 	     nsamp,
-	     local_pixelization.nycells << 6,   // FIXME nypix
-	     local_pixelization.nxcells << 6,   // FIXME nxpix
+	     local_pixelization.nycells << 6,   // FIXME nypix_global
+	     local_pixelization.nxcells << 6,   // FIXME nxpix_global
 	     local_pixelization.nycells,
 	     local_pixelization.nxcells,
 	     local_pixelization.ystride,
@@ -195,8 +195,8 @@ void launch_tod2map(gputils::Array<T> &local_map,
 	     plan_mt,
 	     errflags,
 	     nsamp,
-	     local_pixelization.nycells << 6,   // FIXME nypix
-	     local_pixelization.nxcells << 6,   // FIXME nxpix
+	     local_pixelization.nycells << 6,   // FIXME nypix_global
+	     local_pixelization.nxcells << 6,   // FIXME nxpix_global
 	     local_pixelization.nycells,
 	     local_pixelization.nxcells,
 	     local_pixelization.ystride,

@@ -41,8 +41,8 @@ __global__ void preplan_kernel(
     const T *xpointing,
     long nsamp,
     long nsamp_per_block,
-    int nypix,
-    int nxpix,
+    int nypix_global,
+    int nxpix_global,
     bool periodic_xcoord)
 {
     // Shared memory layout:
@@ -60,7 +60,7 @@ __global__ void preplan_kernel(
     uint s1 = min(nsamp, (b+1) * nsamp_per_block);
 
     // cell_enumerator is defined in gpu_mm_internals.hpp
-    cell_enumerator<T,Debug> cells(nypix, nxpix, periodic_xcoord);
+    cell_enumerator<T,Debug> cells(nypix_global, nxpix_global, periodic_xcoord);
     uint nmt = 0;
     uint err = 0;
 
@@ -112,33 +112,41 @@ __global__ void preplan_kernel(
 
 
 template<typename T>
-PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_, bool debug)
+PointingPrePlan::PointingPrePlan(
+    const Array<T> &xpointing_gpu,
+    long nypix_global_,
+    long nxpix_global_,
+    bool periodic_xcoord_,
+    bool debug)
     // Delegate to version of constructor which uses externally allocated arrays.
-    : PointingPrePlan(xpointing_gpu, nypix_, nxpix_,
+    : PointingPrePlan(xpointing_gpu, nypix_global_, nxpix_global_,
 		      Array<uint> ({preplan_size}, af_gpu),
 		      Array<uint> ({preplan_size}, af_gpu),
-		      debug)
+		      periodic_xcoord_, debug)
 { }
 
 
 template<typename T>
 PointingPrePlan::PointingPrePlan(
     const Array<T> &xpointing_gpu,
-    long nypix_, long nxpix_,
+    long nypix_global_,
+    long nxpix_global_,
     const Array<uint> &nmt_gpu,
     const Array<uint> &err_gpu,
+    bool periodic_xcoord_,
     bool debug)
 {
     // Warps per threadblock in preplan_kernel
     constexpr int W = 4;
     
-    this->nypix = nypix_;
-    this->nxpix = nxpix_;
+    this->nypix_global = nypix_global_;
+    this->nxpix_global = nxpix_global_;
+    this->periodic_xcoord = periodic_xcoord_;
     this->nmt_cumsum = nmt_gpu;
     
     check_xpointing_and_init_nsamp(xpointing_gpu, this->nsamp, "PointingPrePlan constructor", true);  // on_gpu=true
-    check_nypix(nypix, "PointingPrePlan constructor");
-    check_nxpix(nxpix, "PointingPrePlan constructor");
+    check_nypix_global(nypix_global, "PointingPrePlan constructor");
+    check_nxpix_global(nxpix_global, "PointingPrePlan constructor");
 
     xassert(nmt_gpu.is_fully_contiguous());
     xassert(nmt_gpu.size == preplan_size);
@@ -166,9 +174,9 @@ PointingPrePlan::PointingPrePlan(
 	     xpointing_gpu.data,
 	     nsamp,
 	     32*ncl_per_threadblock,
-	     nypix,
-	     nxpix,
-	     false);   // FIXME periodic_xcoord
+	     nypix_global,
+	     nxpix_global,
+	     periodic_xcoord);
     }
     else {
 	preplan_kernel<T,W,false> <<< planner_nblocks, {32,W} >>>
@@ -177,9 +185,9 @@ PointingPrePlan::PointingPrePlan(
 	     xpointing_gpu.data,
 	     nsamp,
 	     32*ncl_per_threadblock,
-	     nypix,
-	     nxpix,
-	     false);   // FIXME periodic_xcoord
+	     nypix_global,
+	     nxpix_global,
+	     periodic_xcoord);
     }
 
     CUDA_PEEK("preplan_kernel launch");
@@ -260,8 +268,8 @@ string PointingPrePlan::str() const
     
     ss << "PointingPrePlan("
        << "nsamp=" << nsamp
-       << ", nypix=" << nypix
-       << ", nxpix=" << nxpix
+       << ", nypix_global=" << nypix_global
+       << ", nxpix_global=" << nxpix_global
        << ", plan_nbytes=" << plan_nbytes << " (" << nbytes_to_str(plan_nbytes) << ")"
        << ", tmp_nbytes=" << plan_constructor_tmp_nbytes << " (" << nbytes_to_str(plan_constructor_tmp_nbytes) << ")"
        << ", overhead=" << overhead
@@ -278,8 +286,8 @@ string PointingPrePlan::str() const
 // -------------------------------------------------------------------------------------------------
 
 #define INSTANTIATE(T) \
-    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, bool debug); \
-    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, const Array<uint> &buf, const Array<uint> &tmp, bool debug)
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_global, long nxpix_global, bool periodic_xcoord, bool debug); \
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_global, long nxpix_global, const Array<uint> &buf, const Array<uint> &tmp, bool periodic_xcoord, bool debug)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

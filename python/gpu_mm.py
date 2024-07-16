@@ -17,30 +17,37 @@ mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
         
 class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
-    def __init__(self, cell_offsets, ystride, polstride):
-        gpu_mm_pybind11.LocalPixelization.__init__(self, cell_offsets, ystride, polstride)
+    def __init__(self, nypix_global, nxpix_global, cell_offsets, ystride, polstride, periodic_xcoord = True):
+        cell_offsets_cpu = cp.asnumpy(cell_offsets)
+        cell_offsets_gpu = cp.asarray(cell_offsets)
+        gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, cell_offsets_cpu, cell_offsets_gpu, ystride, polstride, periodic_xcoord)
 
         
     @staticmethod
-    def make_rectangle(nypix, nxpix):
-        assert nypix > 0
-        assert nxpix > 0
-        assert nypix % 64 == 0
-        assert nxpix % 64 == 0
+    def make_rectangle(nypix_global, nxpix_global, periodic_xcoord = True):
+        assert nypix_global > 0
+        assert nxpix_global > 0
+        assert nypix_global % 64 == 0
+        assert nxpix_global % 64 == 0
 
-        nycells = nypix // 64
-        nxcells = nxpix // 64
+        nycells = nypix_global // 64
+        nxcells = nxpix_global // 64
 
         cell_offsets = np.empty((nycells, nxcells), dtype=int)
         cell_offsets[:,:] = 64 * np.arange(nxcells).reshape((1,-1))
-        cell_offsets[:,:] += 64 * nxpix * np.arange(nycells).reshape((-1,1))
+        cell_offsets[:,:] += 64 * nxpix_global * np.arange(nycells).reshape((-1,1))
 
-        return LocalPixelization(cell_offsets, ystride=nxpix, polstride=nypix*nxpix)
+        return LocalPixelization(
+            nypix_global, nxpix_global, cell_offsets,
+            ystride = nxpix_global,
+            polstride = nypix_global*nxpix_global,
+            periodic_xcoord = periodic_xcoord
+        )
 
 
 class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     """
-    PointingPrePlan(xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None)
+    PointingPrePlan(xpointing_gpu, nypix_global, nxpix_global, buf=None, tmp_buf=None)
 
     Constructor arguments:
         preplan             instance of type gpu_mm.PointingPrePlan
@@ -52,8 +59,8 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
 
     Inherits from C++ base class:
         self.nsamp
-        self.nypix
-        self.nxpix
+        self.nypix_global
+        self.nxpix_global
         self.plan_nbytes
         self.plan_constructor_tmp_nbytes
         self.overhead
@@ -69,13 +76,13 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     # static member
     preplan_size = gpu_mm_pybind11.PointingPrePlan._get_preplan_size()
     
-    def __init__(self, xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None, debug=False):
+    def __init__(self, xpointing_gpu, nypix_global, nxpix_global, buf=None, tmp_buf=None, periodic_xcoord=True, debug=False):
         if buf is None:
             buf = cp.empty(self.preplan_size, dtype=cp.uint32)
         if tmp_buf is None:
             tmp_buf = cp.empty(self.preplan_size, dtype=cp.uint32)
 
-        gpu_mm_pybind11.PointingPrePlan.__init__(self, xpointing_gpu, nypix, nxpix, buf, tmp_buf, debug)
+        gpu_mm_pybind11.PointingPrePlan.__init__(self, xpointing_gpu, nypix_global, nxpix_global, buf, tmp_buf, periodic_xcoord, debug)
 
 
 class PointingPlan(gpu_mm_pybind11.PointingPlan):
@@ -92,8 +99,8 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
 
     Inherits from C++ base class:
         self.nsamp          int
-        self.nypix          int
-        self.nxpix          int
+        self.nypix_global          int
+        self.nxpix_global          int
         self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
         self.__str__()
 
@@ -118,7 +125,7 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
 
 class ToyPointing(gpu_mm_pybind11.ToyPointing):
     """
-    ToyPointing(nsamp, nypix, nxpix, scan_speed, total_drift)
+    ToyPointing(nsamp, nypix_global, nxpix_global, scan_speed, total_drift)
     Scans currently go at 45 degrees, and cover the full ypix-range.
 
     Constructor arguments:
@@ -133,19 +140,19 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
 
     Inherits from C++ base class:
         self.nsamp          int
-        self.nypix          int
-        self.nxpix          int
+        self.nypix_global          int
+        self.nxpix_global          int
         self.scan_speed     float
         self.total_drift    float
         self.drift_speed    float
         self.__str__()
     """
 
-    def __init__(self, ndet, nt, nypix, nxpix, scan_speed, total_drift, noisy=True):
+    def __init__(self, ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, noisy=True):
         xpointing_shape = (3,ndet,nt) if (ndet is not None) else (3,nt)
         self.xpointing_cpu = np.zeros(xpointing_shape, mm_dtype)
         self.xpointing_gpu = cp.zeros(xpointing_shape, mm_dtype)
-        gpu_mm_pybind11.ToyPointing.__init__(self, nypix, nxpix, scan_speed, total_drift, self.xpointing_cpu, self.xpointing_gpu, noisy)
+        gpu_mm_pybind11.ToyPointing.__init__(self, nypix_global, nxpix_global, scan_speed, total_drift, self.xpointing_cpu, self.xpointing_gpu, noisy)
 
 
     @staticmethod
@@ -164,12 +171,12 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
             nt = 2**(5-r) * np.random.randint(s//2,s+1)
             
         npix_max = min(nsamp_max//128, 16384)
-        nypix = 64 * np.random.randint(npix_max//512, npix_max//128)
-        nxpix = 128 * np.random.randint(nypix//128 + 2, npix_max//128)
+        nypix_global = 64 * np.random.randint(npix_max//512, npix_max//128)
+        nxpix_global = 128 * np.random.randint(nypix_global//128 + 2, npix_max//128)
         scan_speed = np.random.uniform(0.1, 0.5)
-        total_drift = np.random.uniform(0.1*(nxpix-nypix), (nxpix-nypix)-2)
+        total_drift = np.random.uniform(0.1*(nxpix_global-nypix_global), (nxpix_global-nypix_global)-2)
                     
-        return ToyPointing(ndet, nt, nypix, nxpix, scan_speed, total_drift, noisy=noisy)
+        return ToyPointing(ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, noisy=noisy)
 
 
 class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
@@ -180,8 +187,8 @@ class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
     Inherited from C++:
 
       self.nsamp
-      self.nypix
-      self.nxpix
+      self.nypix_global
+      self.nxpix_global
       self.rk
       self.nblocks
 

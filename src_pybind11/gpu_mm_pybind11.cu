@@ -61,7 +61,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	
     // FIXME write longer docstrings
     string pointing_preplan_docstring =
-	"PointingPrePlan(xpointing_gpu, nypix, nxpix)\n"
+	"PointingPrePlan(xpointing_gpu, nypix_global, nxpix_global)\n"
 	"\n"
 	+ pp_suffix;
     
@@ -84,22 +84,24 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
 
     
-    py::class_<LocalPixelization>(m, "LocalPixelization",
-				  "LocalPixelization: represents a set of map cells, held on a single GPU")
-	.def(py::init<const Array<long> &, long, long>(),
-	     py::arg("cell_offsets"), py::arg("ystride"), py::arg("polstride"))
+    py::class_<LocalPixelization>(m, "LocalPixelization", "LocalPixelization: represents a set of map cells, held on a single GPU")
+	.def(py::init<long, long, const Array<long>&, const Array<long>&, long, long, bool>(),
+	     py::arg("nypix_global"), py::arg("nxpix_global"),
+	     py::arg("cell_offsets_cpu"), py::arg("cell_offset_gpu"),
+	     py::arg("ystride"), py::arg("polstride"), py::arg("periodic_xcoord"))
 	;
 
     
     py::class_<PointingPrePlan>(m, "PointingPrePlan", xstrdup(pointing_preplan_docstring))
-	.def(py::init<const Array<Tmm>&, long, long, Array<uint>&, Array<uint>&, bool>(),
-	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"), py::arg("nmt_gpu"), py::arg("err_gpu"), py::arg("debug")=false)
+	.def(py::init<const Array<Tmm>&, long, long, Array<uint>&, Array<uint>&, bool, bool>(),
+	     py::arg("xpointing_gpu"), py::arg("nypix_global"), py::arg("nxpix_global"),
+	     py::arg("nmt_gpu"), py::arg("err_gpu"), py::arg("periodic_xcoord"), py::arg("debug"))
 
 	.def_static("_get_preplan_size", []() { return PointingPrePlan::preplan_size; })
 
 	.def_readonly("nsamp", &PointingPrePlan::nsamp, "Number of TOD samples")
-	.def_readonly("nypix", &PointingPrePlan::nypix, "Number of y-pixels")
-	.def_readonly("nxpix", &PointingPrePlan::nxpix, "Number of x-pixels")
+	.def_readonly("nypix_global", &PointingPrePlan::nypix_global, "Number of y-pixels")
+	.def_readonly("nxpix_global", &PointingPrePlan::nxpix_global, "Number of x-pixels")
 	
 	.def_readonly("plan_nbytes", &PointingPrePlan::plan_nbytes, "Length of 'buf' argument to PointingPlan constructor")
 	.def_readonly("plan_constructor_tmp_nbytes", &PointingPrePlan::plan_constructor_tmp_nbytes, "Length of 'tmp_buf' argument to PointingPlan constructor")
@@ -125,8 +127,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("buf"), py::arg("tmp_buf"), py::arg("debug")=false)
 	
 	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
-	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")
-	.def_readonly("nxpix", &PointingPlan::nxpix, "Number of x-pixels")
+	.def_readonly("nypix_global", &PointingPlan::nypix_global, "Number of y-pixels")
+	.def_readonly("nxpix_global", &PointingPlan::nxpix_global, "Number of x-pixels")
 
 	.def("map2tod", _map2tod, py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels") = false, py::arg("debug") = false)
 	.def("tod2map", _tod2map, py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels") = false, py::arg("debug") = false)
@@ -198,14 +200,14 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
-	     py::arg("nypix"), py::arg("nxpix"),
+	     py::arg("nypix_global"), py::arg("nxpix_global"),
 	     py::arg("scan_speed"), py::arg("total_drift"),
 	     py::arg("xpointing_cpu"), py::arg("xpointing_gpu"),
 	     py::arg("noisy"))
 
 	// .def_readonly("nsamp", &ToyPointing::nsamp, "Number of TOD samples")
-	.def_readonly("nypix", &ToyPointing::nypix, "Number of y-pixels")
-	.def_readonly("nxpix", &ToyPointing::nxpix, "Number of x-pixels")
+	.def_readonly("nypix_global", &ToyPointing::nypix_global, "Number of y-pixels")
+	.def_readonly("nxpix_global", &ToyPointing::nxpix_global, "Number of x-pixels")
 	.def_readonly("scan_speed", &ToyPointing::scan_speed, "Scan speed in map pixels per TOD sample")
 	.def_readonly("total_drift", &ToyPointing::total_drift, "Total drift over full TOD, in x-pixels")
 	.def_readonly("drift_speed", &ToyPointing::drift_speed, "Drift (in x-pixels) per TOD sample")
@@ -218,8 +220,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("tmp"))
 	
 	.def_readonly("nsamp", &ReferencePointingPlan::nsamp, "Number of TOD samples")
-	.def_readonly("nypix", &ReferencePointingPlan::nypix, "Number of y-pixels")
-	.def_readonly("nxpix", &ReferencePointingPlan::nxpix, "Number of x-pixels")
+	.def_readonly("nypix_global", &ReferencePointingPlan::nypix_global, "Number of y-pixels")
+	.def_readonly("nxpix_global", &ReferencePointingPlan::nxpix_global, "Number of x-pixels")
 	
 	.def_readonly("plan_nmt", &ReferencePointingPlan::plan_nmt, "Total number of mt-pairs in plan")
 	.def_readonly("ncl_per_threadblock", &ReferencePointingPlan::ncl_per_threadblock, "Used when launching planner/preplanner kernels")

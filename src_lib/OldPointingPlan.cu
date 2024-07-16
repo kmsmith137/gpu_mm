@@ -70,8 +70,8 @@ OldPointingPlan::OldPointingPlan(const Array<float> &xpointing, int ndec, int nr
 {
     long nsamp;
     check_xpointing_and_init_nsamp(xpointing, nsamp, "OldPointingPlan constructor", false);  // on_gpu=false
-    check_nypix(ndec, "OldPointingPlanConstructor");
-    check_nxpix(nra, "OldPointingPlanConstructor");
+    check_nypix_global(ndec, "OldPointingPlanConstructor");
+    check_nxpix_global(nra, "OldPointingPlanConstructor");
 
     const float *xp = xpointing.data;
     

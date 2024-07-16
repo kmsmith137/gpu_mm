@@ -25,12 +25,12 @@ void reference_tod2map(
     check_local_map(lmap, lpix, "reference_tod2map", false);              // on_gpu = false
     check_xpointing(xpointing, nsamp, "reference_tod2map", false);        // on_gpu = false
 
-    int nypix = lpix.nycells << 6;  // FIXME
-    int nxpix = lpix.nxcells << 6;  // FIXME
+    int nypix_global = lpix.nycells << 6;  // FIXME
+    int nxpix_global = lpix.nxcells << 6;  // FIXME
     
     // 'map_evaluator' and 'pixel_locator' are defined in gpu_mm_internals.hpp.
     map_accumulator<T,false> macc(lmap.data, lpix.cell_offsets_cpu.data, lpix.nycells, lpix.nxcells, lpix.ystride, lpix.polstride, partial_pixelization);
-    pixel_locator<T> px(nypix, nxpix, periodic_xcoord);
+    pixel_locator<T> px(nypix_global, nxpix_global, periodic_xcoord);
     uint err = 0;
     
     for (long s = 0; s < nsamp; s++) {

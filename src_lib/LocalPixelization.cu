@@ -10,20 +10,46 @@ namespace gpu_mm {
 #endif
 
 
-LocalPixelization::LocalPixelization(const Array<long> &cell_offsets, long ystride_, long polstride_)
-{
-    xassert(cell_offsets.ndim == 2);
-    xassert(cell_offsets.is_fully_contiguous());
-    
-    this->ystride = ystride_;
-    this->polstride = polstride_;
-    this->nycells = cell_offsets.shape[0];
-    this->nxcells = cell_offsets.shape[1];
+LocalPixelization::LocalPixelization(
+    long nypix_global_,
+    long nxpix_global_,
+    const Array<long> &cell_offsets_,
+    long ystride_,
+    long polstride_,
+    bool periodic_xcoord_)
 
-    xassert(nycells > 0);
-    xassert(nxcells > 0);
-    xassert_le(nycells, 1024);
-    xassert_le(nxcells, 1024);
+    : LocalPixelization(nypix_global_,
+			nxpix_global_,
+			cell_offsets_.to_host(),   // cell_offsets_cpu
+			cell_offsets_.to_gpu(),    // cell_offsets_gpu
+			ystride_,
+			polstride_,
+			periodic_xcoord_)
+{ }
+
+
+LocalPixelization::LocalPixelization(
+    long nypix_global_,
+    long nxpix_global_,
+    const Array<long> &cell_offsets_cpu_,
+    const Array<long> &cell_offsets_gpu_,
+    long ystride_,
+    long polstride_,
+    bool periodic_xcoord_)
+    
+    : nypix_global(nypix_global_),
+      nxpix_global(nxpix_global_),
+      cell_offsets_cpu(cell_offsets_cpu_),
+      cell_offsets_gpu(cell_offsets_gpu_),
+      ystride(ystride_),
+      polstride(polstride_),
+      periodic_xcoord(periodic_xcoord_)
+{
+    check_nypix_global(nypix_global, "LocalPixelization constructor");
+    check_nxpix_global(nxpix_global, "LocalPixelization constructor");
+    
+    check_cell_offsets_and_init_ncells(cell_offsets_cpu, nycells, nxcells, "LocalPixelization constructor", false);  // on_gpu=false
+    check_cell_offsets(cell_offsets_gpu, nycells, nxcells, "LocalPixelization constructor", true);   // on_gpu=true
 
     // Some checks on the strides.
     
@@ -38,11 +64,8 @@ LocalPixelization::LocalPixelization(const Array<long> &cell_offsets, long ystri
     
     if (!case1 && !case2)
 	throw runtime_error("LocalPixelization constructor: expected either ystride to be a multiple of (3*polstride), or polstride to be a multiple of (64*ystride)");
-
-    this->cell_offsets_cpu = cell_offsets.to_host();
-    this->cell_offsets_gpu = cell_offsets.to_gpu();
     
-    // The rest of the constructor intiializes npix, and does a consistency check on the cell_offsets.
+    // The rest of the constructor intiializes 'npix', and does a consistency check on the cell_offsets.
     // This isn't a complete consistency check, but it should catch mis-specified cell_offsets in practice.
     // FIXME some day, I may strengthen this check.
 

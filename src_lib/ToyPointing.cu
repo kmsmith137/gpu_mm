@@ -29,9 +29,9 @@ inline Array<T> _alloc_xpointing(long ndet, long nt, int aflags)
 
 				 
 template<typename T>
-ToyPointing<T>::ToyPointing(long ndet, long nt, long nypix_, long nxpix_, double scan_speed_, double total_drift_, bool noisy) :
+ToyPointing<T>::ToyPointing(long ndet, long nt, long nypix_global_, long nxpix_global_, double scan_speed_, double total_drift_, bool noisy) :
     // Delegate to version of constructor which uses externally allocated arrays.
-    ToyPointing(nypix_, nxpix_, scan_speed_, total_drift_,
+    ToyPointing(nypix_global_, nxpix_global_, scan_speed_, total_drift_,
 		_alloc_xpointing<T> (ndet, nt, af_rhost),
 		_alloc_xpointing<T> (ndet, nt, af_gpu),
 		noisy)
@@ -39,9 +39,9 @@ ToyPointing<T>::ToyPointing(long ndet, long nt, long nypix_, long nxpix_, double
 
 
 template<typename T>
-ToyPointing<T>::ToyPointing(long nypix_, long nxpix_, double scan_speed_, double total_drift_,
+ToyPointing<T>::ToyPointing(long nypix_global_, long nxpix_global_, double scan_speed_, double total_drift_,
 			    const Array<T> &xpointing_cpu_, const Array<T> &xpointing_gpu_, bool noisy) :
-    nypix(nypix_), nxpix(nxpix_), scan_speed(scan_speed_), total_drift(total_drift_),
+    nypix_global(nypix_global_), nxpix_global(nxpix_global_), scan_speed(scan_speed_), total_drift(total_drift_),
     drift_speed(total_drift / (3*xpointing_cpu_.size)),
     xpointing_cpu(xpointing_cpu_),
     xpointing_gpu(xpointing_gpu_)
@@ -50,8 +50,8 @@ ToyPointing<T>::ToyPointing(long nypix_, long nxpix_, double scan_speed_, double
     
     check_xpointing_and_init_nsamp(xpointing_cpu, nsamp, "ToyPointing constructor (xpointing_cpu)", false);  // on_gpu=false
     check_xpointing(xpointing_gpu, nsamp, "ToyPointing constructor (xpointing_gpu)", true);   // on_gpu=false
-    check_nypix(nypix, "ToyPointing constructor");
-    check_nxpix(nxpix, "ToyPointing constructor");
+    check_nypix_global(nypix_global, "ToyPointing constructor");
+    check_nxpix_global(nxpix_global, "ToyPointing constructor");
     
     xassert((scan_speed > 0.0) && (scan_speed <= 1.0));
     xassert((drift_speed > 0.0) && (drift_speed <= 1.0));
@@ -69,7 +69,7 @@ ToyPointing<T>::ToyPointing(long nypix_, long nxpix_, double scan_speed_, double
     double scan_vel = scan_speed;
     
     double y0 = 1.1 * scan_speed;
-    double y1 = nypix-2 - (1.1 * scan_speed);
+    double y1 = nypix_global-2 - (1.1 * scan_speed);
     
     double xmin = x;
     double xmax = x;
@@ -95,9 +95,9 @@ ToyPointing<T>::ToyPointing(long nypix_, long nxpix_, double scan_speed_, double
 	x += scan_vel + drift_speed;
 
 	if (x < 0.0)
-	    x += nxpix;
-	if (x > nxpix)
-	    x -= nxpix;
+	    x += nxpix_global;
+	if (x > nxpix_global)
+	    x -= nxpix_global;
     }
 
     // Copy CPU -> GPU
@@ -116,7 +116,7 @@ string ToyPointing<T>::str() const
     string tod_shape = gputils::shape_str(xpointing_cpu.ndim-1, xpointing_cpu.shape+1);
     
     ss << "ToyPointing(tod_shape=" << tod_shape
-       << ", nypix=" << nypix << ", nxpix=" << nxpix
+       << ", nypix_global=" << nypix_global << ", nxpix_global=" << nxpix_global
        << ", scan_speed=" << scan_speed << ", total_drift=" << total_drift
        << ")";
     
@@ -125,8 +125,8 @@ string ToyPointing<T>::str() const
 
 
 #define INSTANTIATE(T) \
-    template ToyPointing<T>::ToyPointing(long ndet, long nt, long nypix, long nxpix, double scan_speed, double total_drift, bool noisy); \
-    template ToyPointing<T>::ToyPointing(long nypix, long nxpix, double scan_speed, double total_drift, const Array<T> &xp_cpu, const Array<T> &xp_gpu, bool noisy); \
+    template ToyPointing<T>::ToyPointing(long ndet, long nt, long nypix_global, long nxpix_global, double scan_speed, double total_drift, bool noisy); \
+    template ToyPointing<T>::ToyPointing(long nypix_global, long nxpix_global, double scan_speed, double total_drift, const Array<T> &xp_cpu, const Array<T> &xp_gpu, bool noisy); \
     template string ToyPointing<T>::str() const
 
 INSTANTIATE(float);

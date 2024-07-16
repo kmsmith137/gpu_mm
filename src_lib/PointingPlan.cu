@@ -126,8 +126,8 @@ __global__ void plan_kernel(
     uint *errflags,
     uint nsamp,
     uint nsamp_per_block,
-    int nypix,
-    int nxpix,
+    int nypix_global,
+    int nxpix_global,
     bool periodic_xcoord)
 {
     // Shared memory layout:
@@ -160,7 +160,7 @@ __global__ void plan_kernel(
     plan_mt += mt_out0;
     
     // cell_enumerator is defined in gpu_mm_internals.hpp
-    cell_enumerator<T,Debug> cells(nypix, nxpix, periodic_xcoord);
+    cell_enumerator<T,Debug> cells(nypix_global, nxpix_global, periodic_xcoord);
     mt_ringbuf rb(plan_mt, shmem, nmt_max);
     uint err = 0;
 
@@ -238,8 +238,9 @@ template<typename T>
 PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpointing_gpu,
 			   const Array<unsigned char> &buf_, const Array<unsigned char> &tmp_buf, bool debug)
     : nsamp(preplan.nsamp),
-      nypix(preplan.nypix),
-      nxpix(preplan.nxpix),
+      nypix_global(preplan.nypix_global),
+      nxpix_global(preplan.nxpix_global),
+      periodic_xcoord(preplan.periodic_xcoord),
       pp(preplan),
       buf(buf_)
 {
@@ -266,27 +267,27 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 
     if (debug) {
 	plan_kernel<T,W,true> <<< pp.planner_nblocks, {32,W} >>>
-	    (unsorted_mt,             // ulong *plan_mt,
-	     xpointing_gpu.data,      // const T *xpointing,
-	     pp.nmt_cumsum.data,      // const uint *nmt_cumsum,
-	     this->err_gpu,           // uint *errflags
-	     pp.nsamp,                // uint nsamp,
+	    (unsorted_mt,                   // ulong *plan_mt,
+	     xpointing_gpu.data,            // const T *xpointing,
+	     pp.nmt_cumsum.data,            // const uint *nmt_cumsum,
+	     this->err_gpu,                 // uint *errflags
+	     pp.nsamp,                      // uint nsamp,
 	     pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
-	     pp.nypix,                // int nypix,
-	     pp.nxpix,                // int nxpix,
-	     false);                  // FIXME periodic_xcoord
+	     pp.nypix_global,               // int nypix_global
+	     pp.nxpix_global,               // int nxpix_global
+	     pp.periodic_xcoord);           // bool periodic_xcoord
     }
     else {
 	plan_kernel<T,W,false> <<< pp.planner_nblocks, {32,W} >>>
-	    (unsorted_mt,             // ulong *plan_mt,
-	     xpointing_gpu.data,      // const T *xpointing,
-	     pp.nmt_cumsum.data,      // const uint *nmt_cumsum,
-	     this->err_gpu,           // uint *errflags
-	     pp.nsamp,                // uint nsamp,
+	    (unsorted_mt,                   // ulong *plan_mt,
+	     xpointing_gpu.data,            // const T *xpointing,
+	     pp.nmt_cumsum.data,            // const uint *nmt_cumsum,
+	     this->err_gpu,                 // uint *errflags
+	     pp.nsamp,                      // uint nsamp,
 	     pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
-	     pp.nypix,                // int nypix,
-	     pp.nxpix,                // int nxpix,
-	     false);                  // FIXME periodic_xcoord
+	     pp.nypix_global,               // int nypix_global
+	     pp.nxpix_global,               // int nxpix_global
+	     pp.periodic_xcoord);           // bool periodic_xcoord
     }
     
     CUDA_PEEK("plan_kernel launch");
@@ -375,8 +376,8 @@ string PointingPlan::str() const
     
     ss << "PointingPlan("
        << "nsamp=" << nsamp
-       << ", nypix=" << nypix
-       << ", nxpix=" << nxpix
+       << ", nypix_global=" << nypix_global
+       << ", nxpix_global=" << nxpix_global
        << ", plan_nbytes=" << pp.plan_nbytes << " (" << nbytes_to_str(pp.plan_nbytes) << ")"
        << ", tmp_nbytes=" << pp.plan_constructor_tmp_nbytes << " (" << nbytes_to_str(pp.plan_constructor_tmp_nbytes) << ")"
        << ", overhead=" << pp.overhead
