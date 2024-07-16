@@ -18,6 +18,28 @@ namespace gpu_mm {
 // -------------------------------------------------------------------------------------------------
 
 
+struct cell_analysis
+{
+    uint icell;
+    uint amask;
+    int na;
+    
+    __device__ cell_analysis(int iycell, int ixcell)
+    {
+	icell = (iycell << 10) | ixcell;
+	bool valid = (iycell >= 0) && (ixcell >= 0);
+	
+	int laneId = threadIdx.x & 31;
+	uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
+	uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
+	bool is_lowest = ((mmask & lmask) == 0);
+	
+	amask = __ballot_sync(ALL_LANES, valid && is_lowest);
+	na = __popc(amask);	
+    }
+};
+
+
 // absorb_mt(): Helper function for plan_kerne().
 // The number of arguments is awkwardly large!
 
@@ -101,7 +123,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
     
     // Shared memory layout:
     //   int    nmt_counter       running total of 'plan_mt' values written by this block
-    //   int    sid_counter       running total of secondary cache lines for this block
+    //   int    sid_counter       running total of secondary cache lines for this block (FIXME no longer used)
     //   int    nmt_local[W]      used once at end of kernel
     
     __shared__ int shmem[32];  // only need (W+2) elts, but convenient to pad to 32
@@ -134,53 +156,38 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
-	// For now, I'm including the range checks, even though they should be
-	// redundant with the preplan. (FIXME: does it affect running time?)
-	
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
-	 
-	int iypix0, iypix1, ixpix0, ixpix1;
-	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
-	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
-	
-	int iycell_e, iycell_o, ixcell_e, ixcell_o;
-	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
-	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
-	
-	uint icell0, icell1, icell2, icell3;
-	uint amask0, amask1, amask2, amask3;
-	int na0, na1, na2, na3;
-	 
-	analyze_cell_pair(iycell_e, ixcell_e, icell0, amask0, na0);
-	analyze_cell_pair(iycell_e, ixcell_o, icell1, amask1, na1);
-	analyze_cell_pair(iycell_o, ixcell_e, icell2, amask2, na2);
-	analyze_cell_pair(iycell_o, ixcell_o, icell3, amask3, na3);
+	// cell_enumerator is defined in gpu_mm_internals.hpp
+	cell_enumerator cells(ypix, xpix, nypix, nxpix, err);
 
-	bool mflag = ((na0 + na1 + na2 + na3) > 1);
+	cell_analysis ca0(cells.iy0, cells.ix0);
+	cell_analysis ca1(cells.iy0, cells.ix1);
+	cell_analysis ca2(cells.iy1, cells.ix0);
+	cell_analysis ca3(cells.iy1, cells.ix1);
+
+	bool mflag = ((ca0.na + ca1.na + ca2.na + ca3.na) > 1);
 
 	absorb_mt(plan_mt, shmem,        // pointers
 		  mt_local, nmt_local,   // per-warp ring buffer
-		  icell0, amask0, na0,   // map cells to absorb
+		  ca0.icell, ca0.amask, ca0.na,   // map cells to absorb
 		  s, mflag, 0,           // additional data needed to construct mt_new
 		  nmt_max, err);         // error testing and reporting
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
-		  icell1, amask1, na1,
-		  s, mflag, na0,
+		  ca1.icell, ca1.amask, ca1.na,
+		  s, mflag, ca0.na,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
-		  icell2, amask2, na2,
-		  s, mflag, na0+na1,
+		  ca2.icell, ca2.amask, ca2.na,
+		  s, mflag, ca0.na + ca1.na,
 		  nmt_max, err);
 	
 	absorb_mt(plan_mt, shmem,
 		  mt_local, nmt_local,
-		  icell3, amask3, na3,
-		  s, mflag, na0+na1+na2,
+		  ca3.icell, ca3.amask, ca3.na,
+		  s, mflag, ca0.na + ca1.na + ca2.na,
 		  nmt_max, err);
     }
     

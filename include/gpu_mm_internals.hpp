@@ -148,34 +148,25 @@ static __device__ void set_up_cell_pair(int &icell_e, int &icell_o, int ipix0, i
 }
 
 
-static __device__ uint count_nmt(int iycell, int ixcell)
+struct cell_enumerator
 {
-    uint icell = (iycell << 10) | ixcell;
-    bool valid = (iycell >= 0) && (ixcell >= 0);
+    int iy0, iy1;
+    int ix0, ix1;
 
-    int laneId = threadIdx.x & 31;
-    uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
-    uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
-    bool is_lowest = ((mmask & lmask) == 0);
+    template<typename T>
+    __device__ cell_enumerator(T ypix, T xpix, int nypix, int nxpix, uint &err)
+    {
+	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
+	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
 	
-    return (valid && is_lowest) ? 1 : 0;
-}
+	int iypix0, iypix1, ixpix0, ixpix1;
+	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
+	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
 
-
-// FIXME refactor common code in count_nmt(), analyze_cell_pair().
-static __device__ void analyze_cell_pair(int iycell, int ixcell, uint &icell, uint &amask, int &na)
-{
-    icell = (iycell << 10) | ixcell;
-    bool valid = (iycell >= 0) && (ixcell >= 0);
-
-    int laneId = threadIdx.x & 31;
-    uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
-    uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
-    bool is_lowest = ((mmask & lmask) == 0);
-
-    amask = __ballot_sync(ALL_LANES, valid && is_lowest);
-    na = __popc(amask);
-}
+	set_up_cell_pair(iy0, iy1, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
+	set_up_cell_pair(ix0, ix1, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
+    }
+};
 
 
 } // namespace gpu_mm

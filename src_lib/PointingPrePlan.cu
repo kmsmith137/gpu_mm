@@ -14,6 +14,20 @@ namespace gpu_mm {
 #endif
 
 
+static __device__ inline uint count_nmt(int iycell, int ixcell)
+{
+    uint icell = (iycell << 10) | ixcell;
+    bool valid = (iycell >= 0) && (ixcell >= 0);
+
+    int laneId = threadIdx.x & 31;
+    uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
+    uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
+    bool is_lowest = ((mmask & lmask) == 0);
+	
+    return (valid && is_lowest) ? 1 : 0;
+}
+
+
 // nmt_out, errflags: 1-d arrays of length nblocks.
 // xpointing: shape (3,nsamp)
 //
@@ -41,21 +55,13 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	// Defined in gpu_mm_internals.hpp
+	cell_enumerator cells(ypix, xpix, nypix, nxpix, err);
 	
-	int iypix0, iypix1, ixpix0, ixpix1;
-	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
-	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
-
-	int iycell_e, iycell_o, ixcell_e, ixcell_o;
-	set_up_cell_pair(iycell_e, iycell_o, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
-	set_up_cell_pair(ixcell_e, ixcell_o, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
-	
-	nmt += count_nmt(iycell_e, ixcell_e);  // defined in gpu_mm_internals.hpp
-	nmt += count_nmt(iycell_e, ixcell_o);  // defined in gpu_mm_internals.hpp
-	nmt += count_nmt(iycell_o, ixcell_e);  // defined in gpu_mm_internals.hpp
-	nmt += count_nmt(iycell_o, ixcell_o);  // defined in gpu_mm_internals.hpp
+	nmt += count_nmt(cells.iy0, cells.ix0);
+	nmt += count_nmt(cells.iy0, cells.ix1);
+	nmt += count_nmt(cells.iy1, cells.ix0);
+	nmt += count_nmt(cells.iy1, cells.ix1);
     }
     
     // Reduce across threads in the warp.
