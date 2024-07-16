@@ -44,18 +44,12 @@ __global__ void unplanned_tod2map_kernel(
 	T xpix = xpointing[s + nsamp];
 	T alpha = xpointing[s + 2*nsamp];
 	T t = tod[s];
-	
-	T q, u;	
-	dtype<T>::xsincos(2*alpha, &u, &q);
-	q *= t;
-	u *= t;
+
+	T sin_2a, cos_2a;
+	dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
 
 	px.locate(ypix, xpix, err);
-
-	macc.accum(px.iy0, px.ix0, t, q, u, (1-px.dy)*(1-px.dx), err);
-	macc.accum(px.iy0, px.ix1, t, q, u, (1-px.dy)*(px.dx), err);
-	macc.accum(px.iy1, px.ix0, t, q, u, (px.dy)*(1-px.dx), err);
-	macc.accum(px.iy1, px.ix1, t, q, u, (px.dy)*(px.dx), err);
+	macc.accum(px, t, t*cos_2a, t*sin_2a, err);
     }
 }
 

@@ -281,6 +281,16 @@ struct map_evaluator
 	err = (valid || partial_pixelization) ? err : (err | errflag_not_in_pixelization);
 	return t + cos_2a*q + sin_2a*u;
     }
+
+    __host__ __device__ inline T eval(const pixel_locator<T> &px, T cos_2a, T sin_2a, uint &err) const
+    {
+	T ret = (1-px.dy) * (1-px.dx) * eval(px.iy0, px.ix0, cos_2a, sin_2a, err);
+	ret +=  (1-px.dy) *   (px.dx) * eval(px.iy0, px.ix1, cos_2a, sin_2a, err);
+        ret +=    (px.dy) * (1-px.dx) * eval(px.iy1, px.ix0, cos_2a, sin_2a, err);
+        ret +=    (px.dy) *   (px.dx) * eval(px.iy1, px.ix1, cos_2a, sin_2a, err);
+	
+	return ret;
+    }
 };
 
 
@@ -334,6 +344,14 @@ struct map_accumulator
 	    __syncwarp();
 
 	err = (valid || partial_pixelization) ? err : (err | errflag_not_in_pixelization);
+    }
+
+    __host__ __device__ inline void accum(const pixel_locator<T> &px, T t, T q, T u, uint &err) const
+    {
+	accum(px.iy0, px.ix0, t, q, u, (1-px.dy) * (1-px.dx), err);
+	accum(px.iy0, px.ix1, t, q, u, (1-px.dy) *   (px.dx), err);
+	accum(px.iy1, px.ix0, t, q, u,   (px.dy) * (1-px.dx), err);
+	accum(px.iy1, px.ix1, t, q, u,   (px.dy) *   (px.dx), err);
     }
 };
 
