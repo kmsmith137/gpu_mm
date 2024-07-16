@@ -69,13 +69,13 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     # static member
     preplan_size = gpu_mm_pybind11.PointingPrePlan._get_preplan_size()
     
-    def __init__(self, xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None):
+    def __init__(self, xpointing_gpu, nypix, nxpix, buf=None, tmp_buf=None, debug=False):
         if buf is None:
             buf = cp.empty(self.preplan_size, dtype=cp.uint32)
         if tmp_buf is None:
             tmp_buf = cp.empty(self.preplan_size, dtype=cp.uint32)
 
-        gpu_mm_pybind11.PointingPrePlan.__init__(self, xpointing_gpu, nypix, nxpix, buf, tmp_buf)
+        gpu_mm_pybind11.PointingPrePlan.__init__(self, xpointing_gpu, nypix, nxpix, buf, tmp_buf, debug)
 
 
 class PointingPlan(gpu_mm_pybind11.PointingPlan):
@@ -104,13 +104,13 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
            -> accumulates into output 'map' array
     """
     
-    def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None):
+    def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None, debug=False):
         if buf is None:
             buf = cp.empty(preplan.plan_nbytes, dtype=cp.uint8)
         if tmp_buf is None:
             tmp_buf = cp.empty(preplan.plan_constructor_tmp_nbytes, dtype=cp.uint8)
 
-        gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf)
+        gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf, debug)
 
             
 ####################################################################################################

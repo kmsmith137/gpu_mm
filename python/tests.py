@@ -45,7 +45,7 @@ def test_plan_iterator(niter=100):
 
         
 class PointingInstance:
-    def __init__(self, xpointing_cpu, xpointing_gpu, nypix, nxpix, name):
+    def __init__(self, xpointing_cpu, xpointing_gpu, nypix, nxpix, name, debug_plan=False):
         """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
 
         self.xpointing_cpu = xpointing_cpu
@@ -55,24 +55,25 @@ class PointingInstance:
         self.nypix = nypix
         self.nxpix = nxpix
         self.name = name
+        self.debug_plan = debug_plan
 
         # FIXME temporary convenience
         self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix, nxpix)
 
     @classmethod
-    def from_toy_pointing(cls, ndet, nt, nypix, nxpix, scan_speed, total_drift):
+    def from_toy_pointing(cls, ndet, nt, nypix, nxpix, scan_speed, total_drift, debug_plan=False):
         tp = gpu_mm.ToyPointing(ndet, nt, nypix, nxpix, scan_speed, total_drift)
-        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp), debug_plan)        
 
     
     @classmethod
-    def make_random(cls, nsamp_max):
+    def make_random(cls, nsamp_max, debug_plan=False):
         tp = gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
-        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp))        
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix, tp.nxpix, str(tp), debug_plan)
 
     
     @classmethod
-    def from_file(cls, filename):
+    def from_file(cls, filename, debug_plan=False):
         print(f'Reading xpointing file {filename}')
         
         f = np.load(filename)
@@ -103,19 +104,20 @@ class PointingInstance:
             xpointing_gpu = cp.asarray(xpointing_cpu),
             nypix = 64*int(ymax//64) + 64,      # FIXME should be in npy fileshould be in npy file
             nxpix = 64*int(xmax//64) + 64,      # FIXME 
-            name = filename
+            name = filename,
+            debug_plan = debug_plan
         )
 
     
     @classmethod
     def generate_test_instances(cls):
         for _ in range(10):
-            yield cls.make_random(1024*1024)
+            yield cls.make_random(1024*1024, debug_plan=True)
         for _ in range(10):
-            yield cls.make_random(16*1024*1024)
+            yield cls.make_random(16*1024*1024, debug_plan=True)
         for _ in range(3):
-            yield cls.make_random(256*1024*1024)
-        for t in cls.generate_act_instances():
+            yield cls.make_random(256*1024*1024, debug_plan=True)
+        for t in cls.generate_act_instances(debug_plan=True):
             yield t
 
             
@@ -135,7 +137,7 @@ class PointingInstance:
 
     
     @classmethod
-    def generate_act_instances(cls):
+    def generate_act_instances(cls, debug_plan=False):
         if 'HOME' not in os.environ:
             print("Environment variable HOME not defined, can't look for ACT xpointing files")
             return
@@ -148,7 +150,7 @@ class PointingInstance:
         for f in sorted(os.listdir(d)):
             if f.startswith('xpointing') and f.endswith('.npz'):
                 flag = True
-                yield cls.from_file(os.path.join(d,f))
+                yield cls.from_file(os.path.join(d,f), debug_plan)
 
         if not flag:
             print(f"No xpointing files found in directory {d}")
@@ -156,11 +158,11 @@ class PointingInstance:
 
     @functools.cached_property
     def preplan(self):
-        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix)
+        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix, self.nxpix, debug=self.debug_plan)
 
     @functools.cached_property
     def plan(self):
-        return gpu_mm.PointingPlan(self.preplan, self.xpointing_gpu)
+        return gpu_mm.PointingPlan(self.preplan, self.xpointing_gpu, debug=self.debug_plan)
 
     @functools.cached_property
     def reference_plan(self):

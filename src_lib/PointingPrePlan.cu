@@ -34,8 +34,16 @@ static __device__ inline uint count_local_nmt(int iycell, int ixcell)
 // nsamp_per_block: must be a multiple of 32
 
 
-template<typename T, int W>
-__global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing, long nsamp, long nsamp_per_block, int nypix, int nxpix)
+template<typename T, int W, bool Debug>
+__global__ void preplan_kernel(
+    uint *nmt_out,
+    uint *errflags,
+    const T *xpointing,
+    long nsamp,
+    long nsamp_per_block,
+    int nypix,
+    int nxpix,
+    bool periodic_xcoord)
 {
     // Shared memory layout:
     //   uint nmt_unreduced[W]     only used at end of kernel
@@ -46,25 +54,28 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
     const int warpId = threadIdx.y;
     const int laneId = threadIdx.x;
     
-    uint nmt = 0;
-    uint err = 0;
-    
     // Range of TOD samples to be processed by this threadblock.
     int b = blockIdx.x;
     uint s0 = b * nsamp_per_block;
     uint s1 = min(nsamp, (b+1) * nsamp_per_block);
 
+    // cell_enumerator is defined in gpu_mm_internals.hpp
+    cell_enumerator<T,Debug> cells(nypix, nxpix, periodic_xcoord);
+    uint nmt = 0;
+    uint err = 0;
+
     for (long s = s0 + 32*warpId + laneId; s < s1; s += 32*W) {
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
-	// Defined in gpu_mm_internals.hpp
-	cell_enumerator cells(ypix, xpix, nypix, nxpix, err);
+	cells.enumerate(ypix, xpix, err);
 	
 	nmt += count_local_nmt(cells.iy0, cells.ix0);
 	nmt += count_local_nmt(cells.iy0, cells.ix1);
+	nmt += count_local_nmt(cells.iy0, cells.ix2);
 	nmt += count_local_nmt(cells.iy1, cells.ix0);
 	nmt += count_local_nmt(cells.iy1, cells.ix1);
+	nmt += count_local_nmt(cells.iy1, cells.ix2);
     }
     
     // Do frst-stage reduction (across threads in warp) and write to shared memory.
@@ -101,11 +112,12 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
 
 
 template<typename T>
-PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_)
+PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix_, long nxpix_, bool debug)
     // Delegate to version of constructor which uses externally allocated arrays.
     : PointingPrePlan(xpointing_gpu, nypix_, nxpix_,
 		      Array<uint> ({preplan_size}, af_gpu),
-		      Array<uint> ({preplan_size}, af_gpu))
+		      Array<uint> ({preplan_size}, af_gpu),
+		      debug)
 { }
 
 
@@ -114,7 +126,8 @@ PointingPrePlan::PointingPrePlan(
     const Array<T> &xpointing_gpu,
     long nypix_, long nxpix_,
     const Array<uint> &nmt_gpu,
-    const Array<uint> &err_gpu)
+    const Array<uint> &err_gpu,
+    bool debug)
 {
     // Warps per threadblock in preplan_kernel
     constexpr int W = 4;
@@ -145,9 +158,29 @@ PointingPrePlan::PointingPrePlan(
     
     xassert(planner_nblocks > 0);
     xassert(planner_nblocks <= preplan_size);
-    
-    preplan_kernel<T,W> <<< planner_nblocks, {32,W} >>>
-	(nmt_gpu.data, err_gpu.data, xpointing_gpu.data, nsamp, 32*ncl_per_threadblock, nypix, nxpix);
+
+    if (debug) {
+	preplan_kernel<T,W,true> <<< planner_nblocks, {32,W} >>>
+	    (nmt_gpu.data,
+	     err_gpu.data,
+	     xpointing_gpu.data,
+	     nsamp,
+	     32*ncl_per_threadblock,
+	     nypix,
+	     nxpix,
+	     false);   // FIXME periodic_xcoord
+    }
+    else {
+	preplan_kernel<T,W,false> <<< planner_nblocks, {32,W} >>>
+	    (nmt_gpu.data,
+	     err_gpu.data,
+	     xpointing_gpu.data,
+	     nsamp,
+	     32*ncl_per_threadblock,
+	     nypix,
+	     nxpix,
+	     false);   // FIXME periodic_xcoord
+    }
 
     CUDA_PEEK("preplan_kernel launch");
 
@@ -245,8 +278,8 @@ string PointingPrePlan::str() const
 // -------------------------------------------------------------------------------------------------
 
 #define INSTANTIATE(T) \
-    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix); \
-    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, const Array<uint> &buf, const Array<uint> &tmp)
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, bool debug); \
+    template PointingPrePlan::PointingPrePlan(const Array<T> &xpointing_gpu, long nypix, long nxpix, const Array<uint> &buf, const Array<uint> &tmp, bool debug)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

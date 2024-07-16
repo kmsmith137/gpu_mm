@@ -118,8 +118,17 @@ struct mt_ringbuf
 };
 
 
-template<typename T, int W>
-__global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum, uint nsamp, uint nsamp_per_block, int nypix, int nxpix, uint *errp)
+template<typename T, int W, bool Debug>
+__global__ void plan_kernel(
+    ulong *plan_mt,
+    const T *xpointing,
+    const uint *nmt_cumsum,
+    uint *errflags,
+    uint nsamp,
+    uint nsamp_per_block,
+    int nypix,
+    int nxpix,
+    bool periodic_xcoord)
 {
     // Shared memory layout:
     //   int   nmt_counter          running total of mt-values written by this block (updated with AtomicAdd())
@@ -149,7 +158,9 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
     // Shift output pointer 'plan_mt'.
     // FIXME some day, consider implementing cache-aligned IO as optimization
     plan_mt += mt_out0;
-
+    
+    // cell_enumerator is defined in gpu_mm_internals.hpp
+    cell_enumerator<T,Debug> cells(nypix, nxpix, periodic_xcoord);
     mt_ringbuf rb(plan_mt, shmem, nmt_max);
     uint err = 0;
 
@@ -157,20 +168,23 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 
-	// cell_enumerator is defined in gpu_mm_internals.hpp
-	cell_enumerator cells(ypix, xpix, nypix, nxpix, err);
+	cells.enumerate(ypix, xpix, err);
 
 	cell_analysis ca0(cells.iy0, cells.ix0);
 	cell_analysis ca1(cells.iy0, cells.ix1);
-	cell_analysis ca2(cells.iy1, cells.ix0);
-	cell_analysis ca3(cells.iy1, cells.ix1);
+	cell_analysis ca2(cells.iy0, cells.ix2);
+	cell_analysis ca3(cells.iy1, cells.ix0);
+	cell_analysis ca4(cells.iy1, cells.ix1);
+	cell_analysis ca5(cells.iy1, cells.ix2);
 
-	bool mflag = ((ca0.na + ca1.na + ca2.na + ca3.na) > 1);
+	bool mflag = ((ca0.na + ca1.na + ca2.na + ca3.na + ca4.na + ca5.na) > 1);
 	
 	rb.absorb(ca0, s, mflag, err);
 	rb.absorb(ca1, s, mflag, err);
 	rb.absorb(ca2, s, mflag, err);
 	rb.absorb(ca3, s, mflag, err);
+	rb.absorb(ca4, s, mflag, err);
+	rb.absorb(ca5, s, mflag, err);
 	rb.na_cumul = 0;  // reset after every TOD cache line
     }
 
@@ -213,7 +227,7 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
     err = (nmt_tot == nmt_max) ? err : (err | errflag_inconsistent_nmt);
 
     if (laneId == 0)
-	errp[b] = err;
+	errflags[b] = err;
 }
 
 
@@ -222,12 +236,12 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 
 template<typename T>
 PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpointing_gpu,
-			   const Array<unsigned char> &buf_, const Array<unsigned char> &tmp_buf) :
-    nsamp(preplan.nsamp),
-    nypix(preplan.nypix),
-    nxpix(preplan.nxpix),
-    pp(preplan),
-    buf(buf_)
+			   const Array<unsigned char> &buf_, const Array<unsigned char> &tmp_buf, bool debug)
+    : nsamp(preplan.nsamp),
+      nypix(preplan.nypix),
+      nxpix(preplan.nxpix),
+      pp(preplan),
+      buf(buf_)
 {
     check_buffer(buf, preplan.plan_nbytes, "PointingPlan constructor", "buf");
     check_buffer(tmp_buf, preplan.plan_constructor_tmp_nbytes, "PointingPlan constructor", "tmp_buf");
@@ -250,16 +264,31 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     // Number of warps in plan_kernel.
     constexpr int W = 4;
 
-    plan_kernel<T,W> <<< pp.planner_nblocks, {32,W} >>>
-	(unsorted_mt,             // ulong *plan_mt,
-	 xpointing_gpu.data,      // const T *xpointing,
-	 pp.nmt_cumsum.data,      // uint *nmt_cumsum,
-	 pp.nsamp,                // uint nsamp,
-	 pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
-	 pp.nypix,                // int nypix,
-	 pp.nxpix,                // int nxpix,
-	 this->err_gpu);          // uint *errp)
-
+    if (debug) {
+	plan_kernel<T,W,true> <<< pp.planner_nblocks, {32,W} >>>
+	    (unsorted_mt,             // ulong *plan_mt,
+	     xpointing_gpu.data,      // const T *xpointing,
+	     pp.nmt_cumsum.data,      // const uint *nmt_cumsum,
+	     this->err_gpu,           // uint *errflags
+	     pp.nsamp,                // uint nsamp,
+	     pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
+	     pp.nypix,                // int nypix,
+	     pp.nxpix,                // int nxpix,
+	     false);                  // FIXME periodic_xcoord
+    }
+    else {
+	plan_kernel<T,W,false> <<< pp.planner_nblocks, {32,W} >>>
+	    (unsorted_mt,             // ulong *plan_mt,
+	     xpointing_gpu.data,      // const T *xpointing,
+	     pp.nmt_cumsum.data,      // const uint *nmt_cumsum,
+	     this->err_gpu,           // uint *errflags
+	     pp.nsamp,                // uint nsamp,
+	     pp.ncl_per_threadblock << 5,   // uint nsamp_per_block (FIXME 32-bit overflow)
+	     pp.nypix,                // int nypix,
+	     pp.nxpix,                // int nxpix,
+	     false);                  // FIXME periodic_xcoord
+    }
+    
     CUDA_PEEK("plan_kernel launch");
 
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(
@@ -279,10 +308,11 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 
 // This constructor allocates GPU memory (rather than using externally managed GPU memory)
 template<typename T>
-PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpointing_gpu) :
+PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpointing_gpu, bool debug_) :
     PointingPlan(preplan, xpointing_gpu,
 		 Array<unsigned char>({preplan.plan_nbytes}, af_gpu), 
-		 Array<unsigned char>({preplan.plan_constructor_tmp_nbytes}, af_gpu))
+		 Array<unsigned char>({preplan.plan_constructor_tmp_nbytes}, af_gpu),
+		 debug_)
 { }
 
 
@@ -366,11 +396,13 @@ string PointingPlan::str() const
 	const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu, \
 	const gputils::Array<unsigned char> &buf, \
-	const gputils::Array<unsigned char> &tmp_buf); \
+	const gputils::Array<unsigned char> &tmp_buf, \
+        bool debug);  \
     \
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
-	const gputils::Array<T> &xpointing_gpu); \
+	const gputils::Array<T> &xpointing_gpu, \
+	bool debug); \
     \
     template void PointingPlan::map2tod( \
 	gputils::Array<T> &tod, \

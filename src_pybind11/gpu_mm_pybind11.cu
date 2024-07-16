@@ -92,8 +92,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     
     py::class_<PointingPrePlan>(m, "PointingPrePlan", xstrdup(pointing_preplan_docstring))
-	.def(py::init<const Array<Tmm>&, long, long, Array<uint>&, Array<uint>&>(),
-	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"), py::arg("nmt_gpu"), py::arg("err_gpu"))
+	.def(py::init<const Array<Tmm>&, long, long, Array<uint>&, Array<uint>&, bool>(),
+	     py::arg("xpointing_gpu"), py::arg("nypix"), py::arg("nxpix"), py::arg("nmt_gpu"), py::arg("err_gpu"), py::arg("debug")=false)
 
 	.def_static("_get_preplan_size", []() { return PointingPrePlan::preplan_size; })
 
@@ -121,8 +121,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     
     py::class_<PointingPlan>(m, "PointingPlan", xstrdup(pointing_plan_docstring))
-	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &, const Array<unsigned char> &>(),
-	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("buf"), py::arg("tmp_buf"))
+	.def(py::init<const PointingPrePlan &, const Array<Tmm>&, const Array<unsigned char>&, const Array<unsigned char>&, bool>(),
+	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("buf"), py::arg("tmp_buf"), py::arg("debug")=false)
 	
 	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix", &PointingPlan::nypix, "Number of y-pixels")

@@ -120,11 +120,12 @@ struct PointingPrePlan
     
     template<typename T>
     PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix,
-		    const gputils::Array<uint> &nmt_gpu, const gputils::Array<uint> &err_gpu);
+		    const gputils::Array<uint> &nmt_gpu, const gputils::Array<uint> &err_gpu,
+		    bool debug = false);
 
     // This constructor allocates GPU memory.
     template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix);
+    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix, long nxpix, bool debug=false);
     
     long nsamp = 0;
     long nypix = 0;
@@ -181,12 +182,14 @@ struct PointingPlan
     PointingPlan(const PointingPrePlan &pp,
 		 const gputils::Array<T> &xpointing_gpu,
 		 const gputils::Array<unsigned char> &buf,
-		 const gputils::Array<unsigned char> &tmp_buf);
+		 const gputils::Array<unsigned char> &tmp_buf,
+		 bool debug = false);
 
     // This constructor allocates GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
-		 const gputils::Array<T> &xpointing_gpu);
+		 const gputils::Array<T> &xpointing_gpu,
+		 bool debug = false);
 
 
     // All arrays must be on the GPU.

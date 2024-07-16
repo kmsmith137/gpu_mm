@@ -217,23 +217,56 @@ struct pixel_locator
 
 
 // Used in preplanner, planner.
+template<typename T, bool Debug>
 struct cell_enumerator
 {
+    // Cell indices, not pixel indices!
     int iy0, iy1;
-    int ix0, ix1;
+    int ix0, ix1, ix2;
 
-    template<typename T>
-    __device__ cell_enumerator(T ypix, T xpix, int nypix, int nxpix, uint &err)
+    pixel_locator<T> _px;
+
+    __device__ inline cell_enumerator(int nypix_, int nxpix_, bool periodic_xcoord_)
+	: _px(nypix_, nxpix_, periodic_xcoord_)
+    { }
+
+    // Helper for enumerate()
+    __device__ inline void _process_pair(int icell0, int icell1, int &icell_even, int &icell_odd)
     {
-	range_check_ypix(ypix, nypix, err);  // defined in gpu_mm_internals.hpp
-	range_check_xpix(xpix, nxpix, err);  // defined in gpu_mm_internals.hpp
+	icell1 = (icell0 != icell1) ? icell1 : -1;
 	
-	int iypix0, iypix1, ixpix0, ixpix1;
-	quantize_ypix(iypix0, iypix1, ypix, nypix);  // defined in gpu_mm_internals.hpp
-	quantize_xpix(ixpix0, ixpix1, xpix, nxpix);  // defined in gpu_mm_internals.hpp
+	bool flag = (icell0 & 1);
+	icell_even = flag ? icell1 : icell0;
+	icell_odd = flag ? icell0 : icell1;
+    }
+				   
+    __device__ inline void enumerate(T ypix, T xpix, uint &err)
+    {
+	_px.locate(ypix, xpix, err);
 
-	set_up_cell_pair(iy0, iy1, iypix0, iypix1);  // defined in gpu_mm_internals.hpp
-	set_up_cell_pair(ix0, ix1, ixpix0, ixpix1);  // defined in gpu_mm_internals.hpp
+	int iycell0 = (_px.iy0 >> 6);
+	int iycell1 = (_px.iy1 >> 6);
+	int ixcell0 = (_px.ix0 >> 6);
+	int ixcell1 = (_px.ix1 >> 6);
+
+	_process_pair(iycell0, iycell1, iy0, iy1);
+	_process_pair(ixcell0, ixcell1, ix0, ix1);
+
+	ix2 = (ix0 != 0) ? -1 : 0;
+	ix0 = (ix0 != 0) ? ix0 : -1;
+	
+	if constexpr (Debug) {
+	    assert((iycell0 == iy0) || (iycell0 == iy1));
+	    assert((iycell1 == iy0) || (iycell1 == iy1));	    
+	    assert((ixcell0 == ix0) || (ixcell0 == ix1) || (ixcell0 == ix2));
+	    assert((ixcell1 == ix0) || (ixcell1 == ix1) || (ixcell1 == ix2));
+		    
+	    assert((iy0 < 0) || !(iy0 & 1));  // negative or even
+	    assert((iy1 < 0) || (iy1 & 1));   // negative or odd
+	    assert((ix0 < 0) || (ix0 && !(ix0 & 1)));  // negative or even nonzero
+	    assert((ix1 < 0) || (ix1 & 1));   // negative or odd
+	    assert(ix2 <= 0);                 // negative or zero
+	}
     }
 };
 
