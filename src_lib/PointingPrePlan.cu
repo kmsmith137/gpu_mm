@@ -14,15 +14,14 @@ namespace gpu_mm {
 #endif
 
 
-static __device__ inline uint count_nmt(int iycell, int ixcell)
+static __device__ inline uint count_local_nmt(int iycell, int ixcell)
 {
     uint icell = (iycell << 10) | ixcell;
-    bool valid = (iycell >= 0) && (ixcell >= 0);
-
-    int laneId = threadIdx.x & 31;
-    uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
     uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
-    bool is_lowest = ((mmask & lmask) == 0);
+	
+    // Block dims are (W,32), so threadIdx.x is the laneId.
+    bool is_lowest = ((mmask >> threadIdx.x) == 1);
+    bool valid = (iycell >= 0) && (ixcell >= 0);
 	
     return (valid && is_lowest) ? 1 : 0;
 }
@@ -44,8 +43,8 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
     
     __shared__ uint shmem[2*W];
 
-    int warpId = threadIdx.x >> 5;
-    int laneId = threadIdx.x & 31;
+    const int warpId = threadIdx.y;
+    const int laneId = threadIdx.x;
     
     uint nmt = 0;
     uint err = 0;
@@ -62,10 +61,10 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
 	// Defined in gpu_mm_internals.hpp
 	cell_enumerator cells(ypix, xpix, nypix, nxpix, err);
 	
-	nmt += count_nmt(cells.iy0, cells.ix0);
-	nmt += count_nmt(cells.iy0, cells.ix1);
-	nmt += count_nmt(cells.iy1, cells.ix0);
-	nmt += count_nmt(cells.iy1, cells.ix1);
+	nmt += count_local_nmt(cells.iy0, cells.ix0);
+	nmt += count_local_nmt(cells.iy0, cells.ix1);
+	nmt += count_local_nmt(cells.iy1, cells.ix0);
+	nmt += count_local_nmt(cells.iy1, cells.ix1);
     }
     
     // Do frst-stage reduction (across threads in warp) and write to shared memory.
@@ -147,7 +146,7 @@ PointingPrePlan::PointingPrePlan(
     xassert(planner_nblocks > 0);
     xassert(planner_nblocks <= preplan_size);
     
-    preplan_kernel<T,W> <<< planner_nblocks, 32*W >>>
+    preplan_kernel<T,W> <<< planner_nblocks, {32,W} >>>
 	(nmt_gpu.data, err_gpu.data, xpointing_gpu.data, nsamp, 32*ncl_per_threadblock, nypix, nxpix);
 
     CUDA_PEEK("preplan_kernel launch");

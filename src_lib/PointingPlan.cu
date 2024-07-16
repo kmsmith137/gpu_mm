@@ -15,9 +15,7 @@ namespace gpu_mm {
 #endif
 
 
-// -------------------------------------------------------------------------------------------------
-
-
+// Helper for planning kernel.
 struct cell_analysis
 {
     uint icell;
@@ -27,12 +25,11 @@ struct cell_analysis
     __device__ cell_analysis(int iycell, int ixcell)
     {
 	icell = (iycell << 10) | ixcell;
-	bool valid = (iycell >= 0) && (ixcell >= 0);
-	
-	int laneId = threadIdx.x & 31;
-	uint lmask = (1U << laneId) - 1;   // all lanes lower than current lane
 	uint mmask = __match_any_sync(ALL_LANES, icell);  // all matching lanes
-	bool is_lowest = ((mmask & lmask) == 0);
+	
+	// Block dims are (W,32), so threadIdx.x is the laneId.
+	bool is_lowest = ((mmask >> threadIdx.x) == 1);
+	bool valid = (iycell >= 0) && (ixcell >= 0);
 	
 	amask = __ballot_sync(ALL_LANES, valid && is_lowest);
 	na = __popc(amask);	
@@ -40,6 +37,7 @@ struct cell_analysis
 };
 
 
+// Helper for planning kernel.
 struct mt_ringbuf
 {
     ulong *plan_mt;   // global memory
@@ -47,6 +45,7 @@ struct mt_ringbuf
     int nmt_max;      // length of global memory array
     ulong mt_local;   // per-warp ring buffer
     int nmt_local;    // current size of per-warp ring buffer
+    int na_cumul;
 
     __device__ mt_ringbuf(ulong *plan_mt_, int *shmem_, int nmt_max_)
     {
@@ -55,9 +54,10 @@ struct mt_ringbuf
 	nmt_max = nmt_max_;
 	mt_local = 0;
 	nmt_local = 0;
+	na_cumul = 0;
     }
     
-    __device__ void absorb(const cell_analysis &ca, uint s, bool mflag, int na_prev, uint &err)
+    __device__ void absorb(const cell_analysis &ca, uint s, bool mflag, uint &err)
     {
 	if (ca.na == 0)
 	    return;
@@ -79,7 +79,7 @@ struct mt_ringbuf
 	//   Next bit = mflag (does cache line overlap multiple map cells?)
 	//   Next bit = zflag (mflag && first appearance of cache line)
 	
-	bool zflag = mflag && (na_prev == 0) && (llid == 0);
+	bool zflag = mflag && (na_cumul == 0) && (llid == 0);
 
 	// Construct mt_new from icell, s, mflag, zflag.
 	uint mt20 = (s >> 5);
@@ -112,6 +112,7 @@ struct mt_ringbuf
 	
 	nmt_local -= 32;
 	mt_local = mt_new;
+	na_cumul += ca.na;
 	err = (nout < nmt_max) ? err : (err | errflag_inconsistent_nmt);
     }
 };
@@ -166,14 +167,17 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 
 	bool mflag = ((ca0.na + ca1.na + ca2.na + ca3.na) > 1);
 	
-	rb.absorb(ca0, s, mflag, 0, err);
-	rb.absorb(ca1, s, mflag, ca0.na, err);
-	rb.absorb(ca2, s, mflag, ca0.na + ca1.na, err);
-	rb.absorb(ca3, s, mflag, ca0.na + ca1.na + ca2.na, err);
+	rb.absorb(ca0, s, mflag, err);
+	rb.absorb(ca1, s, mflag, err);
+	rb.absorb(ca2, s, mflag, err);
+	rb.absorb(ca3, s, mflag, err);
+	rb.na_cumul = 0;  // reset after every TOD cache line
     }
 
-    // Write per-warp values of (err, rb.nmt_local) to shared memory
-    // First, we warp-reduce 'err'.
+    // Done with main loop -- now we just need to write errflag and partial
+    // mt_ringbufs to global memory. First, we write per-warp values of
+    // (err, rb.nmt_local) to shared memory (after warp-reducing err).
+
     err = __reduce_or_sync(ALL_LANES, err);
     
     if (laneId == 0) {
@@ -183,16 +187,17 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 
     __syncthreads();
 
-    // Values of 'rb.nmt_local' from each warp.
+    // Read values of rb.nmt_local (from all warps) from shared memory.
     int nmt_remote = (laneId < W) ? shmem[laneId+1] : 0;
     int nmt_counter = shmem[0];
 
-    // Index for writing to global memory.
+    // Index for writing to mt_ringbuf to global memory.
     int imt = (laneId < warpId) ? nmt_remote : 0;
     imt = __reduce_add_sync(ALL_LANES, imt);
     imt += nmt_counter;
     imt += laneId;
 
+    // Write mt_ringbuf to global memory.
     if ((laneId < rb.nmt_local) && (imt < nmt_max))
 	plan_mt[imt] = rb.mt_local;
 
