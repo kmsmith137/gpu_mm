@@ -40,71 +40,81 @@ struct cell_analysis
 };
 
 
-// absorb_mt(): Helper function for plan_kerne().
-// The number of arguments is awkwardly large!
-
-__device__ __forceinline__ void
-absorb_mt(ulong *plan_mt, int *shmem,        // pointers
-	  ulong &mt_local, int &nmt_local,   // per-warp ring buffer
-	  uint icell, uint amask, int na,    // map cells to absorb
-	  uint s, bool mflag, int na_prev,   // additional data needed to construct mt_new
-	  int nmt_max, uint &err)            // error testing and reporting
+struct mt_ringbuf
 {
-    if (na == 0)
-	return;
+    ulong *plan_mt;   // global memory
+    int *shmem;       // shared memory counter
+    int nmt_max;      // length of global memory array
+    ulong mt_local;   // per-warp ring buffer
+    int nmt_local;    // current size of per-warp ring buffer
+
+    __device__ mt_ringbuf(ulong *plan_mt_, int *shmem_, int nmt_max_)
+    {
+	plan_mt = plan_mt_;
+	shmem = shmem_;
+	nmt_max = nmt_max_;
+	mt_local = 0;
+	nmt_local = 0;
+    }
     
-    // Block dims are (W,32), so threadIdx.x is the laneId.
-    int laneId = threadIdx.x;
+    __device__ void absorb(const cell_analysis &ca, uint s, bool mflag, int na_prev, uint &err)
+    {
+	if (ca.na == 0)
+	    return;
     
-    // Logical laneId (relative to current value of nmt_local, wrapped around)
-    int llid = (laneId + 32 - nmt_local) & 31;
+	// Block dims are (W,32), so threadIdx.x is the laneId.
+	int laneId = threadIdx.x;
     
-    // Permute 'icell' so that llid=N contains the N-th active icell
-    uint src_lane = __fns(amask, 0, llid+1);
-    icell = __shfl_sync(ALL_LANES, icell, src_lane & 31);  // FIXME do I need "& 31"?
-
-    // Reminder: mt bit layout is
-    //   Low 10 bits = Global xcell index
-    //   Next 10 bits = Global ycell index
-    //   Next 26 bits = Primary TOD cache line index
-    //   Next bit = mflag (does cache line overlap multiple map cells?)
-    //   Next bit = zflag (mflag && first appearance of cache line)
+	// Logical laneId (relative to current value of nmt_local, wrapped around)
+	int llid = (laneId + 32 - nmt_local) & 31;
     
-    bool zflag = mflag && (na_prev == 0) && (llid == 0);
+	// Permute 'icell' so that llid=N contains the N-th active icell
+	uint src_lane = __fns(ca.amask, 0, llid+1);
+	uint icell = __shfl_sync(ALL_LANES, ca.icell, src_lane & 31);  // FIXME do I need "& 31"?
 
-    // Construct mt_new from icell, s, mflag, zflag.
-    uint mt20 = (s >> 5);
-    mt20 |= (mflag ? (1U << 26) : 0);
-    mt20 |= (zflag ? (1U << 27) : 0);
-    
-    ulong mt_new = icell | (ulong(mt20) << 20);
+	// Reminder: mt bit layout is
+	//   Low 10 bits = Global xcell index
+	//   Next 10 bits = Global ycell index
+	//   Next 26 bits = Primary TOD cache line index
+	//   Next bit = mflag (does cache line overlap multiple map cells?)
+	//   Next bit = zflag (mflag && first appearance of cache line)
+	
+	bool zflag = mflag && (na_prev == 0) && (llid == 0);
 
-    // Extend ring buffer.
-    // If nmt_local is >32, then it "wraps around" from mt_local to mt_new.
-    
-    mt_local = (laneId < nmt_local) ? mt_local : mt_new;
-    nmt_local += na;
+	// Construct mt_new from icell, s, mflag, zflag.
+	uint mt20 = (s >> 5);
+	mt20 |= (mflag ? (1U << 26) : 0);
+	mt20 |= (zflag ? (1U << 27) : 0);
+	
+	ulong mt_new = icell | (ulong(mt20) << 20);
 
-    if (nmt_local < 32)
-	return;
+	// Extend ring buffer.
+	// If nmt_local is >32, then it "wraps around" from mt_local to mt_new.
+	
+	mt_local = (laneId < nmt_local) ? mt_local : mt_new;
+	nmt_local += ca.na;
 
-    // If we get here, we've accumulated 32 values of 'mt_local'.
-    // These values can now be written to global memory.
+	if (nmt_local < 32)
+	    return;
 
-    // Output array index (in 'plan_mt' array)
-    int nout = 0;
-    if (laneId == 0)
-	nout = atomicAdd(shmem, 32);
-    nout = __shfl_sync(ALL_LANES, nout, 0);  // broadcast from lane 0 to all lanes
-    nout += laneId;
+	// If we get here, we've accumulated 32 values of 'mt_local'.
+	// These values can now be written to global memory.
 
-    if (nout < nmt_max)
-	plan_mt[nout] = mt_local;
+	// Output array index (in 'plan_mt' array)
+	int nout = 0;
+	if (laneId == 0)
+	    nout = atomicAdd(shmem, 32);
+	nout = __shfl_sync(ALL_LANES, nout, 0);  // broadcast from lane 0 to all lanes
+	nout += laneId;
 
-    nmt_local -= 32;
-    mt_local = mt_new;
-    err = (nout < nmt_max) ? err : (err | errflag_inconsistent_nmt);
-}
+	if (nout < nmt_max)
+	    plan_mt[nout] = mt_local;
+	
+	nmt_local -= 32;
+	mt_local = mt_new;
+	err = (nout < nmt_max) ? err : (err | errflag_inconsistent_nmt);
+    }
+};
 
 
 template<typename T, int W>
@@ -145,11 +155,8 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
     // Shift output pointer 'plan_mt'.
     // FIXME some day, consider implementing cache-aligned IO as optimization
     plan_mt += mt_out0;
-    
-    // (mt_local, nmt_local) act as a per-warp ring buffer.
-    // The value of nmt_local is the same on all threads in the warp.
-    ulong mt_local = 0;
-    int nmt_local = 0;
+
+    mt_ringbuf rb(plan_mt, shmem, nmt_max);
     uint err = 0;
 
     for (uint s = s0 + 32*warpId + laneId; s < s1; s += 32*W) {
@@ -165,34 +172,15 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	cell_analysis ca3(cells.iy1, cells.ix1);
 
 	bool mflag = ((ca0.na + ca1.na + ca2.na + ca3.na) > 1);
-
-	absorb_mt(plan_mt, shmem,        // pointers
-		  mt_local, nmt_local,   // per-warp ring buffer
-		  ca0.icell, ca0.amask, ca0.na,   // map cells to absorb
-		  s, mflag, 0,           // additional data needed to construct mt_new
-		  nmt_max, err);         // error testing and reporting
 	
-	absorb_mt(plan_mt, shmem,
-		  mt_local, nmt_local,
-		  ca1.icell, ca1.amask, ca1.na,
-		  s, mflag, ca0.na,
-		  nmt_max, err);
-	
-	absorb_mt(plan_mt, shmem,
-		  mt_local, nmt_local,
-		  ca2.icell, ca2.amask, ca2.na,
-		  s, mflag, ca0.na + ca1.na,
-		  nmt_max, err);
-	
-	absorb_mt(plan_mt, shmem,
-		  mt_local, nmt_local,
-		  ca3.icell, ca3.amask, ca3.na,
-		  s, mflag, ca0.na + ca1.na + ca2.na,
-		  nmt_max, err);
+	rb.absorb(ca0, s, mflag, 0, err);
+	rb.absorb(ca1, s, mflag, ca0.na, err);
+	rb.absorb(ca2, s, mflag, ca0.na + ca1.na, err);
+	rb.absorb(ca3, s, mflag, ca0.na + ca1.na + ca2.na, err);
     }
     
     if (laneId == 0)
-	shmem[warpId+2] = nmt_local;
+	shmem[warpId+2] = rb.nmt_local;
 
     __syncthreads();
 
@@ -206,10 +194,10 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	nout += __shfl_sync(ALL_LANES, shmem_remote, w+2);  // value of 'nmt_local' on warp w
     nout += laneId;
 
-    if ((laneId < nmt_local) && (nout < nmt_max))
-	plan_mt[nout] = mt_local;
+    if ((laneId < rb.nmt_local) && (nout < nmt_max))
+	plan_mt[nout] = rb.mt_local;
 
-    bool fail = (warpId == (W-1)) && (laneId == 0) && ((nout + nmt_local) != nmt_max);
+    bool fail = (warpId == (W-1)) && (laneId == 0) && ((nout + rb.nmt_local) != nmt_max);
     err = fail ? (err | errflag_inconsistent_nmt) : err;
 
     errp[b] = err;
