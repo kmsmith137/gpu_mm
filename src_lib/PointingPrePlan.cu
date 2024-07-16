@@ -38,6 +38,10 @@ static __device__ inline uint count_nmt(int iycell, int ixcell)
 template<typename T, int W>
 __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing, long nsamp, long nsamp_per_block, int nypix, int nxpix)
 {
+    // Shared memory layout:
+    //   uint nmt_unreduced[W]     only used at end of kernel
+    //   uint err_unreduced[W]     only used at end of kernel
+    
     __shared__ uint shmem[2*W];
 
     int warpId = threadIdx.x >> 5;
@@ -64,12 +68,10 @@ __global__ void preplan_kernel(uint *nmt_out, uint *errflags, const T *xpointing
 	nmt += count_nmt(cells.iy1, cells.ix1);
     }
     
-    // Reduce across threads in the warp.
+    // Do frst-stage reduction (across threads in warp) and write to shared memory.
     
     nmt = __reduce_add_sync(ALL_LANES, nmt);
     err = __reduce_or_sync(ALL_LANES, err);
-
-    // Reduce across warps in the block.
     
     if (laneId == 0) {
 	shmem[warpId] = nmt;

@@ -120,26 +120,19 @@ struct mt_ringbuf
 template<typename T, int W>
 __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum, uint nsamp, uint nsamp_per_block, int nypix, int nxpix, uint *errp)
 {
-    // Assumed for convienience in shared memory logic
-    static_assert(W <= 30);
-
-    // FIXME can be removed soon
-    assert(blockDim.x == 32);
-    assert(blockDim.y == W);
-		      
+    // Shared memory layout:
+    //   int   nmt_counter          running total of mt-values written by this block (updated with AtomicAdd())
+    //   uint  nmt_unreduced[W]     only used at end of kernel
+    //   uint  err_unreduced[W]     only used at end of kernel
+    
+    __shared__ int shmem[2*W+1];
+    
     // Block dims are (W,32)
     int laneId = threadIdx.x;
     int warpId = threadIdx.y;
     
-    // Shared memory layout:
-    //   int    nmt_counter       running total of 'plan_mt' values written by this block
-    //   int    sid_counter       running total of secondary cache lines for this block (FIXME no longer used)
-    //   int    nmt_local[W]      used once at end of kernel
-    
-    __shared__ int shmem[32];  // only need (W+2) elts, but convenient to pad to 32
-    
-    // Zero shared memory
-    if (warpId == 0)
+    // Just need to zero 'nmt_counter'.
+    if ((warpId == 0) && (laneId == 0))
 	shmem[laneId] = 0;
     
     // Range of TOD samples to be processed by this threadblock.
@@ -178,29 +171,44 @@ __global__ void plan_kernel(ulong *plan_mt, const T *xpointing, uint *nmt_cumsum
 	rb.absorb(ca2, s, mflag, ca0.na + ca1.na, err);
 	rb.absorb(ca3, s, mflag, ca0.na + ca1.na + ca2.na, err);
     }
+
+    // Write per-warp values of (err, rb.nmt_local) to shared memory
+    // First, we warp-reduce 'err'.
+    err = __reduce_or_sync(ALL_LANES, err);
     
-    if (laneId == 0)
-	shmem[warpId+2] = rb.nmt_local;
+    if (laneId == 0) {
+	shmem[warpId+1] = rb.nmt_local;
+	shmem[warpId+W+1] = err;
+    }
 
     __syncthreads();
 
-    // FIXME logic here could be optimized -- align IO on cache lines,
-    // use fewer warp shuffles to reduce.
-    
-    int shmem_remote = shmem[laneId];
-    
-    int nout = __shfl_sync(ALL_LANES, shmem_remote, 0);    // nmt_counter
-    for (int w = 0; w < warpId; w++)
-	nout += __shfl_sync(ALL_LANES, shmem_remote, w+2);  // value of 'nmt_local' on warp w
-    nout += laneId;
+    // Values of 'rb.nmt_local' from each warp.
+    int nmt_remote = (laneId < W) ? shmem[laneId+1] : 0;
+    int nmt_counter = shmem[0];
 
-    if ((laneId < rb.nmt_local) && (nout < nmt_max))
-	plan_mt[nout] = rb.mt_local;
+    // Index for writing to global memory.
+    int imt = (laneId < warpId) ? nmt_remote : 0;
+    imt = __reduce_add_sync(ALL_LANES, imt);
+    imt += nmt_counter;
+    imt += laneId;
 
-    bool fail = (warpId == (W-1)) && (laneId == 0) && ((nout + rb.nmt_local) != nmt_max);
-    err = fail ? (err | errflag_inconsistent_nmt) : err;
+    if ((laneId < rb.nmt_local) && (imt < nmt_max))
+	plan_mt[imt] = rb.mt_local;
 
-    errp[b] = err;
+    if (warpId != 0)
+	return;
+
+    // Just need to fully reduce 'err' and write to global memory.
+    err = (laneId < W) ? shmem[laneId+W+1] : 0;
+    err = __reduce_or_sync(ALL_LANES, err);
+
+    // Check total number of mt-values written by kernel.
+    int nmt_tot = nmt_counter + __reduce_add_sync(ALL_LANES, nmt_remote);
+    err = (nmt_tot == nmt_max) ? err : (err | errflag_inconsistent_nmt);
+
+    if (laneId == 0)
+	errp[b] = err;
 }
 
 
