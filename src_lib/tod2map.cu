@@ -40,12 +40,16 @@ tod2map_kernel(
     const ulong *plan_mt,
     uint *errflags,
     long nsamp,
+    int nypix,
+    int nxpix,
     int nycells,
     int nxcells,
     long ystride,
     long polstride,
     uint nmt,
-    uint nmt_per_block)
+    uint nmt_per_block,
+    bool periodic_xcoord,
+    bool partial_pixelization)
 {
     // 48 KB in single precision, 96 KB in double precision.
     // __shared__ T shmem[3*64*64];
@@ -62,6 +66,7 @@ tod2map_kernel(
     uint err = 0;
     
     plan_iterator<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
+    pixel_locator<T> px(nypix, nxpix, periodic_xcoord);
 
     // Outer loop over map cells
 
@@ -70,13 +75,9 @@ tod2map_kernel(
 	uint iycell = icell >> 10;
 	uint ixcell = icell & ((1<<10) - 1);
 
-	// FIXME remove
-	// uint iy0_cell = (icell >> 10) << 6;
-	// uint ix0_cell = (icell & ((1<<10) - 1)) << 6;
-	bool valid = (iycell < nycells) && (ixcell < nxcells);
-	
+	bool valid = (iycell < nycells) && (ixcell < nxcells);	
 	long offset = valid ? cell_offsets[iycell*nxcells + ixcell] : -1;
-	err = (offset >= 0) ? err : errflag_pixel_outlier;
+	err = ((offset >= 0) || partial_pixelization) ? err : errflag_not_in_pixelization;
 
 	if (offset >= 0) {
 	    // Zero shared memmory
@@ -104,20 +105,14 @@ tod2map_kernel(
 	    dtype<T>::xsincos(2*alpha, &u, &q);
 	    q *= t;
 	    u *= t;
-	    
-	    int iy = quantize_pixel(ypix, 64*1024);
-	    int ix = quantize_pixel(xpix, 64*1024);
 
-	    T dy = ypix - iy;
-	    T dx = xpix - ix;
+	    // Locate pixel in shared memory.
+	    px.locate(ypix, xpix, iycell, ixcell, err);
 	    
-	    iy -= (iycell << 6);
-	    ix -= (ixcell << 6);
-	    
-	    add_tqu(shmem, iy,   ix,   t, q, u, (1-dy) * (1-dx));
-	    add_tqu(shmem, iy,   ix+1, t, q, u, (1-dy) * (dx));
-	    add_tqu(shmem, iy+1, ix,   t, q, u, (dy) * (1-dx));
-	    add_tqu(shmem, iy+1, ix+1, t, q, u, (dy) * (dx));
+	    add_tqu(shmem, px.iy0, px.ix0, t, q, u, (1-px.dy) * (1-px.dx));
+	    add_tqu(shmem, px.iy0, px.ix1, t, q, u, (1-px.dy) * (px.dx));
+	    add_tqu(shmem, px.iy1, px.ix0, t, q, u, (px.dy) * (1-px.dx));
+	    add_tqu(shmem, px.iy1, px.ix1, t, q, u, (px.dy) * (px.dx));
 	}
 
 	if (offset < 0)
@@ -180,12 +175,16 @@ void launch_tod2map(gputils::Array<T> &local_map,
 	     plan_mt,
 	     errflags,
 	     nsamp,
+	     local_pixelization.nycells << 6,   // FIXME nypix
+	     local_pixelization.nxcells << 6,   // FIXME nxpix
 	     local_pixelization.nycells,
 	     local_pixelization.nxcells,
 	     local_pixelization.ystride,
 	     local_pixelization.polstride,
 	     nmt,
-	     nmt_per_block);
+	     nmt_per_block,
+	     false,   // FIXME periodic_xcoord
+	     false);  // FIXME partial_pixelization
     }
     else {
 	tod2map_kernel<T,W,false> <<< nblocks, {32,W}, shmem_nbytes >>>
@@ -196,12 +195,16 @@ void launch_tod2map(gputils::Array<T> &local_map,
 	     plan_mt,
 	     errflags,
 	     nsamp,
+	     local_pixelization.nycells << 6,   // FIXME nypix
+	     local_pixelization.nxcells << 6,   // FIXME nxpix
 	     local_pixelization.nycells,
 	     local_pixelization.nxcells,
 	     local_pixelization.ystride,
 	     local_pixelization.polstride,
 	     nmt,
-	     nmt_per_block);
+	     nmt_per_block,
+	     false,   // FIXME periodic_xcoord
+	     false);  // FIXME partial_pixelization
     }
 
     CUDA_PEEK("tod2map kernel launch");

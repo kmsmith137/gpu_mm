@@ -228,7 +228,8 @@ extern void reference_map2tod(
     const gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
     const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
-    bool allow_outlier_pixels
+    bool periodic_xcoord,
+    bool partial_pixelization
 );
 
 template<typename T>
@@ -237,7 +238,8 @@ extern void reference_tod2map(
     const gputils::Array<T> &tod,        // Shape (nsamp,) or (ndet,nt)
     const gputils::Array<T> &xpointing,  // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
-    bool allow_outlier_pixels
+    bool periodic_xcoord,
+    bool partial_pixelization
 );
 
 

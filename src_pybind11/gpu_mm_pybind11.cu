@@ -156,14 +156,14 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     
     // Select template specializations T=Tmm
-    auto _reference_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outliers)
+    auto _reference_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool periodic_xcoord, bool partial_pixelization)
     {
-	gpu_mm::reference_map2tod(tod, lmap, xpointing, lpix, allow_outliers);
+	gpu_mm::reference_map2tod(tod, lmap, xpointing, lpix, periodic_xcoord, partial_pixelization);
     };
     
-    auto _reference_tod2map = [](Array<Tmm> &lmap, const Array<Tmm> &tod, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool allow_outliers)
+    auto _reference_tod2map = [](Array<Tmm> &lmap, const Array<Tmm> &tod, const Array<Tmm> &xpointing, const LocalPixelization &lpix, bool periodic_xcoord, bool partial_pixelization)
     {
-	gpu_mm::reference_tod2map(lmap, tod, xpointing, lpix, allow_outliers);
+	gpu_mm::reference_tod2map(lmap, tod, xpointing, lpix, periodic_xcoord, partial_pixelization);
     };
 	
     auto _unplanned_map2tod = [](Array<Tmm> &tod, const Array<Tmm> &lmap, const Array<Tmm> &xpointing, const LocalPixelization &lpix)
@@ -178,10 +178,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     
 
     m.def("reference_map2tod", _reference_map2tod,
-	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels")=false);
+	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("periodic_xcoord")=false, py::arg("partial_pixelization")=false);
 
     m.def("reference_tod2map", _reference_tod2map,
-	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("allow_outlier_pixels")=false);
+	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("local_pixelization"), py::arg("periodic_xcoord")=false, py::arg("partial_pixelization")=false);
 
     m.def("unplanned_map2tod", _unplanned_map2tod, "Warning: only implemented for allow_outlier_pixels=true!",
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("local_pixelization"));

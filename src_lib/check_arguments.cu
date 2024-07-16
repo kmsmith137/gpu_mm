@@ -43,10 +43,18 @@ void check_nxpix(long nxpix, const char *where)
 
 void check_err(uint err, const char *where)
 {
-    if (err & errflag_pixel_outlier)
-	throw runtime_error(string(where) + ": pixel coordinates in xpointing array are outside bounding box");
+    // Note: errflag_bad_{xy}pix should come before errflag_not_in_pixelization.
+    
+    if (err & errflag_bad_ypix)
+	throw runtime_error(string(where) + ": xpointing y-value is outside range [1,nypix-2].");
+    if (err & errflag_bad_xpix)
+	throw runtime_error(string(where) + ": xpointing x-value is outside range, perhaps you want the 'periodic_xcoord' flag?");
     if (err & errflag_inconsistent_nmt)
 	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
+    if (err & errflag_not_in_pixelization)
+	throw runtime_error(string(where) + ": xpointing (y,x) value is not in LocalPixelization (perhaps pixelization is too small, or you want the 'partial_pixelization' flag");
+    if (err & errflag_pixel_outlier)
+	throw runtime_error(string(where) + ": pixel coordinates in xpointing array are outside bounding box");
 }
 
 void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore)

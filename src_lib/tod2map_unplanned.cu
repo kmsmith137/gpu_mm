@@ -14,66 +14,32 @@ namespace gpu_mm {
 #endif
 
 
-// -------------------------------------------------------------------------------------------------
-
-
-// This helper class isn't really necessary, but makes unplanned_map2tod_kernel() a bit more readable.
-template<typename T>
-struct map_accumulator
-{
-    T *lmap;
-    const long *cell_offsets;
-    const int nycells;
-    const int nxcells;
-    const long ystride;
-    const long polstride;
-
-    __device__ map_accumulator(T *lmap_, const long *cell_offsets_, int nycells_, int nxcells_, long ystride_, long polstride_)
-	: lmap(lmap_), cell_offsets(cell_offsets_), nycells(nycells_), nxcells(nxcells_), ystride(ystride_), polstride(polstride_)
-    { }
-
-    __device__ void accum(int iy, int ix, T t, T q, T u, T w) const
-    {
-	int iycell = iy >> 6;
-	int ixcell = ix >> 6;
-	
-	bool valid = (iy >= 0) && (ix >= 0) && (iycell < nycells) && (ixcell < nxcells);
-	long offset = valid ? cell_offsets[iycell*nxcells + ixcell] : -1;
-	__syncwarp();
-
-	valid = (offset >= 0);
-	offset += (ix - (ixcell << 6));
-	offset += (iy - (iycell << 6)) * ystride;
-
-	if (valid) {
-	    atomicAdd(lmap + offset, w*t);
-	    atomicAdd(lmap + offset + polstride, w*q);
-	    atomicAdd(lmap + offset + 2*polstride, w*u);
-	}
-
-	__syncwarp();
-    }
-};
-
 template<typename T>
 __global__ void unplanned_tod2map_kernel(
     T *lmap,
     const T *tod,
     const T *xpointing,
     const long *cell_offsets,
-    uint nsamp,    // FIXME 32-bit overflow
+    long nsamp,
     uint nsamp_per_block,
+    int nypix,
+    int nxpix,
     int nycells,
     int nxcells,
     long ystride,
-    long polstride)
+    long polstride,
+    bool periodic_xcoord,
+    bool partial_pixelization)
 {
-    map_accumulator<T> macc(lmap, cell_offsets, nycells, nxcells, ystride, polstride);
+    // 'map_evaluator' and 'pixel_locator' are defined in gpu_mm_internals.hpp.
+    map_accumulator<T,true> macc(lmap, cell_offsets, nycells, nxcells, ystride, polstride, partial_pixelization);
+    pixel_locator<T> px(nypix, nxpix, periodic_xcoord);
     
-    const uint s0 = blockIdx.x * nsamp_per_block;
-    const uint s1 = min(nsamp, s0 + nsamp_per_block);
-
-    for (uint s = s0 + threadIdx.x; s < s1; s += blockDim.x) {
+    const long s0 = blockIdx.x * long(nsamp_per_block);
+    const long s1 = min(nsamp, s0 + long(nsamp_per_block));
+    uint err = 0;  // FIXME currently ignored
+    
+    for (long s = s0 + threadIdx.x; s < s1; s += blockDim.x) {
 	T ypix = xpointing[s];
 	T xpix = xpointing[s + nsamp];
 	T alpha = xpointing[s + 2*nsamp];
@@ -83,18 +49,13 @@ __global__ void unplanned_tod2map_kernel(
 	dtype<T>::xsincos(2*alpha, &u, &q);
 	q *= t;
 	u *= t;
-	
-	// quantize_pixel() is defined in gpu_mm_internals.hpp
-	int iy = quantize_pixel(ypix, nycells << 6);   // satisfies -2 <= iy <= nypix
-	int ix = quantize_pixel(xpix, nxcells << 6);   // satisfies -2 <= ix <= nxpix
 
-	T dy = ypix - iy;
-	T dx = xpix - ix;
+	px.locate(ypix, xpix, err);
 
-	macc.accum(iy,   ix,   t, q, u, (1-dy)*(1-dx));
-	macc.accum(iy,   ix+1, t, q, u, (1-dy)*(dx));
-	macc.accum(iy+1, ix,   t, q, u, (dy)*(1-dx));
-	macc.accum(iy+1, ix+1, t, q, u, (dy)*(dx));
+	macc.accum(px.iy0, px.ix0, t, q, u, (1-px.dy)*(1-px.dx), err);
+	macc.accum(px.iy0, px.ix1, t, q, u, (1-px.dy)*(px.dx), err);
+	macc.accum(px.iy1, px.ix0, t, q, u, (px.dy)*(1-px.dx), err);
+	macc.accum(px.iy1, px.ix1, t, q, u, (px.dy)*(px.dx), err);
     }
 }
 
@@ -107,9 +68,9 @@ void launch_unplanned_tod2map(
     const LocalPixelization &local_pixelization)
 {
     long nsamp;
-    check_tod_and_init_nsamp(tod, nsamp, "unplanned_map2tod", true);            // on_gpu = true
-    check_local_map(local_map, local_pixelization, "unplanned_map2tod", true);  // on_gpu = true
-    check_xpointing(xpointing, nsamp, "unplanned_map2tod", true);               // on_gpu = true
+    check_tod_and_init_nsamp(tod, nsamp, "unplanned_tod2map", true);            // on_gpu = true
+    check_local_map(local_map, local_pixelization, "unplanned_tod2map", true);  // on_gpu = true
+    check_xpointing(xpointing, nsamp, "unplanned_tod2map", true);               // on_gpu = true
 
     int nthreads_per_block = 128;
     int nsamp_per_block = 1024;
@@ -122,10 +83,14 @@ void launch_unplanned_tod2map(
 	 local_pixelization.cell_offsets_gpu.data,
 	 nsamp,
 	 nsamp_per_block,
+	 local_pixelization.nycells << 6,   // FIXME nypix
+	 local_pixelization.nxcells << 6,   // FIXME nxpix
 	 local_pixelization.nycells,
 	 local_pixelization.nxcells,
 	 local_pixelization.ystride,
-	 local_pixelization.polstride);
+	 local_pixelization.polstride,
+	 false,   // FIXME periodic_xcoord
+	 false);  // FIXME partial_pixelization
 
     CUDA_PEEK("unplanned_tod2map kernel launch");
 }

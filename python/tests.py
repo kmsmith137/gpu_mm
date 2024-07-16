@@ -222,7 +222,7 @@ class PointingInstance:
         
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
-        reference_map2tod(tod_ref, cp.asnumpy(m), self.xpointing_cpu, self.lpix, allow_outlier_pixels=False)
+        reference_map2tod(tod_ref, cp.asnumpy(m), self.xpointing_cpu, self.lpix)
         tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
         tod_unplanned = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
@@ -260,7 +260,7 @@ class PointingInstance:
         m0 = cp.random.normal(size=(3, self.nypix, self.nxpix), dtype=self.dtype)
 
         m_ref = cp.asnumpy(m0)
-        reference_tod2map(m_ref, cp.asnumpy(tod), self.xpointing_cpu, self.lpix, allow_outlier_pixels=False)
+        reference_tod2map(m_ref, cp.asnumpy(tod), self.xpointing_cpu, self.lpix)
         m_ref = cp.asarray(m_ref)  # CPU -> GPU
 
         m_unplanned = cp.copy(m0)
