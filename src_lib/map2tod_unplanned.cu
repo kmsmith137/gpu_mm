@@ -59,6 +59,7 @@ __global__ void unplanned_map2tod_kernel(
 	tod[s] = mev.eval(px, cos_2a, sin_2a, err);
     }
 
+    // No need for __syncthreads() before write_errflags(), since no one else uses shared memory.
     // Warning: write_errflags() assumes thread layout is {32,W,1}, and block layout is {B,1,1}!
     write_errflags(errflags, shmem, err);
 }

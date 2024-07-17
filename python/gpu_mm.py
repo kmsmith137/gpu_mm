@@ -268,9 +268,9 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
         return ToyPointing(ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, noisy=noisy)
 
 
-class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
+class PointingPlanTester(gpu_mm_pybind11.PointingPlanTester):
     """
-    ReferencePointingPlan(preplan, xpointing_gpu).
+    PointingPlanTester(preplan, xpointing_gpu).
 
     Only used in unit tests.
     Inherited from C++:
@@ -290,10 +290,10 @@ class ReferencePointingPlan(gpu_mm_pybind11.ReferencePointingPlan):
     def __init__(self, preplan, xpointing_gpu):
         assert isinstance(preplan, PointingPrePlan)
         
-        tmp_nbytes = gpu_mm_pybind11.ReferencePointingPlan.get_constructor_tmp_nbytes(preplan)
+        tmp_nbytes = gpu_mm_pybind11.PointingPlanTester.get_constructor_tmp_nbytes(preplan)
         tmp = cp.empty(tmp_nbytes, dtype=cp.uint8)
         
-        gpu_mm_pybind11.ReferencePointingPlan.__init__(self, preplan, xpointing_gpu, tmp)
+        gpu_mm_pybind11.PointingPlanTester.__init__(self, preplan, xpointing_gpu, tmp)
         
         
 ####################################################################################################

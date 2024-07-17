@@ -76,8 +76,8 @@ void launch_old_map2tod(Array<float> &tod, const Array<float> &map, const Array<
 
     long nsamp, ndec, nra;
     check_tod_and_init_nsamp(tod, nsamp, "old_map2tod", true);     // on_gpu=true
-    check_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
     check_xpointing(xpointing, nsamp, "old_map2tod", true);        // on_gpu=true
+    check_global_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
 
     long nblocks = (long(nsamp) + nt_per_block - 1) / nt_per_block;
     xassert(nblocks < (1L << 31));

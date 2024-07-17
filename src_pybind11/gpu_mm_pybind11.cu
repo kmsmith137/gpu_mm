@@ -184,13 +184,9 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     // Only used in unit tests
 
     using ToyPointing = gpu_mm::ToyPointing<Tmm>;
-    using ReferencePointingPlan = gpu_mm::ReferencePointingPlan;
+    using PointingPlanTester = gpu_mm::PointingPlanTester;
     using OldPointingPlan = gpu_mm::OldPointingPlan;
-
-    // FIXME write longer docstring
-    const char *reference_pointing_plan_docstring =
-	"ReferencePointingPlan: A utility class used in unit tests.\n";
-
+    
     
     py::class_<ToyPointing>(m, "ToyPointing")
 	.def(py::init<long, long, double, double, const Array<Tmm>&, const Array<Tmm>&, bool>(),
@@ -209,26 +205,26 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def("__str__", &ToyPointing::str)
     ;
         
-    py::class_<ReferencePointingPlan>(m, "ReferencePointingPlan", reference_pointing_plan_docstring)
+    py::class_<PointingPlanTester>(m, "PointingPlanTester", "PointingPlanTester: A utility class used in unit tests")
 	.def(py::init<const PointingPrePlan &, const Array<Tmm> &, const Array<unsigned char> &>(),
 	     py::arg("preplan"), py::arg("xpointing_gpu"), py::arg("tmp"))
 	
-	.def_readonly("nsamp", &ReferencePointingPlan::nsamp, "Number of TOD samples")
-	.def_readonly("nypix_global", &ReferencePointingPlan::nypix_global, "Number of y-pixels")
-	.def_readonly("nxpix_global", &ReferencePointingPlan::nxpix_global, "Number of x-pixels")
+	.def_readonly("nsamp", &PointingPlanTester::nsamp, "Number of TOD samples")
+	.def_readonly("nypix_global", &PointingPlanTester::nypix_global, "Number of y-pixels")
+	.def_readonly("nxpix_global", &PointingPlanTester::nxpix_global, "Number of x-pixels")
 	
-	.def_readonly("plan_nmt", &ReferencePointingPlan::plan_nmt, "Total number of mt-pairs in plan")
-	.def_readonly("ncl_per_threadblock", &ReferencePointingPlan::ncl_per_threadblock, "Used when launching planner/preplanner kernels")
-	.def_readonly("planner_nblocks", &ReferencePointingPlan::planner_nblocks, "Used when launching planner/preplanner kernels")
+	.def_readonly("plan_nmt", &PointingPlanTester::plan_nmt, "Total number of mt-pairs in plan")
+	.def_readonly("ncl_per_threadblock", &PointingPlanTester::ncl_per_threadblock, "Used when launching planner/preplanner kernels")
+	.def_readonly("planner_nblocks", &PointingPlanTester::planner_nblocks, "Used when launching planner/preplanner kernels")
 
-	.def_readonly("iypix", &ReferencePointingPlan::iypix_arr, "Length-nsamp array containing integer y-pixel indices")
-	.def_readonly("ixpix", &ReferencePointingPlan::ixpix_arr, "Length-nsamp array containing integer x-pixel indices")
-	.def_readonly("nmt_cumsum", &ReferencePointingPlan::nmt_cumsum, "Length-nblocks array containing integer cumulative counts")
-	.def_readonly("sorted_mt", &ReferencePointingPlan::sorted_mt, "Length nmt_cumsum[-1], see PointingPlan docstring for 'mt' format")
+	.def_readonly("iypix", &PointingPlanTester::iypix_arr, "Length-nsamp array containing integer y-pixel indices")
+	.def_readonly("ixpix", &PointingPlanTester::ixpix_arr, "Length-nsamp array containing integer x-pixel indices")
+	.def_readonly("nmt_cumsum", &PointingPlanTester::nmt_cumsum, "Length-nblocks array containing integer cumulative counts")
+	.def_readonly("sorted_mt", &PointingPlanTester::sorted_mt, "Length nmt_cumsum[-1], see PointingPlan docstring for 'mt' format")
 	     
-	.def_static("get_constructor_tmp_nbytes", &ReferencePointingPlan::get_constructor_tmp_nbytes, py::arg("preplan"))
+	.def_static("get_constructor_tmp_nbytes", &PointingPlanTester::get_constructor_tmp_nbytes, py::arg("preplan"))
 		    
-	.def("__str__", &ReferencePointingPlan::str)
+	.def("__str__", &PointingPlanTester::str)
     ;
 
     py::class_<OldPointingPlan>(m, "OldPointingPlan")

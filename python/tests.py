@@ -148,8 +148,8 @@ class PointingInstance:
         return gpu_mm.PointingPlan(self.preplan, self.xpointing_gpu, debug=self.debug_plan)
 
     @functools.cached_property
-    def reference_plan(self):
-        return gpu_mm.ReferencePointingPlan(self.preplan, self.xpointing_gpu)
+    def plan_tester(self):
+        return gpu_mm.PointingPlanTester(self.preplan, self.xpointing_gpu)
 
     @functools.cached_property
     def old_plan(self):
@@ -166,7 +166,7 @@ class PointingInstance:
     
     def test_pointing_preplan(self):
         nmt_cumsum_fast = self.preplan.get_nmt_cumsum()
-        nmt_cumsum_slow = self.reference_plan.nmt_cumsum
+        nmt_cumsum_slow = self.plan_tester.nmt_cumsum
         
         assert nmt_cumsum_fast.shape == nmt_cumsum_slow.shape
         assert np.all(nmt_cumsum_fast == nmt_cumsum_slow)
@@ -175,7 +175,7 @@ class PointingInstance:
 
     def test_pointing_plan(self):
         mt_fast = self.plan.get_plan_mt()
-        mt_slow = self.reference_plan.sorted_mt
+        mt_slow = self.plan_tester.sorted_mt
         assert mt_slow.shape == mt_fast.shape
 
         # Reminder: mt bit layout is

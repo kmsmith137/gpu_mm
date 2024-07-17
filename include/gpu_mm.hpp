@@ -341,47 +341,50 @@ extern void check_nsamp(long nsamp, const char *where);
 extern void check_nypix_global(long nypix_global, const char *where);
 extern void check_nxpix_global(long nxpix_global, const char *where);
 
-extern void check_err(uint err, const char *where);
+extern void check_err(uint err, const char *where, uint errflags_to_ignore = 0);
+extern void check_cpu_errflags(const uint *errflags_cpu, int nelts, const char *where, uint errflags_to_ignore = 0);
 extern void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore = 0);
 
 // Check arrays, in cases where we know the dimensions in advance.
-template<typename T> extern void check_map(const gputils::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_tod(const gputils::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_global_map(const gputils::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_local_map(const gputils::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
 extern void check_cell_offsets(const gputils::Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu);
 extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
 // Check arrays, in cases where we do not know the dimensions in advance.
-template<typename T> extern void check_map_and_init_npix(const gputils::Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_tod_and_init_nsamp(const gputils::Array<T> &tod, long &nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing_and_init_nsamp(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_global_map_and_init_npix(const gputils::Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu);
 extern void check_cell_offsets_and_init_ncells(const gputils::Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu);
 
 
-// ReferencePointingPlan: used in unit tests.
+// PointingPlanTester: used in unit tests.
 //
 // Given an 'xpointing' array on the GPU, determine which map pixel (iy, ix)
 // each time sample falls into, and store the result in two length-nsamp arrays
 // (iypix_cpu, ixpix_cpu). (Since this class is only used in unit tests, we assume
 // that the caller wants these arrays on the CPU.)
 
-struct ReferencePointingPlan
+struct PointingPlanTester
 {
     // Version of constructor which allocates temporary arrays.
     template<typename T>
-    ReferencePointingPlan(const PointingPrePlan &pp, const gputils::Array<T> &xpointing_gpu);
+    PointingPlanTester(const PointingPrePlan &pp, const gputils::Array<T> &xpointing_gpu);
 
     // Version of constructor with externally allocated tmp array (intended for python)
     template<typename T>
-    ReferencePointingPlan(const PointingPrePlan &pp,
-			  const gputils::Array<T> &xpointing_gpu,
-			  const gputils::Array<unsigned char> &tmp);    
+    PointingPlanTester(const PointingPrePlan &pp,
+		       const gputils::Array<T> &xpointing_gpu,
+		       const gputils::Array<unsigned char> &tmp);    
 
     // Same meaning as in PointingPrePlan.
     long nsamp = 0;
     long nypix_global = 0;
     long nxpix_global = 0;
+    bool periodic_xcoord;
+    
     long plan_nmt = 0;
     long ncl_per_threadblock = 0;
     long planner_nblocks = 0;
@@ -405,7 +408,6 @@ struct ReferencePointingPlan
 
     // Helpers for python constructor logic.
     static long get_constructor_tmp_nbytes(const PointingPrePlan &pp);
-    static constexpr int warps_per_threadblock = 4;
     static constexpr int nsamp_per_block = 1024;
 };
 

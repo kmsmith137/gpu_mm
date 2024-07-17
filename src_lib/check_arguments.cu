@@ -41,8 +41,10 @@ void check_nxpix_global(long nxpix_global, const char *where)
 }
 
 
-void check_err(uint err, const char *where)
+void check_err(uint err, const char *where, uint errflags_to_ignore)
 {
+    err &= ~errflags_to_ignore;
+    
     // Note: errflag_bad_{xy}pix should come before errflag_not_in_pixelization.
     
     if (err & errflag_bad_ypix)
@@ -53,23 +55,24 @@ void check_err(uint err, const char *where)
 	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
     if (err & errflag_not_in_pixelization)
 	throw runtime_error(string(where) + ": xpointing (y,x) value is not in LocalPixelization (perhaps pixelization is too small, or you want the 'partial_pixelization' flag");
-    if (err & errflag_pixel_outlier)
-	throw runtime_error(string(where) + ": pixel coordinates in xpointing array are outside bounding box");
+    if (err)
+	throw runtime_error(string(where) + ": bad errflags?! (should never happen)");
+}
+
+void check_cpu_errflags(const uint *errflags_cpu, int nelts, const char *where, uint errflags_to_ignore)
+{
+    uint err = 0;
+    for (int i = 0; i < nelts; i++)
+	err |= errflags_cpu[i];
+
+    check_err(err, where, errflags_to_ignore);
 }
 
 void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore)
 {
-    xassert(errflags_gpu != nullptr);
-    xassert(nelts > 0);
-    
-    Array<uint> errflags_host({nelts}, af_rhost | af_zero);
-    CUDA_CALL(cudaMemcpy(errflags_host.data, errflags_gpu, nelts * sizeof(uint), cudaMemcpyDefault));
-
-    uint err = 0;
-    for (int i = 0; i < nelts; i++)
-	err |= errflags_host.data[i];
-
-    check_err(err & ~errflags_to_ignore, where);
+    Array<uint> errflags_cpu({nelts}, af_rhost | af_zero);
+    CUDA_CALL(cudaMemcpy(errflags_cpu.data, errflags_gpu, nelts * sizeof(uint), cudaMemcpyDefault));
+    check_cpu_errflags(errflags_cpu.data, nelts, where, errflags_to_ignore);
 }
 
 static void _check_location(int aflags, const char *where, const char *arr_name, bool on_gpu)
@@ -86,7 +89,7 @@ static void _check_location(int aflags, const char *where, const char *arr_name,
 
 
 template<typename T>
-void check_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu)
+void check_global_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu)
 {
     xassert(map.ndim == 3);
     xassert(map.shape[0] == 3);
@@ -103,10 +106,10 @@ void check_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpi
 
 
 template<typename T>
-void check_map(const Array<T> &map, long nypix_global_expected, long nxpix_global_expected, const char *where, bool on_gpu)
+void check_global_map(const Array<T> &map, long nypix_global_expected, long nxpix_global_expected, const char *where, bool on_gpu)
 {
     long nypix_global_actual, nxpix_global_actual;
-    check_map_and_init_npix(map, nypix_global_actual, nxpix_global_actual, where, on_gpu);
+    check_global_map_and_init_npix(map, nypix_global_actual, nxpix_global_actual, where, on_gpu);
 
     xassert_eq(nypix_global_expected, nypix_global_actual);
     xassert_eq(nypix_global_expected, nypix_global_actual);
@@ -218,13 +221,13 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 
 
 #define INSTANTIATE(T) \
-    template void check_map(const Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu); \
     template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
     template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
     template void check_local_map(const Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu); \
-    template void check_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu); \
+    template void check_global_map(const Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu); \
     template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
-    template void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu)
+    template void check_xpointing_and_init_nsamp(const Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu); \
+    template void check_global_map_and_init_npix(const Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

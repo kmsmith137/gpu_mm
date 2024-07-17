@@ -28,7 +28,6 @@ static constexpr int errflag_bad_ypix = 0x1;
 static constexpr int errflag_bad_xpix = 0x2;
 static constexpr int errflag_inconsistent_nmt = 0x4;
 static constexpr int errflag_not_in_pixelization = 0x8;
-static constexpr int errflag_pixel_outlier = 0x10;   // FIXME remove
 
 
 // write_errflags(): called from device code, to write errflags to global CPU memory.
@@ -90,69 +89,6 @@ template<> struct dtype<int>
 // -------------------------------------------------------------------------------------------------
 //
 // FIXME these functions could use more comments!
-
-
-// Returns integer in the range -2 <= ix <= npix.
-template<typename T>
-static __host__ __device__ inline int quantize_pixel(T xpix, int npix)
-{
-    // Clamp xpix so that integer conversion can't go haywire, ensuring roundoff-robustness.
-    xpix = max(xpix, T(-1.5));
-    xpix = min(xpix, npix + T(0.5));
-
-    // The +/- 2 ensures that int(...) always rounds down (since it gets applied to a positive number).
-    return int(xpix + T(2)) - 2;
-}
-
-
-template<typename T>
-static __device__ void range_check_ypix(T ypix, int nypix_global, uint &err)
-{
-    bool valid = (ypix >= 0) && (ypix <= nypix_global-1);
-    err = valid ? err : (err | errflag_pixel_outlier);
-}
-
-
-template<typename T>
-static __device__ void range_check_xpix(T xpix, int nxpix_global, uint &err)
-{
-    bool valid = (xpix >= 0) && (xpix <= nxpix_global-1);
-    err = valid ? err : (err | errflag_pixel_outlier);
-}
-
-
-template<typename T>
-static __device__ void quantize_ypix(int &iypix0, int &iypix1, T ypix, int nypix_global)
-{
-    // Assumes range_check_ypix() has been called.
-    iypix0 = int(ypix);
-    iypix0 = (iypix0 >= 0) ? iypix0 : 0;
-    iypix0 = (iypix0 <= nypix_global-2) ? iypix0 : (nypix_global-2);
-    iypix1 = iypix0 + 1;
-}
-
-
-template<typename T>
-static __device__ void quantize_xpix(int &ixpix0, int &ixpix1, T xpix, int nxpix_global)
-{
-    // Assumes range_check_xpix() and normalize_xpix() have been called.
-    ixpix0 = int(xpix);
-    ixpix0 = (ixpix0 >= 0) ? ixpix0 : 0;
-    ixpix0 = (ixpix0 <= nxpix_global-1) ? ixpix0 : (nxpix_global-1);
-    ixpix1 = (ixpix0 < (nxpix_global-1)) ? (ixpix0+1) : 0;
-}
-
-
-static __device__ void set_up_cell_pair(int &icell_e, int &icell_o, int ipix0, int ipix1)
-{
-    int icell0 = ipix0 >> 6;
-    int icell1 = ipix1 >> 6;
-    icell1 = (icell0 != icell1) ? icell1 : -1;
-
-    bool flag = (icell0 & 1);
-    icell_e = flag ? icell1 : icell0;
-    icell_o = flag ? icell0 : icell1;
-}
 
 
 template<typename T>

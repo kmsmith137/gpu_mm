@@ -56,8 +56,8 @@ __global__ void preplan_kernel(
     
     // Range of TOD samples to be processed by this threadblock.
     int b = blockIdx.x;
-    uint s0 = b * nsamp_per_block;
-    uint s1 = min(nsamp, (b+1) * nsamp_per_block);
+    long s0 = b * nsamp_per_block;
+    long s1 = min(nsamp, (b+1) * nsamp_per_block);
 
     // cell_enumerator is defined in gpu_mm_internals.hpp
     cell_enumerator<T,Debug> cells(nypix_global, nxpix_global, periodic_xcoord);
@@ -198,20 +198,17 @@ PointingPrePlan::PointingPrePlan(
     
     CUDA_CALL(cudaMemcpyAsync(nmt_cpu, nmt_gpu.data, preplan_size * sizeof(uint), cudaMemcpyDefault));
     CUDA_CALL(cudaMemcpy(err_cpu, err_gpu.data, preplan_size * sizeof(uint), cudaMemcpyDefault));
-
+    
+    check_cpu_errflags(err_cpu, planner_nblocks, "PointingPrePlan constructor");
     long nmt = 0;
-    uint err = 0;
     
     for (long i = 0; i < planner_nblocks; i++) {
 	nmt += nmt_cpu[i];
-	err |= err_cpu[i];
 	nmt_cpu[i] = nmt;
     }
 
     for (long i = planner_nblocks; i < preplan_size; i++)
 	nmt_cpu[i] = nmt;
-    
-    check_err(err, "PointingPrePlan constructor");
     
     xassert(nmt > 0);
     xassert(nmt <= 1024L * 1024L * 1024L);  // FIXME arbitrary threshold

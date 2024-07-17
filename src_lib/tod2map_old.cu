@@ -156,8 +156,8 @@ void launch_old_tod2map(
 {
     long nsamp, ndec, nra;
     check_tod_and_init_nsamp(tod, nsamp, "old_map2tod", true);     // on_gpu=true
-    check_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
     check_xpointing(xpointing, nsamp, "old_map2tod", true);        // on_gpu=true
+    check_global_map_and_init_npix(map, ndec, nra, "old_map2tod", true);  // on_gpu=true
     
     int nblocks = plan_quadruples.shape[0];
     
