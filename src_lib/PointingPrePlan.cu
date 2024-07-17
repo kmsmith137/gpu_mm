@@ -213,8 +213,8 @@ PointingPrePlan::PointingPrePlan(
     
     check_err(err, "PointingPrePlan constructor");
     
-    if (nmt >= 0x80000000U)
-	throw runtime_error("internal error: plan is unexpectedly large");  // FIXME arbitrary threshold -- what is best here?
+    xassert(nmt > 0);
+    xassert(nmt <= 1024L * 1024L * 1024L);  // FIXME arbitrary threshold
 
     CUDA_CALL(cudaMemcpyAsync(nmt_gpu.data, nmt_cpu, preplan_size * sizeof(uint), cudaMemcpyDefault));
     

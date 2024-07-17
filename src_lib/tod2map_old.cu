@@ -118,10 +118,10 @@ __global__ void old_tod2map_kernel(
 	    float ddec = px_dec - float(idec);
 	    float dra = px_ra - float(ira);
 
-	    // assert(idec >= 0);
-	    // assert(idec < ndec-1);
-	    // assert(ira >= 0);
-	    // assert(ira < nra-1);	    
+	    assert(idec >= 0);
+	    assert(idec < ndec-1);
+	    assert(ira >= 0);
+	    assert(ira < nra-1);	    
 
 	    update_shmem(shmem, idec,   ira,   cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (1.0f-dra));
 	    update_shmem(shmem, idec,   ira+1, cell_idec, cell_ira, cos_2a, sin_2a, x * (1.0f-ddec) * (dra));

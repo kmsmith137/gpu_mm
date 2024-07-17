@@ -17,20 +17,16 @@ void reference_tod2map(
     const Array<T> &tod,
     const Array<T> &xpointing,
     const LocalPixelization &lpix,
-    bool periodic_xcoord,
     bool partial_pixelization)
 {
     long nsamp;
     check_tod_and_init_nsamp(tod, nsamp, "reference_tod2map", false);     // on_gpu = false
     check_local_map(lmap, lpix, "reference_tod2map", false);              // on_gpu = false
     check_xpointing(xpointing, nsamp, "reference_tod2map", false);        // on_gpu = false
-
-    int nypix_global = lpix.nycells << 6;  // FIXME
-    int nxpix_global = lpix.nxcells << 6;  // FIXME
     
     // 'map_evaluator' and 'pixel_locator' are defined in gpu_mm_internals.hpp.
     map_accumulator<T,false> macc(lmap.data, lpix.cell_offsets_cpu.data, lpix.nycells, lpix.nxcells, lpix.ystride, lpix.polstride, partial_pixelization);
-    pixel_locator<T> px(nypix_global, nxpix_global, periodic_xcoord);
+    pixel_locator<T> px(lpix.nypix_global, lpix.nxpix_global, lpix.periodic_xcoord);
     uint err = 0;
     
     for (long s = 0; s < nsamp; s++) {
@@ -56,7 +52,6 @@ void reference_tod2map(
 	const Array<T> &tod, \
 	const Array<T> &xpointing, \
 	const LocalPixelization &lpix, \
-	bool periodic_xcoord, \
 	bool partial_pixelization)
 
 INSTANTIATE(float);

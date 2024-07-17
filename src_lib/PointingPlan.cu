@@ -317,46 +317,6 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
 { }
 
 
-template<typename T>
-void PointingPlan::map2tod(
-    Array<T> &tod,
-    const Array<T> &local_map,
-    const Array<T> &xpointing,
-    const LocalPixelization &lpix,
-    bool allow_outlier_pixels,
-    bool debug) const
-{
-    check_tod(tod, nsamp, "PointingPlan::map2tod", true);                 // on_gpu=true
-    check_xpointing(xpointing, nsamp, "PointingPlan::map2tod", true);     // on_gpu=true
-
-    launch_map2tod(
-        tod, local_map, xpointing, lpix, this->plan_mt, this->err_gpu,
-	this->pp.plan_nmt, this->pp.nmt_per_threadblock, this->pp.pointing_nblocks,
-	allow_outlier_pixels, debug
-    );
-}
-
-
-template<typename T>
-void PointingPlan::tod2map(
-    Array<T> &local_map,
-    const Array<T> &tod,
-    const Array<T> &xpointing,
-    const LocalPixelization &lpix,
-    bool allow_outlier_pixels,
-    bool debug) const
-{
-    check_tod(tod, nsamp, "PointingPlan::tod2map", true);                 // on_gpu=true
-    check_xpointing(xpointing, nsamp, "PointingPlan::tod2map", true);     // on_gpu=true
-
-    launch_tod2map(
-	local_map, tod, xpointing, lpix, this->plan_mt, this->err_gpu,
-	this->pp.plan_nmt, this->pp.nmt_per_threadblock, this->pp.pointing_nblocks,
-	allow_outlier_pixels, debug
-    );
-}
-
-
 // Only used in unit tests
 Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
 {
@@ -403,24 +363,7 @@ string PointingPlan::str() const
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
 	const gputils::Array<T> &xpointing_gpu, \
-	bool debug); \
-    \
-    template void PointingPlan::map2tod( \
-	gputils::Array<T> &tod, \
-	const gputils::Array<T> &local_map, \
-	const gputils::Array<T> &xpointing, \
-	const LocalPixelization &lpix, \
-	bool allow_outlier_pixels, \
-	bool debug) const; \
-    \
-    template void PointingPlan::tod2map( \
-	gputils::Array<T> &local_map, \
-	const gputils::Array<T> &tod, \
-	const gputils::Array<T> &xpointing, \
-	const LocalPixelization &lpix, \
-	bool allow_outlier_pixels, \
-	bool debug) const
-
+	bool debug)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

@@ -5,26 +5,7 @@ import cupy as cp
 import numpy as np
 
 from . import gpu_mm
-from . import gpu_mm_pybind11
-
-####################################################################################################
-
-from .gpu_mm_pybind11 import reference_map2tod, reference_tod2map
-
-class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
-    def __init__(self, xpointing, ndec, nra, verbose=True):
-        gpu_mm_pybind11.OldPointingPlan.__init__(self, xpointing, ndec, nra, verbose)
-        self.plan_cltod_list = cp.asarray(self._plan_cltod_list)  # CPU -> GPU
-        self.plan_quadruples = cp.asarray(self._plan_quadruples)  # CPU -> GPU
-
-    def map2tod(self, tod, m, xpointing):
-        gpu_mm_pybind11.old_map2tod(tod, m, xpointing)
-            
-    def tod2map(self, m, tod, xpointing):
-        gpu_mm_pybind11.old_tod2map(m, tod, xpointing, self.plan_cltod_list, self.plan_quadruples)
-    
-
-####################################################################################################
+from . import gpu_mm_pybind11   # make_random_plan_mt, test_plan_iterator
 
 
 def is_sorted(arr):
@@ -54,11 +35,12 @@ class PointingInstance:
         self.tod_shape = xpointing_gpu.shape[1:]
         self.nypix_global = nypix_global
         self.nxpix_global = nxpix_global
+        self.periodic_xcoord = False    # FIXME
         self.name = name
         self.debug_plan = debug_plan
 
         # FIXME temporary convenience
-        self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix_global, nxpix_global)
+        self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix_global, nxpix_global, self.periodic_xcoord)
 
     @classmethod
     def from_toy_pointing(cls, ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, debug_plan=False):
@@ -158,7 +140,8 @@ class PointingInstance:
 
     @functools.cached_property
     def preplan(self):
-        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix_global, self.nxpix_global, debug=self.debug_plan)
+        return gpu_mm.PointingPrePlan(self.xpointing_gpu, self.nypix_global, self.nxpix_global,
+                                      periodic_xcoord=self.periodic_xcoord, debug=self.debug_plan)
 
     @functools.cached_property
     def plan(self):
@@ -171,7 +154,7 @@ class PointingInstance:
     @functools.cached_property
     def old_plan(self):
         print('    Making OldPointingPlan (slow, done on CPU)')
-        return  OldPointingPlan(self.xpointing_cpu, self.nypix_global, self.nxpix_global)
+        return  gpu_mm.OldPointingPlan(self.xpointing_cpu, self.nypix_global, self.nxpix_global)
     
     
     def _compare_arrays(self, arr1, arr2):
@@ -219,81 +202,60 @@ class PointingInstance:
         print('    test_plan_iterator: pass')
 
 
+    def _test_map2tod(self, m, tod_ref, plan, suffix):
+        """Helper method called by test_map2tod()."""
+        
+        local_map = gpu_mm.LocalMap(self.lpix, m)
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
+        gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, debug=True)  # note debug=True here
+        cp.cuda.runtime.deviceSynchronize()
+        
+        epsilon = self._compare_arrays(tod_ref, tod)
+        print(f'    test_map2tod{suffix}: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        
+            
     def test_map2tod(self, test_old=False):
         m = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
-        reference_map2tod(tod_ref, cp.asnumpy(m), self.xpointing_cpu, self.lpix)
+        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m))  # GPU -> CPU
+        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True)
         tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
-        tod_unplanned = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        gpu_mm_pybind11.unplanned_map2tod(tod_unplanned, m, self.xpointing_gpu, self.lpix)
-        cp.cuda.runtime.deviceSynchronize()
+        self._test_map2tod(m, tod_ref, plan=None, suffix='_unplanned')
+        self._test_map2tod(m, tod_ref, plan=self.plan, suffix='')
+
+        if test_old:
+            self._test_map2tod(m, tod_ref, plan='old', suffix='_old')
+
+
+    def _test_tod2map(self, tod, m0, m_ref, plan, suffix):
+        """Helper method called by test_tod2map()."""
         
-        epsilon = self._compare_arrays(tod_ref, tod_unplanned)
-        print(f'    test_map2tod_unplanned: {epsilon=}')
-        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        del tod_unplanned
-
-        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        self.plan.map2tod(tod, m, self.xpointing_gpu, self.lpix, debug=True)
+        local_map = gpu_mm.LocalMap(self.lpix, cp.copy(m0))
+        gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, debug=True)   # note debug=True here
         cp.cuda.runtime.deviceSynchronize()
-        
-        epsilon = self._compare_arrays(tod_ref, tod)
-        print(f'    test_map2tod: {epsilon=}')
+
+        epsilon = self._compare_arrays(local_map.arr, m_ref)
+        print(f'    test_tod2map{suffix}: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        del tod
-
-        if not test_old:
-            return
-
-        tod_old = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        self.old_plan.map2tod(tod_old, m, self.xpointing_gpu)
-        cp.cuda.runtime.deviceSynchronize()
         
-        epsilon = self._compare_arrays(tod_ref, tod_old)
-        print(f'    test_map2tod_old: {epsilon=}')
-        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-
         
     def test_tod2map(self, test_old=False):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m0 = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
 
-        m_ref = cp.asnumpy(m0)
-        reference_tod2map(m_ref, cp.asnumpy(tod), self.xpointing_cpu, self.lpix)
-        m_ref = cp.asarray(m_ref)  # CPU -> GPU
+        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m0))  # GPU -> GPU
+        gpu_mm.tod2map(lmap_ref, cp.asnumpy(tod), self.xpointing_cpu, plan='reference')
+        m_ref = cp.asarray(lmap_ref.arr)  # CPU -> GPU
 
-        m_unplanned = cp.copy(m0)
-        gpu_mm_pybind11.unplanned_tod2map(m_unplanned, tod, self.xpointing_gpu, self.lpix)
-        cp.cuda.runtime.deviceSynchronize()
+        self._test_tod2map(tod, m0, m_ref, plan=None, suffix='_unplanned')
+        self._test_tod2map(tod, m0, m_ref, plan=self.plan, suffix='')
 
-        epsilon = self._compare_arrays(m_ref, m_unplanned)
-        print(f'    test_tod2map_unplanned: {epsilon=}')
-        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        del m_unplanned
-
-        m = cp.copy(m0)
-        self.plan.tod2map(m, tod, self.xpointing_gpu, self.lpix, debug=True)
-        cp.cuda.runtime.deviceSynchronize()
-
-        epsilon = self._compare_arrays(m_ref, m)
-        print(f'    test_tod2map: {epsilon=}')
-        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        del m
-
-        if not test_old:
-            return
-
-        m_old = cp.copy(m0)
-        self.old_plan.tod2map(m_old, tod, self.xpointing_gpu)
-        cp.cuda.runtime.deviceSynchronize()
-
-        epsilon = self._compare_arrays(m_ref, m_old)
-        print(f'    test_old_tod2map: {epsilon=}')
-        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        del m_old
+        if test_old:
+            self._test_tod2map(tod, m0, m_ref, plan=self.old_plan, suffix='_old')
 
         
     def test_all(self):
@@ -326,76 +288,55 @@ class PointingInstance:
             p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
             print(f'    time_pointing_plan: {1000*(time.time()-t0)} ms')
             del p
-    
+
+
+    def _time_map2tod(self, tod, local_map, plan, label):
+        print()
+        
+        for _ in range(10):
+            t0 = time.time()
+            gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, debug=False)
+            cp.cuda.runtime.deviceSynchronize()
+            dt = time.time()-t0
+            print(f'    {label}: {1000*dt} ms')
+        
 
     def time_map2tod(self, time_old=False):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
+        local_map = gpu_mm.LocalMap(self.lpix, m)
+
+        self._time_map2tod(tod, local_map, plan=None, label='unplanned_map2tod')
+        self._time_map2tod(tod, local_map, plan=self.plan, label='map2tod')
+
+        if time_old:
+            self._time_map2tod(tod, local_map, plan='old', label='old_map2tod (does not use a LocalPixelization)')
+
+
+    def _time_tod2map(self, local_map, tod, plan, label):
         print()
         
         for _ in range(10):
             t0 = time.time()
-            gpu_mm_pybind11.unplanned_map2tod(tod, m, self.xpointing_gpu, self.lpix)
+            gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, debug=False)
             cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_unplanned_map2tod: {1000*(time.time()-t0)} ms')
+            dt = time.time() - t0
+            print(f'    {label}: {1000*dt} ms')
 
-        plan = self.plan        
-        print()
         
-        for _ in range(10):
-            t0 = time.time()
-            plan.map2tod(tod, m, self.xpointing_gpu, self.lpix, debug=False)
-            cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_map2tod: {1000*(time.time()-t0)} ms')
-
-        if not time_old:
-            return
-        
-        plan = self.old_plan
-        print()
-        
-        for _ in range(10):
-            t0 = time.time()
-            plan.map2tod(tod, m, self.xpointing_gpu)
-            cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_old_map2tod: {1000*(time.time()-t0)} ms')
-
-
     def time_tod2map(self, time_old=False):
         # Note: we don't use a zeroed timestream, since tod2map() contains an optimization
         # which may give artificially fast timings when run on an all-zeroes timestream.
         
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
-        print()
-        
-        for _ in range(10):
-            t0 = time.time()
-            gpu_mm_pybind11.unplanned_tod2map(m, tod, self.xpointing_gpu, self.lpix)
-            cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_unplanned_tod2map: {1000*(time.time()-t0)} ms')
+        local_map = gpu_mm.LocalMap(self.lpix, m)
 
-        plan = self.plan
-        print()
+        self._time_tod2map(local_map, tod, plan=None, label='unplanned_tod2map')
+        self._time_tod2map(local_map, tod, plan=self.plan, label='tod2map')
 
-        for _ in range(10):
-            t0 = time.time()
-            plan.tod2map(m, tod, self.xpointing_gpu, self.lpix, debug=False)
-            cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_tod2map: {1000*(time.time()-t0)} ms')
-
-        if not time_old:
-            return
-
-        plan = self.old_plan
-        print()
-
-        for _ in range(10):
-            t0 = time.time()
-            plan.tod2map(m, tod, self.xpointing_gpu)
-            cp.cuda.runtime.deviceSynchronize()
-            print(f'    time_old_tod2map (uses plan computed on cpu): {1000*(time.time()-t0)} ms')
-
+        if time_old:
+            self._time_tod2map(local_map, tod, plan=self.old_plan, label='old_tod2map (uses plan precomputed on cpu)')
 
     def time_all(self, ):
         time_old = True    # FIXME define command-line flag

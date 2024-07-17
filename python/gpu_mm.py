@@ -9,40 +9,118 @@ import numpy as np
 import cupy as cp
 
 from . import gpu_mm_pybind11
-from .gpu_mm_pybind11 import PointingPrePlan
 
 # Currently we wrap either float32 or float64, determined at compile time!
 # FIXME eventually, should wrap both.
 mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
-        
+
+def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=False):
+    assert isinstance(local_map, LocalMap)
+    lpix = local_map.pixelization
+    larr = local_map.arr
+
+    if isinstance(plan, PointingPlan):
+        gpu_mm_pybind11.planned_map2tod(tod, larr, xpointing, lpix, plan, partial_pixelization, debug)
+    elif plan is None:
+        max_blocks = 2048  # ad hoc
+        errflag = cp.zeros(max_blocks, dtype=cp.uint32)
+        gpu_mm_pybind11.unplanned_map2tod(tod, larr, xpointing, lpix, errflag, partial_pixelization)
+    elif plan == 'reference':
+        gpu_mm_pybind11.reference_map2tod(tod, larr, xpointing, lpix, partial_pixelization)
+    elif (plan == 'old') or isinstance(plan, OldPointingPlan):
+        assert lpix.is_simple_rectangle()
+        assert larr.shape == (3, 64*lpix.nycells, 64*lpix.nxcells)
+        assert not lpix.periodic_xcoord
+        if isinstance(plan, OldPointingPlan):
+            assert (plan.ndec, plan.nra) == (64*lpix.nycells, 64*lpix.nxcells)
+        gpu_mm_pybind11.old_map2tod(tod, larr, xpointing)
+    else:
+        raise RuntimeError(f"Bad 'plan' argument to map2tod(): {plan}")
+
+
+def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=False):
+    assert isinstance(local_map, LocalMap)
+    lpix = local_map.pixelization
+    larr = local_map.arr
+
+    if isinstance(plan, PointingPlan):
+        gpu_mm_pybind11.planned_tod2map(larr, tod, xpointing, lpix, plan, partial_pixelization, debug)
+    elif plan is None:
+        max_blocks = 2048  # ad hoc
+        errflag = cp.zeros(max_blocks, dtype=cp.uint32)
+        gpu_mm_pybind11.unplanned_tod2map(larr, tod, xpointing, lpix, errflag, partial_pixelization)
+    elif plan == 'reference':
+        gpu_mm_pybind11.reference_tod2map(larr, tod, xpointing, lpix, partial_pixelization)
+    elif isinstance(plan, OldPointingPlan):
+        assert lpix.is_simple_rectangle()
+        assert larr.shape == (3, 64*lpix.nycells, 64*lpix.nxcells)
+        assert not lpix.periodic_xcoord
+        assert (plan.ndec, plan.nra) == (64*lpix.nycells, 64*lpix.nxcells)
+        gpu_mm_pybind11.old_tod2map(larr, tod, xpointing, plan.plan_cltod_list, plan.plan_quadruples)
+    else:
+        raise RuntimeError(f"Bad 'plan' argument to tod2map(): {plan}")
+
+
+####################################################################################################
+
+
 class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
     def __init__(self, nypix_global, nxpix_global, cell_offsets, ystride, polstride, periodic_xcoord = True):
-        cell_offsets_cpu = cp.asnumpy(cell_offsets)
-        cell_offsets_gpu = cp.asarray(cell_offsets)
-        gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, cell_offsets_cpu, cell_offsets_gpu, ystride, polstride, periodic_xcoord)
+        self.cell_offsets_cpu = cp.asnumpy(cell_offsets)   # numpy array
+        self.cell_offsets_gpu = cp.asarray(cell_offsets)   # cupy array
+        gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, self.cell_offsets_cpu, self.cell_offsets_gpu, ystride, polstride, periodic_xcoord)
 
+
+    # Note: inherits the following members from C++
+    #
+    #   nypix_global      int
+    #   nxpix_global      int
+    #   periodic_xcoord   bool
+    #   ystride           int
+    #   polstride         int
+    #   nycells           int
+    #   nxcells           int
+    #   npix              int
+    
+    def is_simple_rectangle(self):
+        rect_offsets = self._make_rectangular_cell_offsets(self.nycells, self.nxcells)
+        return np.array_equal(self.cell_offsets_cpu, rect_offsets)
+
+
+    @classmethod
+    def _make_rectangular_cell_offsets(cls, nycells, nxcells):
+        cell_offsets = np.empty((nycells, nxcells), dtype=int)
+        cell_offsets[:,:] = 64 * np.arange(nxcells).reshape((1,-1))
+        cell_offsets[:,:] += 64*64 * nxcells * np.arange(nycells).reshape((-1,1))
+        return cell_offsets
         
-    @staticmethod
-    def make_rectangle(nypix_global, nxpix_global, periodic_xcoord = True):
+        
+    @classmethod
+    def make_rectangle(cls, nypix_global, nxpix_global, periodic_xcoord = True):
         assert nypix_global > 0
         assert nxpix_global > 0
         assert nypix_global % 64 == 0
         assert nxpix_global % 64 == 0
 
-        nycells = nypix_global // 64
-        nxcells = nxpix_global // 64
-
-        cell_offsets = np.empty((nycells, nxcells), dtype=int)
-        cell_offsets[:,:] = 64 * np.arange(nxcells).reshape((1,-1))
-        cell_offsets[:,:] += 64 * nxpix_global * np.arange(nycells).reshape((-1,1))
+        nycells = (nypix_global + 63) // 64
+        nxcells = (nxpix_global + 63) // 64
 
         return LocalPixelization(
-            nypix_global, nxpix_global, cell_offsets,
-            ystride = nxpix_global,
-            polstride = nypix_global*nxpix_global,
+            nypix_global,
+            nxpix_global,
+            cell_offsets = cls._make_rectangular_cell_offsets(nycells, nxcells),
+            ystride = 64 * nxcells,
+            polstride = 64 * 64 * nycells * nxcells,
             periodic_xcoord = periodic_xcoord
         )
+
+
+class LocalMap:
+    def __init__(self, pixelization, arr):
+        assert isinstance(pixelization, LocalPixelization)
+        self.pixelization = pixelization
+        self.arr = arr
 
 
 class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
@@ -103,12 +181,6 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         self.nxpix_global          int
         self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
         self.__str__()
-
-        self.map2tod(tod, map, xpointing_gpu, debug=False)
-           -> overwrites output 'tod' array
-
-        self.tod2map(map, tod, xpointing_gpu, debug=False)
-           -> accumulates into output 'map' array
     """
     
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None, debug=False):
@@ -121,6 +193,23 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
 
             
 ####################################################################################################
+
+
+class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
+    def __init__(self, xpointing, ndec, nra, verbose=True):
+        assert (ndec % 64) == 0
+        assert (nra % 64) == 0
+        gpu_mm_pybind11.OldPointingPlan.__init__(self, xpointing, ndec, nra, verbose)
+        self.plan_cltod_list = cp.asarray(self._plan_cltod_list)  # CPU -> GPU
+        self.plan_quadruples = cp.asarray(self._plan_quadruples)  # CPU -> GPU
+        self.ndec = ndec
+        self.nra = nra
+
+    def map2tod(self, tod, m, xpointing):
+        gpu_mm_pybind11.old_map2tod(tod, m, xpointing)
+            
+    def tod2map(self, m, tod, xpointing):
+        gpu_mm_pybind11.old_tod2map(m, tod, xpointing, self.plan_cltod_list, self.plan_quadruples)
 
 
 class ToyPointing(gpu_mm_pybind11.ToyPointing):

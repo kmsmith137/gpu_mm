@@ -1,4 +1,5 @@
 #include "../include/gpu_mm.hpp"
+#include <cassert>
 
 #include <iostream>
 #include <gputils/cuda_utils.hpp>
@@ -33,10 +34,10 @@ __global__ void old_map2tod_kernel(float *tod, const float *map, const float *xp
 	int idec = int(px_dec);
 	int ira = int(px_ra);
 
-	// assert(idec >= 0);
-	// assert(idec < ndec-1);
-	// assert(ira >= 0);
-	// assert(ira < nra-1);
+	assert(idec >= 0);
+	assert(idec < ndec-1);
+	assert(ira >= 0);
+	assert(ira < nra-1);
 	    
 	int ipix = idec*nra + ira;
 	float ddec = px_dec - float(idec);

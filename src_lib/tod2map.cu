@@ -143,85 +143,84 @@ tod2map_kernel(
 
 
 template<typename T>
-void launch_tod2map(gputils::Array<T> &local_map,
-		    const gputils::Array<T> &tod,
-		    const gputils::Array<T> &xpointing,
-		    const LocalPixelization &local_pixelization,
-		    const ulong *plan_mt, uint *errflags,
-		    long nmt, long nmt_per_block, long nblocks,
-		    bool allow_outlier_pixels, bool debug)
+extern void launch_planned_tod2map(
+    gputils::Array<T> &local_map,                 // total size (3 * local_pixelization.npix)
+    const gputils::Array<T> &tod,                 // shape (nsamp,) or (ndet,nt)
+    const gputils::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const LocalPixelization &local_pixelization, 
+    const PointingPlan &plan,
+    bool partial_pixelization,
+    bool debug)
 {
     static constexpr int W = 16;  // warps per threadblock
     static constexpr int shmem_nbytes = 3 * 64 * 64 * sizeof(T);
 
-    long nsamp;
-    check_tod_and_init_nsamp(tod, nsamp, "launch_tod2map", true);            // on_gpu = true
+    check_tod(tod, plan.nsamp, "launch_tod2map", true);                      // on_gpu = true
     check_local_map(local_map, local_pixelization, "launch_tod2map", true);  // on_gpu = true
-    check_xpointing(xpointing, nsamp, "launch_tod2map", true);               // on_gpu = true
+    check_xpointing(xpointing, plan.nsamp, "launch_tod2map", true);          // on_gpu = true
 
-    xassert(nmt > 0);
-    xassert(plan_mt != nullptr);
-    xassert(nmt_per_block > 0);
-    xassert((nmt_per_block % 32) == 0);  // Not necessary, but failure probably indicates a bug
-    xassert((nblocks) * nmt_per_block >= nmt);
-    xassert((nblocks-1) * nmt_per_block < nmt);
+    // Verify consistency of (nypix, nxpix, periodic_xcoord) between plan and lppix    
+    xassert_eq(local_pixelization.nypix_global, plan.nypix_global);
+    xassert_eq(local_pixelization.nxpix_global, plan.nxpix_global);
+    xassert_eq(local_pixelization.periodic_xcoord, plan.periodic_xcoord);
     
     if (debug) {
-	tod2map_kernel<T,W,true> <<< nblocks, {32,W}, shmem_nbytes >>>
-	    (local_map.data,
-	     tod.data,
-	     xpointing.data,
-	     local_pixelization.cell_offsets_gpu.data,
-	     plan_mt,
-	     errflags,
-	     nsamp,
-	     local_pixelization.nycells << 6,   // FIXME nypix_global
-	     local_pixelization.nxcells << 6,   // FIXME nxpix_global
-	     local_pixelization.nycells,
-	     local_pixelization.nxcells,
-	     local_pixelization.ystride,
-	     local_pixelization.polstride,
-	     nmt,
-	     nmt_per_block,
-	     false,   // FIXME periodic_xcoord
-	     false);  // FIXME partial_pixelization
+	tod2map_kernel<T,W,true> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
+	    (local_map.data,                            // T *lmap
+	     tod.data,                                  // const T *tod
+	     xpointing.data,                            // const T *xpointing
+	     local_pixelization.cell_offsets_gpu.data,  // const long *cell_offsets
+	     plan.plan_mt,                              // const ulong *plan_mt
+	     plan.err_gpu,                              // uint *errflags
+	     plan.nsamp,                                // long nsamp
+	     plan.nypix_global,                         // int nypix_global
+	     plan.nxpix_global,                         // int nxpix_global
+	     local_pixelization.nycells,                // int nycells
+	     local_pixelization.nxcells,                // int nxcells
+	     local_pixelization.ystride,                // long ystride
+	     local_pixelization.polstride,              // long polstride
+	     plan.pp.plan_nmt,                          // uint nmt
+	     plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
+	     plan.periodic_xcoord,                      // bool periodic_xcoord
+	     partial_pixelization);                     // bool partial_pixelization
     }
     else {
-	tod2map_kernel<T,W,false> <<< nblocks, {32,W}, shmem_nbytes >>>
-	    (local_map.data,
-	     tod.data,
-	     xpointing.data,
-	     local_pixelization.cell_offsets_gpu.data,
-	     plan_mt,
-	     errflags,
-	     nsamp,
-	     local_pixelization.nycells << 6,   // FIXME nypix_global
-	     local_pixelization.nxcells << 6,   // FIXME nxpix_global
-	     local_pixelization.nycells,
-	     local_pixelization.nxcells,
-	     local_pixelization.ystride,
-	     local_pixelization.polstride,
-	     nmt,
-	     nmt_per_block,
-	     false,   // FIXME periodic_xcoord
-	     false);  // FIXME partial_pixelization
+	tod2map_kernel<T,W,false> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
+	    (local_map.data,                            // T *lmap
+	     tod.data,                                  // const T *tod
+	     xpointing.data,                            // const T *xpointing
+	     local_pixelization.cell_offsets_gpu.data,  // const long *cell_offsets
+	     plan.plan_mt,                              // const ulong *plan_mt
+	     plan.err_gpu,                              // uint *errflags
+	     plan.nsamp,                                // long nsamp
+	     plan.nypix_global,                         // int nypix_global
+	     plan.nxpix_global,                         // int nxpix_global
+	     local_pixelization.nycells,                // int nycells
+	     local_pixelization.nxcells,                // int nxcells
+	     local_pixelization.ystride,                // long ystride
+	     local_pixelization.polstride,              // long polstride
+	     plan.pp.plan_nmt,                          // uint nmt
+	     plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
+	     plan.periodic_xcoord,                      // bool periodic_xcoord
+	     partial_pixelization);                     // bool partial_pixelization
     }
 
     CUDA_PEEK("tod2map kernel launch");
     
-    uint errflags_to_ignore = allow_outlier_pixels ? errflag_pixel_outlier : 0;
-    check_gpu_errflags(errflags, nblocks, "tod2map", errflags_to_ignore);
+    uint errflags_to_ignore = partial_pixelization ? errflag_not_in_pixelization : 0;
+    check_gpu_errflags(plan.err_gpu, plan.pp.pointing_nblocks, "tod2map", errflags_to_ignore);
 }
 
 
 #define INSTANTIATE(T) \
-    template void launch_tod2map(gputils::Array<T> &local_map, \
-			         const gputils::Array<T> &tod, \
-			         const gputils::Array<T> &xpointing, \
-			         const LocalPixelization &local_pixelization, \
-			         const ulong *plan_mt, uint *errflags, \
-			         long nmt, long nmt_per_block, long nblocks, \
-			         bool allow_outlier_pixels, bool debug)
+    template void launch_planned_tod2map( \
+	gputils::Array<T> &local_map, \
+	const gputils::Array<T> &tod, \
+	const gputils::Array<T> &xpointing, \
+	const LocalPixelization &local_pixelization, \
+	const PointingPlan &plan, \
+	bool partial_pixelization, \
+	bool debug)
 
 INSTANTIATE(float);
 INSTANTIATE(double);
