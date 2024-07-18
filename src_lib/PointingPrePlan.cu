@@ -1,12 +1,12 @@
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"
 
-#include <gputils/cuda_utils.hpp>
-#include <gputils/string_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/string_utils.hpp>
 #include <cub/device/device_radix_sort.cuh>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

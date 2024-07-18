@@ -1,11 +1,11 @@
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"
 
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 #include <algorithm>  // std::sort()
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

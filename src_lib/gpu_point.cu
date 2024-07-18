@@ -7,7 +7,7 @@
 #include "cublas_v2.h"
 
 // get_time(), time_since()
-#include <gputils/time_utils.hpp>
+#include <ksgpu/time_utils.hpp>
 
 
 __global__
@@ -114,13 +114,13 @@ void eval_fit(float *out,float *fitp, int n, int ndet, float *ra_bore, float *de
 
   cudaDeviceSynchronize();
   for (int i=0;i<10;i++) {
-      struct timeval tv = gputils::get_time();
+      struct timeval tv = ksgpu::get_time();
     fillA<<<128,128>>>(dra_bore,ddec_bore,n,dA);
     stat=cublasSgemm(handle,CUBLAS_OP_N,CUBLAS_OP_T,n,ndet,npar,&one,dA,n,dfitp,ndet,&zero,dout,n);
     if (stat!=CUBLAS_STATUS_SUCCESS) 
       printf("Error in sgemm.\n");
     cudaDeviceSynchronize();
-    double dt = gputils::time_since(tv);
+    double dt = ksgpu::time_since(tv);
     printf("Pointing reconstruction took %12.4g\n",dt);
   }
   if (cudaMemcpy(out,dout,n*ndet*sizeof(float),cudaMemcpyDeviceToHost)!=cudaSuccess)

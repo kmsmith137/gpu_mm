@@ -1,14 +1,14 @@
-// For an explanation of PY_ARRAY_UNIQUE_SYMBOL, see comments in gputils/src_pybind11/gputils_pybind11.cu.
+// For an explanation of PY_ARRAY_UNIQUE_SYMBOL, see comments in ksgpu/src_pybind11/ksgpu_pybind11.cu.
 #define PY_ARRAY_UNIQUE_SYMBOL PyArray_API_gpu_mm
 
 #include <iostream>
-#include <gputils/pybind11.hpp>
+#include <ksgpu/pybind11.hpp>
 #include "../include/gpu_mm.hpp"
 #include "../include/plan_iterator.hpp"
 
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 namespace py = pybind11;
 
 

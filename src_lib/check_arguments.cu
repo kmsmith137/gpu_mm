@@ -2,10 +2,10 @@
 #include "../include/gpu_mm_internals.hpp"   // errflags
 
 #include <iostream>
-#include <gputils/cuda_utils.hpp>  // CUDA_CALL()
+#include <ksgpu/cuda_utils.hpp>  // CUDA_CALL()
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0
@@ -77,9 +77,9 @@ void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, 
 
 static void _check_location(int aflags, const char *where, const char *arr_name, bool on_gpu)
 {
-    if (on_gpu && gputils::af_on_gpu(aflags))
+    if (on_gpu && ksgpu::af_on_gpu(aflags))
 	return;
-    if (!on_gpu && gputils::af_on_host(aflags))
+    if (!on_gpu && ksgpu::af_on_host(aflags))
 	return;
 
     stringstream ss;

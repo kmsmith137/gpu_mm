@@ -2,9 +2,9 @@
 #include "../include/plan_iterator.hpp"
 
 #include <cassert>
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0
@@ -188,9 +188,9 @@ map2tod_kernel(
 
 template<typename T>
 void launch_planned_map2tod(
-    gputils::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
@@ -265,9 +265,9 @@ void launch_planned_map2tod(
 
 #define INSTANTIATE(T) \
     template void launch_planned_map2tod( \
-	gputils::Array<T> &tod,	\
-	const gputils::Array<T> &local_map, \
-	const gputils::Array<T> &xpointing, \
+	ksgpu::Array<T> &tod,	\
+	const ksgpu::Array<T> &local_map, \
+	const ksgpu::Array<T> &xpointing, \
 	const LocalPixelization &local_pixelization, \
 	const PointingPlan &plan, \
 	bool partial_pixelization, \

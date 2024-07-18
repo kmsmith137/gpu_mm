@@ -1,7 +1,7 @@
 #ifndef _GPU_MM_HPP
 #define _GPU_MM_HPP
 
-#include <gputils/Array.hpp>
+#include <ksgpu/Array.hpp>
 
 namespace gpu_mm {
 #if 0
@@ -99,7 +99,7 @@ struct LocalPixelization
     // The 'cell_offsets' array can be either on the CPU or GPU.
     
     LocalPixelization(long nypix_global, long nxpix_global,
-		      const gputils::Array<long> &cell_offsets,
+		      const ksgpu::Array<long> &cell_offsets,
 		      long ystride, long polstride,
 		      bool periodic_xcoord = true);
 
@@ -108,8 +108,8 @@ struct LocalPixelization
     // and 'cell_offsets_gpu' arrays have the same contents!
     
     LocalPixelization(long nypix_global, long nxpix_global,
-		      const gputils::Array<long> &cell_offsets_cpu,
-		      const gputils::Array<long> &cell_offsets_gpu,
+		      const ksgpu::Array<long> &cell_offsets_cpu,
+		      const ksgpu::Array<long> &cell_offsets_gpu,
 		      long ystride, long polstride,
 		      bool periodic_xcoord = true);
 
@@ -119,8 +119,8 @@ struct LocalPixelization
     const bool periodic_xcoord;
 
     // Local pixelization
-    const gputils::Array<long> cell_offsets_cpu;
-    const gputils::Array<long> cell_offsets_gpu;
+    const ksgpu::Array<long> cell_offsets_cpu;
+    const ksgpu::Array<long> cell_offsets_gpu;
     const long ystride;
     const long polstride;
     
@@ -137,15 +137,15 @@ struct PointingPrePlan
     // This constructor allocates GPU memory, and is intended to be called from C++.
     
     template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
+    PointingPrePlan(const ksgpu::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
 		    bool periodic_xcoord = true, bool debug = false);
     
     // This constructor uses externally allocated GPU memory, and is intended to be called from python.
     // The 'nmt_gpu' and 'err_gpu' arrays should have length preplan_size.
     
     template<typename T>
-    PointingPrePlan(const gputils::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
-		    const gputils::Array<uint> &nmt_gpu, const gputils::Array<uint> &err_gpu,
+    PointingPrePlan(const ksgpu::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
+		    const ksgpu::Array<uint> &nmt_gpu, const ksgpu::Array<uint> &err_gpu,
 		    bool periodic_xcoord = true, bool debug = false);
     
     long nsamp = 0;
@@ -170,11 +170,11 @@ struct PointingPrePlan
     size_t cub_nbytes = 0;                 // number of bytes used in cub radix sort 'd_temp_storage'
 
     // Cumulative count of mt-pairs per threadblock.
-    gputils::Array<uint> nmt_cumsum;
+    ksgpu::Array<uint> nmt_cumsum;
 
     // Copies nmt_cumsum array to host, and returns it as a numpy array.
     // Temporary hack, used in tests.test_pointing_preplan().
-    gputils::Array<uint> get_nmt_cumsum() const;
+    ksgpu::Array<uint> get_nmt_cumsum() const;
     
     std::string str() const;
 };
@@ -189,7 +189,7 @@ struct PointingPlan
 
     const PointingPrePlan pp;
     
-    gputils::Array<unsigned char> buf;
+    ksgpu::Array<unsigned char> buf;
 
     // The 'buf' array logically consists of two buffers:
     //   ulong plan_mt[nmt];    // where nmt = pp.plan_nmt
@@ -203,19 +203,19 @@ struct PointingPlan
     // This constructor uses externally allocated GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
-		 const gputils::Array<T> &xpointing_gpu,
-		 const gputils::Array<unsigned char> &buf,
-		 const gputils::Array<unsigned char> &tmp_buf,
+		 const ksgpu::Array<T> &xpointing_gpu,
+		 const ksgpu::Array<unsigned char> &buf,
+		 const ksgpu::Array<unsigned char> &tmp_buf,
 		 bool debug = false);
 
     // This constructor allocates GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
-		 const gputils::Array<T> &xpointing_gpu,
+		 const ksgpu::Array<T> &xpointing_gpu,
 		 bool debug = false);
     
     // Used in unit tests.
-    gputils::Array<ulong> get_plan_mt(bool gpu) const;
+    ksgpu::Array<ulong> get_plan_mt(bool gpu) const;
 
     std::string str() const;
 };
@@ -223,9 +223,9 @@ struct PointingPlan
 
 template<typename T>
 extern void launch_planned_map2tod(
-    gputils::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
@@ -235,9 +235,9 @@ extern void launch_planned_map2tod(
 
 template<typename T>
 extern void launch_planned_tod2map(
-    gputils::Array<T> &local_map,                 // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &tod,                 // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &local_map,                 // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &tod,                 // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
@@ -247,22 +247,22 @@ extern void launch_planned_tod2map(
 
 template<typename T>
 extern void launch_unplanned_map2tod(
-    gputils::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
-    gputils::Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
+    ksgpu::Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
     bool partial_pixelization
 );
 
 
 template<typename T>
 extern void launch_unplanned_tod2map(
-    gputils::Array<T> &local_map,        // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &tod,        // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &local_map,        // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &tod,        // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
-    gputils::Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
+    ksgpu::Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
     bool partial_pixelization
 );
 
@@ -270,9 +270,9 @@ extern void launch_unplanned_tod2map(
 // Slow, single-threaded, CPU implementation for testing.
 template<typename T>
 extern void reference_map2tod(
-    gputils::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &tod,              // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
     bool partial_pixelization
 );
@@ -281,9 +281,9 @@ extern void reference_map2tod(
 // Slow, single-threaded, CPU implementation for testing.
 template<typename T>
 extern void reference_tod2map(
-    gputils::Array<T> &local_map,        // total size (3 * local_pixelization.npix)
-    const gputils::Array<T> &tod,        // Shape (nsamp,) or (ndet,nt)
-    const gputils::Array<T> &xpointing,  // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
+    ksgpu::Array<T> &local_map,        // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &tod,        // Shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &xpointing,  // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
     bool partial_pixelization
 );
@@ -313,8 +313,8 @@ struct ToyPointing
     // Version of constructor with externally allocated xpointing arrays (intended for python)
     ToyPointing(long nypix_global, long nxpix_global,
 		double scan_speed, double total_drift,
-		const gputils::Array<T> &xpointing_cpu,
-		const gputils::Array<T> &xpointing_gpu,
+		const ksgpu::Array<T> &xpointing_cpu,
+		const ksgpu::Array<T> &xpointing_gpu,
 		bool noisy = true);
 
     long nypix_global;
@@ -326,8 +326,8 @@ struct ToyPointing
     // Since ToyPointing is only used in unit tests, assume the caller
     // wants array copies on both CPU and GPU.
     
-    gputils::Array<T> xpointing_cpu;
-    gputils::Array<T> xpointing_gpu;
+    ksgpu::Array<T> xpointing_cpu;
+    ksgpu::Array<T> xpointing_gpu;
 
     std::string str() const;
 };
@@ -346,18 +346,18 @@ extern void check_cpu_errflags(const uint *errflags_cpu, int nelts, const char *
 extern void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, uint errflags_to_ignore = 0);
 
 // Check arrays, in cases where we know the dimensions in advance.
-template<typename T> extern void check_tod(const gputils::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
-template<typename T> extern void check_xpointing(const gputils::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
-template<typename T> extern void check_global_map(const gputils::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
-template<typename T> extern void check_local_map(const gputils::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
-extern void check_cell_offsets(const gputils::Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu);
-extern void check_buffer(const gputils::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
+template<typename T> extern void check_tod(const ksgpu::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_xpointing(const ksgpu::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_global_map(const ksgpu::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
+template<typename T> extern void check_local_map(const ksgpu::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
+extern void check_cell_offsets(const ksgpu::Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu);
+extern void check_buffer(const ksgpu::Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname);
 
 // Check arrays, in cases where we do not know the dimensions in advance.
-template<typename T> extern void check_tod_and_init_nsamp(const gputils::Array<T> &tod, long &nsamp, const char *where, bool on_gpu);
-template<typename T> extern void check_xpointing_and_init_nsamp(const gputils::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu);
-template<typename T> extern void check_global_map_and_init_npix(const gputils::Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu);
-extern void check_cell_offsets_and_init_ncells(const gputils::Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu);
+template<typename T> extern void check_tod_and_init_nsamp(const ksgpu::Array<T> &tod, long &nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_xpointing_and_init_nsamp(const ksgpu::Array<T> &xpointing, long &nsamp, const char *where, bool on_gpu);
+template<typename T> extern void check_global_map_and_init_npix(const ksgpu::Array<T> &map, long &nypix_global, long &nxpix_global, const char *where, bool on_gpu);
+extern void check_cell_offsets_and_init_ncells(const ksgpu::Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu);
 
 
 // PointingPlanTester: used in unit tests.
@@ -371,13 +371,13 @@ struct PointingPlanTester
 {
     // Version of constructor which allocates temporary arrays.
     template<typename T>
-    PointingPlanTester(const PointingPrePlan &pp, const gputils::Array<T> &xpointing_gpu);
+    PointingPlanTester(const PointingPrePlan &pp, const ksgpu::Array<T> &xpointing_gpu);
 
     // Version of constructor with externally allocated tmp array (intended for python)
     template<typename T>
     PointingPlanTester(const PointingPrePlan &pp,
-		       const gputils::Array<T> &xpointing_gpu,
-		       const gputils::Array<unsigned char> &tmp);    
+		       const ksgpu::Array<T> &xpointing_gpu,
+		       const ksgpu::Array<unsigned char> &tmp);    
 
     // Same meaning as in PointingPrePlan.
     long nsamp = 0;
@@ -393,11 +393,11 @@ struct PointingPlanTester
     // (iypix, ixpix) = which map pixel does each time sample fall into?
     // (Computed on GPU and copied to CPU, in order to guarantee roundoff consistency with other GPU code.)
     
-    gputils::Array<int> iypix_arr;   // length nsamp
-    gputils::Array<int> ixpix_arr;   // length nsamp
+    ksgpu::Array<int> iypix_arr;   // length nsamp
+    ksgpu::Array<int> ixpix_arr;   // length nsamp
 
-    gputils::Array<uint> nmt_cumsum;  // length planner_nblocks, same meaning as PointingPrePlan::nmt_cumsum.
-    gputils::Array<ulong> sorted_mt;  // length plan_nmt, see PointingPlan for 'mt' format.
+    ksgpu::Array<uint> nmt_cumsum;  // length planner_nblocks, same meaning as PointingPrePlan::nmt_cumsum.
+    ksgpu::Array<ulong> sorted_mt;  // length plan_nmt, see PointingPlan for 'mt' format.
 
     // Used temporarily in constructor.
     int _tmp_cells[128];
@@ -464,32 +464,32 @@ struct PointingPlanTester
 
 
 extern void launch_old_map2tod(
-    gputils::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
-    const gputils::Array<float> &map,        // shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    ksgpu::Array<float> &tod,              // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<float> &map,        // shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
+    const ksgpu::Array<float> &xpointing   // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
 );
 
 
 extern void launch_old_tod2map(
-    gputils::Array<float> &map,                  // Shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,            // Shape (nsamp,) or (ndet,nt)
-    const gputils::Array<float> &xpointing,      // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
-    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
+    ksgpu::Array<float> &map,                  // Shape (3,nypix_global,nxpix_global)   where axis 0 = {I,Q,U}
+    const ksgpu::Array<float> &tod,            // Shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<float> &xpointing,      // Shape (3,nsamp) or (3,ndet,nt)     where axis 0 = {y,x,alpha}
+    const ksgpu::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const ksgpu::Array<int> &plan_quadruples   // Shape (plan_nquadruples, 4)
 );
 
 
 // Temporary hack: construct pointing plans on CPU.
 struct OldPointingPlan
 {
-    OldPointingPlan(const gputils::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
+    OldPointingPlan(const ksgpu::Array<float> &xpointing, int ndec, int nra, bool verbose=true);
 
     long ncl_uninflated = 0;
     long ncl_inflated = 0;     // same as 'plan_ncltod' argument to tod2map()
     long num_quadruples = 0;   // same as 'plan_nquadruples' argument to tod2map()
     
-    gputils::Array<int> plan_cltod_list;    // 1-d contiguous array of shape (ncl_inflated,)
-    gputils::Array<int> plan_quadruples;    // 2-d contiguous array of shape (num_quadruples,4)
+    ksgpu::Array<int> plan_cltod_list;    // 1-d contiguous array of shape (ncl_inflated,)
+    ksgpu::Array<int> plan_quadruples;    // 2-d contiguous array of shape (num_quadruples,4)
 };
 
 

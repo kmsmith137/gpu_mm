@@ -1,8 +1,8 @@
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"  // ALL_LANES
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0
@@ -148,11 +148,11 @@ __global__ void old_tod2map_kernel(
 
 
 void launch_old_tod2map(
-    gputils::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
-    const gputils::Array<float> &tod,            // Shape (ndet, nt)
-    const gputils::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
-    const gputils::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
-    const gputils::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
+    ksgpu::Array<float> &map,                  // Shape (3, ndec, nra)   where axis 0 = {I,Q,U}
+    const ksgpu::Array<float> &tod,            // Shape (ndet, nt)
+    const ksgpu::Array<float> &xpointing,      // Shape (3, ndet, nt)    where axis 0 = {px_dec, px_ra, alpha}
+    const ksgpu::Array<int> &plan_cltod_list,  // Shape (plan_ncltod,)
+    const ksgpu::Array<int> &plan_quadruples)  // Shape (plan_nquadruples, 4)
 {
     long nsamp, ndec, nra;
     check_tod_and_init_nsamp(tod, nsamp, "old_map2tod", true);     // on_gpu=true

@@ -1,11 +1,15 @@
 [build-system]
 build-backend = 'mesonpy'
-requires = [ 'meson-python' ]  # omitted most dependencies since I plan to use 'pip install --no-build-isolation'
+requires = [ 'meson-python', 'pybind11', 'numpy', 'ksgpu >= 1.0.1' ]
+
+# NOTE: I decided not to specify 'cupy' as a dependency, in order to avoid triggering
+# a pip install of cupy (since cupy is difficult to install with pip but straightforward
+# with other tools, e.g. conda).
 
 [project]
 name = 'gpu_mm'
 version = '0.0.1'
-dependencies = [ 'meson-python', 'pybind11', 'cupy', 'numpy' ]
+dependencies = [ 'meson-python', 'pybind11', 'numpy', 'ksgpu >= 1.0.1' ]
 description = 'CMB map-making on GPUs'
 # readme = 'README.md'
 # requires-python = '>=3.8'

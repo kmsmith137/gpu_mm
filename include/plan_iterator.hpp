@@ -2,6 +2,7 @@
 #define _GPU_MM_PLAN_ITERATOR_HPP
 
 #include "gpu_mm_internals.hpp"  // ALL_LANES
+#include <ksgpu/Array.hpp>
 
 namespace gpu_mm {
 #if 0
@@ -10,8 +11,8 @@ namespace gpu_mm {
 
 
 // Defined in src_lib/test_plan_iterator.cu
-extern void test_plan_iterator(const gputils::Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock);
-extern gputils::Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell);
+extern void test_plan_iterator(const ksgpu::Array<ulong> &plan_mt, uint nmt_per_block, int warps_per_threadblock);
+extern ksgpu::Array<ulong> make_random_plan_mt(long ncells, long min_nmt_per_cell, long max_nmt_per_cell);
 
 
 // Usage of plan_iterator<W> is best explained by the following pseudocode:

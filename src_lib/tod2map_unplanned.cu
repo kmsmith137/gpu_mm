@@ -2,11 +2,11 @@
 #include "../include/gpu_mm_internals.hpp"
 
 #include <iostream>
-#include <gputils/Array.hpp>
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/Array.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

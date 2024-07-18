@@ -5,12 +5,12 @@
 #include <vector>
 #include <iostream>
 #include <algorithm> // std::sort
-#include <gputils/cuda_utils.hpp>
-#include <gputils/rand_utils.hpp>
-#include <gputils/string_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/rand_utils.hpp>
+#include <ksgpu/string_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

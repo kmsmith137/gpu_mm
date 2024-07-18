@@ -1,9 +1,9 @@
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"  // ALL_LANES
-#include <gputils/cuda_utils.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

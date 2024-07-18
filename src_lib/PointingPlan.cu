@@ -1,13 +1,13 @@
 #include "../include/gpu_mm.hpp"
 #include "../include/gpu_mm_internals.hpp"
 
-#include <gputils/cuda_utils.hpp>
-#include <gputils/string_utils.hpp>
-#include <gputils/constexpr_functions.hpp>   // constexpr_is_log2()
+#include <ksgpu/cuda_utils.hpp>
+#include <ksgpu/string_utils.hpp>
+#include <ksgpu/constexpr_functions.hpp>   // constexpr_is_log2()
 #include <cub/device/device_radix_sort.cuh>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0
@@ -355,14 +355,14 @@ string PointingPlan::str() const
 #define INSTANTIATE(T) \
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
-	const gputils::Array<T> &xpointing_gpu, \
-	const gputils::Array<unsigned char> &buf, \
-	const gputils::Array<unsigned char> &tmp_buf, \
+	const ksgpu::Array<T> &xpointing_gpu, \
+	const ksgpu::Array<unsigned char> &buf, \
+	const ksgpu::Array<unsigned char> &tmp_buf, \
         bool debug);  \
     \
     template PointingPlan::PointingPlan( \
 	const PointingPrePlan &pp, \
-	const gputils::Array<T> &xpointing_gpu, \
+	const ksgpu::Array<T> &xpointing_gpu, \
 	bool debug)
 
 INSTANTIATE(float);

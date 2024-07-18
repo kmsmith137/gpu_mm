@@ -2,7 +2,6 @@
 #define _GPU_MM_INTERNALS_HPP
 
 #include <cassert>
-#include <gputils/Array.hpp>
 
 namespace gpu_mm {
 #if 0

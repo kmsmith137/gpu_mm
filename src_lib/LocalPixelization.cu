@@ -1,8 +1,8 @@
 #include "../include/gpu_mm.hpp"
-#include <gputils/xassert.hpp>
+#include <ksgpu/xassert.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0

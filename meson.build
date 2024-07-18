@@ -98,40 +98,40 @@ cufft = nvcc.find_library('cufft')
 ####################################################################################################
 
 
-gputils_ret = run_command(py3.path(), '-c', 'import gputils; print(gputils.__file__)', check: true)
-gputils_ret = gputils_ret.stdout().strip()
-# message('gputils_ret = ', gputils_ret)
+ksgpu_ret = run_command(py3.path(), '-c', 'import ksgpu; print(ksgpu.__file__)', check: true)
+ksgpu_ret = ksgpu_ret.stdout().strip()
+# message('ksgpu_ret = ', ksgpu_ret)
 
-gputils_incdir = fs.parent(gputils_ret) / 'include'
-gputils_libdir = fs.parent(gputils_ret)
+ksgpu_incdir = fs.parent(ksgpu_ret) / 'include'
+ksgpu_libdir = fs.parent(ksgpu_ret)
 
-if not fs.exists(gputils_incdir / 'gputils.hpp')
-    error('Couldn\'t find gputils.hpp in expected location -- time to debug')
+if not fs.exists(ksgpu_incdir / 'ksgpu.hpp')
+    error('Couldn\'t find ksgpu.hpp in expected location -- time to debug')
 endif
 
-if not fs.exists(gputils_libdir / 'libgputils.so')
-    error('Couldn\'t find libgputils.so in expected location -- time to debug')
+if not fs.exists(ksgpu_libdir / 'libksgpu.so')
+    error('Couldn\'t find libksgpu.so in expected location -- time to debug')
 endif
 
-gputils_pyext_ret = run_command(py3.path(), '-c', 'import gputils; print(gputils.gputils_pybind11.__file__)', check: true)
-gputils_pyext_ret = gputils_pyext_ret.stdout().strip()
-# message('gputils_pyext_ret = ', gputils_pyext_ret)
+ksgpu_pyext_ret = run_command(py3.path(), '-c', 'import ksgpu; print(ksgpu.ksgpu_pybind11.__file__)', check: true)
+ksgpu_pyext_ret = ksgpu_pyext_ret.stdout().strip()
+# message('ksgpu_pyext_ret = ', ksgpu_pyext_ret)
 
-gputils_pyext_dir = fs.parent(gputils_pyext_ret)
-gputils_pyext_basename = fs.name(gputils_pyext_ret)
-# message('gputils_pyext_dir = ', gputils_pyext_dir)
-# message('gputils_pyext_basename =', gputils_pyext_basename)
+ksgpu_pyext_dir = fs.parent(ksgpu_pyext_ret)
+ksgpu_pyext_basename = fs.name(ksgpu_pyext_ret)
+# message('ksgpu_pyext_dir = ', ksgpu_pyext_dir)
+# message('ksgpu_pyext_basename =', ksgpu_pyext_basename)
 
-if not gputils_pyext_basename.endswith('.so')
-    error('gputils.gputils_pybind11.__file__ did not end with .so as expected -- time to debug')
+if not ksgpu_pyext_basename.endswith('.so')
+    error('ksgpu.ksgpu_pybind11.__file__ did not end with .so as expected -- time to debug')
 endif
 
-gputils_pyext_stem = gputils_pyext_basename.substring(0,-3)
-# message('gputils_pyext_stem =', gputils_pyext_stem)
+ksgpu_pyext_stem = ksgpu_pyext_basename.substring(0,-3)
+# message('ksgpu_pyext_stem =', ksgpu_pyext_stem)
 
 # FIXME using cpp compiler here, since using cuda compiler doesn't seem to work!
-gputils_lib = cpp.find_library('gputils', dirs: gputils_libdir)
-gputils_pyext = cpp.find_library(gputils_pyext_stem, dirs: gputils_libdir)
+ksgpu_lib = cpp.find_library('ksgpu', dirs: ksgpu_libdir)
+ksgpu_pyext = cpp.find_library(ksgpu_pyext_stem, dirs: ksgpu_libdir)
 
 
 ####################################################################################################
@@ -169,8 +169,8 @@ gpu_mm_lib = library(
     lib_source_files,
     cuda_args: cuda_args,
     link_args: link_args,
-    include_directories: gputils_incdir,
-    dependencies: [gputils_lib, cublas, cufft],
+    include_directories: ksgpu_incdir,
+    dependencies: [ksgpu_lib, cublas, cufft],
     install: true,
     install_dir: py3.get_install_dir() / 'gpu_mm'
 )
@@ -178,8 +178,8 @@ gpu_mm_lib = library(
 py3.extension_module(
     'gpu_mm_pybind11',     # compiled extension will be named gpu_mm_pybind11.so
     sources: pyext_source_files,
-    dependencies : [pybind11_dep, numpy_dep, gputils_pyext, gputils_lib],
-    include_directories: gputils_incdir,
+    dependencies : [pybind11_dep, numpy_dep, ksgpu_pyext, ksgpu_lib],
+    include_directories: ksgpu_incdir,
     cuda_args: cuda_args,
     link_args: link_args,
     link_language : 'cuda',
@@ -203,8 +203,8 @@ py3.install_sources(
 #     executable(
 #         x,
 #         'src_bin/' + x + '.cu',
-# 	  dependencies: [gputils_lib],
-# 	  include_directories: gputils_incdir,
+# 	  dependencies: [ksgpu_lib],
+# 	  include_directories: ksgpu_incdir,
 #         cuda_args: cuda_args,
 #	  link_args: link_args,
 # 	  link_with: gpu_mm_lib

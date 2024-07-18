@@ -1,11 +1,11 @@
 #include "../include/gpu_mm.hpp"
 
 #include <iostream>
-#include <gputils/time_utils.hpp>
-#include <gputils/string_utils.hpp>
+#include <ksgpu/time_utils.hpp>
+#include <ksgpu/string_utils.hpp>
 
 using namespace std;
-using namespace gputils;
+using namespace ksgpu;
 
 namespace gpu_mm {
 #if 0
@@ -113,7 +113,7 @@ template<typename T>
 string ToyPointing<T>::str() const
 {
     stringstream ss;
-    string tod_shape = gputils::shape_str(xpointing_cpu.ndim-1, xpointing_cpu.shape+1);
+    string tod_shape = ksgpu::shape_str(xpointing_cpu.ndim-1, xpointing_cpu.shape+1);
     
     ss << "ToyPointing(tod_shape=" << tod_shape
        << ", nypix_global=" << nypix_global << ", nxpix_global=" << nxpix_global

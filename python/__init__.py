@@ -1,4 +1,4 @@
-import gputils
+import ksgpu
 import cupy.cublas
 import cupy.cuda.cufft
 
