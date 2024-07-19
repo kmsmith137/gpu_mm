@@ -1,20 +1,9 @@
-Here's one way to install:
-```
-conda create -n gpu_mm -f conda_env.yaml
-# Or: conda create -c conda-forge -n gpu_mm cupy scipy matplotlib meson-python pybind11
+### gpu_mm: tools for CMB map-making on GPUs.
 
-conda activate gpu_mm
+Install with::
 
-# Compile gputils library (note -b flag to select 'python' branch)
-git clone https://github.com/kmsmith137/gputils -b python   
-cd gputils
-pip install --no-cache-dir --no-build-isolation -v .   # note weird pip flags
-cd ..
+    make install
 
+to install in python site-packages.
 
-# Compile gpu_mm library (note -b flag to select 'pip' branch)
-git clone https://github.com/kmsmith137/gpu_mm -b pip
-cd gpu_mm
-pip install --no-cache-dir --no-build-isolation -v .    # note weird pip flags
-cd ..
-```
+Contact: Kendrick Smith <kmsmith@perimeterinstitute.ca>
