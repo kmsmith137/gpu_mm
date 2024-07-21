@@ -222,14 +222,14 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
     Arguments:
     
       - tod: output array (1-dimensional, length-nsamp).
-         (See "timestreams" in top-level gpu_mm.gpu_mm docstring)
+         (See "timestreams" in top-level gpu_mm docstring)
          Will be overwritten by map2tod().
 
       - local_map: input array (instance of class LocalMap).
-         (See "local maps" in top-level gpu_mm.gpu_mm docstring)
+         (See "local maps" in top-level gpu_mm docstring)
 
       - xpointing: shape (3,nsamp) array.
-         (See "xpointing arrays" in top-level gpu_mm.gpu_mm docstring)
+         (See "xpointing arrays" in top-level gpu_mm docstring)
     
       - plan: either instance of class PointingPlan, or one of
          the following special values:
@@ -277,14 +277,14 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
     Arguments:
     
       - local_map: output array (instance of class LocalMap).
-         (See "local maps" in top-level gpu_mm.gpu_mm docstring)
+         (See "local maps" in top-level gpu_mm docstring)
          tod2map() will accumulate its output (i.e. add to existing array contents)
 
       - tod: input array (1-dimensional, length-nsamp).
-         (See "timestreams" in top-level gpu_mm.gpu_mm docstring)
+         (See "timestreams" in top-level gpu_mm docstring)
 
       - xpointing: shape (3,nsamp) array.
-         (See "xpointing arrays" in top-level gpu_mm.gpu_mm docstring)
+         (See "xpointing arrays" in top-level gpu_mm docstring)
     
       - plan: either instance of class PointingPlan, or one of
          the following special values:
@@ -332,7 +332,7 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
 class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
     """
     This class contains the following members, which describe the global
-    pixelization (see "global maps" in the gpu_mm.gpu_mm docstring):
+    pixelization (see "global maps" in the gpu_mm docstring):
 
        nypix_global (int)
        nxpix_global (int)
@@ -340,7 +340,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
 
     and the following members, which describe a local pixelization (i.e.
     subset of 64-by-64 cells in the global pixelization, see "local maps"
-    in the gpu_mm.gpu_mm docstirng):
+    in the gpu_mm docstirng):
 
       cell_offsets   2-d integer-valued array indexed by (iycell, ixcell)
       ystride        integer
@@ -443,13 +443,13 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     """
     The GPU pointing 'plan' is an argument to map2tod() or tod2map().
     You'll construct the PointingPrePlan before constructing the PointingPlan.
-    (See "plans and preplans" in the gpu_mm.gpu_mm docstring.)
+    (See "plans and preplans" in the gpu_mm docstring.)
 
     Constructor arguments:
-     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm.gpu_mm docstring
-     - nypix_global        see "global maps" in gpu_mm.gpu_mm docstring
-     - nxpix_global        see "global maps" in gpu_mm.gpu_mm docstring
-     - periodic_xcoord     see "global maps" in gpu_mm.gpu_mm docstring
+     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm docstring
+     - nypix_global        see "global maps" in gpu_mm docstring
+     - nxpix_global        see "global maps" in gpu_mm docstring
+     - periodic_xcoord     see "global maps" in gpu_mm docstring
      - buf                 1-d uint32 array with length PointingPrePlan.preplan_size (see below)
      - tmp_buf             1-d uint32 array with length PointingPrePlan.preplan_size (see below)
 
@@ -496,11 +496,11 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
 class PointingPlan(gpu_mm_pybind11.PointingPlan):
     """
     The GPU pointing 'plan' is an argument to map2tod() or tod2map().
-    (See "plans and preplans" in the gpu_mm.gpu_mm docstring.)
+    (See "plans and preplans" in the gpu_mm docstring.)
 
     Constructor arguments:
      - preplan             instance of class PointingPrePlan
-     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm.gpu_mm docstring
+     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm docstring
      - buf                 1-d uint8 array with length >= preplan.plan_nbytes
      - tmp_buf             1-d uint8 array with length >= preplan.plan_constructor_tmp_nbytes
 

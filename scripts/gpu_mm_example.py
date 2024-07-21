@@ -1,5 +1,4 @@
-from gpu_mm import gpu_mm
-
+import gpu_mm
 import numpy as np
 import cupy as cp
 import time
@@ -8,7 +7,7 @@ import time
 if __name__ == '__main__':
 
     # Read xpointing (="exploded pointing") array.
-    # For more info, see 'xpointing' in the toplevel gpu_mm.gpu_mm docstring.
+    # For more info, see 'xpointing' in the toplevel gpu_mm docstring.
     #
     # This script reads its 'xpointing' array from a file 'xpointing_0.npz',
     # which I precomputed using Sigurd's tods_full arrays. (See make-xpointing-*
@@ -31,14 +30,14 @@ if __name__ == '__main__':
     print(f'{ymin=} {ymax=} {xmin=} {xmax=}')
 
     # Define global pixelization. (For more info, see 'global maps' in
-    # toplevel gpu_mm.gpu_mm docstring.) This part is a little ad hoc!
+    # toplevel gpu_mm docstring.) This part is a little ad hoc!
 
     nypix_global = 64*int((ymax-3)/64.) + 64   # use enough y-pixels to cover the xpointing with a little padding
     nxpix_global = 360*60*2                    # ACT maps use 0.5 arcminute pixels
     periodic_xcoord = True
 
     # Define local pixelization. (For more info, see 'local maps' in
-    # toplevel gpu_mm.gpu_mm docstring.)
+    # toplevel gpu_mm docstring.)
     #
     # For simplicity, we use a trivial local pixelization which covers
     # the entire sky. (Doing something fancier here would save GPU memory.)
@@ -46,7 +45,7 @@ if __name__ == '__main__':
     local_pix = gpu_mm.LocalPixelization.make_rectangle(nypix_global, nxpix_global, periodic_xcoord)
 
     # Make GPU pointing "plan". (For more info, see 'pointing plans' in
-    # topkevel gpu_mm.gpu_mm docstring, including info on how to speed up
+    # toplevel gpu_mm docstring, including info on how to speed up
     # plan creation with preallocated buffers.)
 
     preplan = gpu_mm.PointingPrePlan(xpointing_gpu, nypix_global, nxpix_global, periodic_xcoord=periodic_xcoord)
