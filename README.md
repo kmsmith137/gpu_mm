@@ -68,6 +68,13 @@ Please see:
   - Not currently pip-installable (or conda-installable). This turned out to 
     be a real headache. I put it "on pause" but I plan to go back to it later.
 
+  - New feature I'd like to implement some day: full quaternion-based pointing
+    computation on the GPU (rather than computing on the CPU and using an
+    interpolator).
+
+  - If decompressing data files on the CPU turns out to be a bottleneck, we
+    could probably move this to the GPU (https://developer.nvidia.com/nvcomp).
+
 None of these todo items should be a lot of work individually, but I'm not sure 
 how to prioritize.
 
