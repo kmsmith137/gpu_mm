@@ -9,88 +9,9 @@ namespace gpu_mm {
 #endif
 
 
-// --------------------------------------------------
-//             (GLOBAL) PIXEL-SPACE MAPS
-// --------------------------------------------------
-//
-// A "global" pixel-space map is an array
-//
-//    map[3][nypix_global][nxpix_global].
-//
-// The 'y' coordinate is non-periodic, and is usually declination.
-// The 'x' coordinate is periodic, and is usually RA.
-//
-// Currently we require nypix_global to be a multiple of 64, and nxpix_global
-// to be a multiple of 128. (FIXME: I hope to improve this soon.)
-// We also require nxcells and nycells to be <= 1024.
-//
-// We divide maps into 64-by-64 cells. Thus the number of cells is:
-//   nycells = ceil(nypix_global / 64)
-//   nxcells = ceil(nxpix_global / 64)
-//
-// --------------------------------------------------
-//               LOCAL PIXEL-SPACE MAPS
-// --------------------------------------------------
-//
-// A "local" pixel-space map represents a subset of a global map
-// held on one GPU. We currently require the local map to be defined
-// by a subset of cells
-//
-//    map_loc[3][ncells_loc][64][64]
-//
-// The local -> global cell mapping could be represented as:
-//
-//    int ncells_loc;
-//    int icell_loc[ncells_loc];   // 20-bit global cell index
-//
-// However, the GPU kernels use the global -> local cell mapping instead,
-// which is represented as:
-//
-//    int ncells_loc;
-//    int icell_glo[2^20];
-//
-// where elements of icell_glo[] are either integers in [0:ncells_loc),
-// or (-1) if a given global cell is not in the local map.
-//
-// --------------------------------------------------
-//                   TIMESTREAMS
-// --------------------------------------------------
-//
-// As far as map <-> tod kernels are concerned, timestreams are
-// just 1-d arrays
-//
-//    tod[nsamp];   // indexed by "sample"
-//
-// In a larger map-maker, the sample index may be a "flattened"
-// index representing multiple sub-indices, e.g. tod[ndetectors][ntod].
-//
-// In our current implementation, 'nsamp' must be <= 2^31.
-// (FIXME what am I assuming about divisibility?)
-//
-// --------------------------------------------------
-//                   XPOINTING
-// --------------------------------------------------
-//
-// We use "exploded pointing" throughout, represented as an array
-//
-//   xpointing[3][nsamp];   // axis 0 is {y,x,alpha}
-//
-//
-
-// -----------------------------------------------------------------------------
-//
-// PointingPrePlan and PointingPlan.
-//
-// We factor plan creation into two steps:
-//
-//   - Create PointingPrePlan from xpointing array
-//   - Create PointingPlan from PointingPrePlan + xpointing array.
-//
-// These steps have similar running times, but the PointingPrePlan is much
-// smaller in memory (a few KB versus ~100 MB). Therefore, PointingPrePlans
-// can be retained (per-TOD) for the duration of the program, whereas
-// PointingPlans will typically be created and destroyed on the fly.
-
+// For definitions of central data structures  ("global" and "local" maps,
+// "xpointing", pointing plans, etc.) see the top-level gpu_mm.gpu_mm docstring,
+// in src_python/gpu_mm/gpu_mm.py
 
 
 struct LocalPixelization
@@ -459,8 +380,6 @@ struct PointingPlanTester
 //     map cell. The values of (icl_start, icl_end) specify an index range in the
 //     plan_cltod_list[] array. This index range should correspond to the cache linex
 //     which overlap with the given map cell.
-
-
 
 
 extern void launch_old_map2tod(

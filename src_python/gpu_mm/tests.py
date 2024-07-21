@@ -56,21 +56,7 @@ class PointingInstance:
     
     @classmethod
     def from_file(cls, filename, debug_plan=False):
-        print(f'Reading xpointing file {filename}')
-        
-        f = np.load(filename)
-        xp = f['xpointing']
-        assert (xp.ndim == 3) and (xp.shape[0] == 3)   # ({x,y,a}, ndet, ntod)
-        ndet = xp.shape[1]
-        ntu = xp.shape[2]            # unpadded
-        ntp = 32 * ((ntu+31) // 32)  # padded to multiple of 32
-
-        # FIXME should convert dtype here, to whatever has been compiled.
-        xpointing_cpu = np.zeros((3,ndet,ntp), dtype=xp.dtype)
-        xpointing_cpu[0,:,:ntu] = xp[1,:,:]    # FIXME (0,1) index swap here is horrible
-        xpointing_cpu[1,:,:ntu] = xp[0,:,:]    # FIXME (0,1) index swap here is horrible
-        xpointing_cpu[2,:,:ntu] = xp[2,:,:]
-        xpointing_cpu[:,:,ntu:] = xpointing_cpu[:,:,ntu-1].reshape((3,-1,1))
+        xpointing_cpu = gpu_mm.read_xpointing_npzfile(filename)
 
         ymin = np.min(xpointing_cpu[0,:])
         ymax = np.max(xpointing_cpu[0,:])
@@ -84,8 +70,8 @@ class PointingInstance:
         return PointingInstance(
             xpointing_cpu = xpointing_cpu,
             xpointing_gpu = cp.asarray(xpointing_cpu),
-            nypix_global = 64*int(ymax//64) + 64,      # FIXME should be in npy fileshould be in npy file
-            nxpix_global = 64*int(xmax//64) + 64,      # FIXME 
+            nypix_global = 64*int(ymax//64) + 64,      # FIXME should be in npy file
+            nxpix_global = 64*int(xmax//64) + 64,      # FIXME should be in npy file
             name = filename,
             debug_plan = debug_plan
         )

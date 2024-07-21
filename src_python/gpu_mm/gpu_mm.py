@@ -1,8 +1,210 @@
-# This source file will eventually become a proper python module that 'pip' can build.
-#
-# Currently, it contains some hackery (e.g. hardcoded pathname ../lib/libgpu_mm.so).
-# To use it, you'll need to build the C++ library ('make -j' from the toplevel gpu_mm dir),
-# and then do 'import gpu_mm' from the gpu_mm/scripts directory.
+"""
+==============================
+MAP2TOD AND TOD2MAP OPERATIONS
+==============================
+
+Most of this file is concerned with defining two functions:
+
+  map2tod(timestream, local_map, xpointing, plan, partial_pixelization=False, debug=False)
+  tod2map(local_map, timestream, xpointing, plan, partial_pixelization=False, debug=False)
+
+The map2tod() function overwrites the output TOD array, and the tod2map() function accumulates
+its output to the existing map array.
+
+In this top-level docstring, we define central data structures ("global" and "local" maps,
+"xpointing", pointing plans, etc.)
+
+Please also refer to this example script: scripts/gpu_mm_example.py
+
+=========================
+"GLOBAL" PIXEL-SPACE MAPS
+=========================
+
+A "global" map is a 3-d array of shape 
+
+   float32 global_map[3][nypix_global][nxpix_global]   # first coord is {I,Q,U}
+
+where the y-coordinate might be declination, and the x-coordinate might be RA.
+Note that maps are indexed as map[y][x], not map[x,y].
+
+The "global" pixelization is specified by three parameters:  
+
+  nypix_global (int)
+  nxpix_global (int)
+  periodic_xcoord (bool)
+
+The global pixelization might represent the entire sky, even in a situation
+where the map-maker is running on a small sky fraction. (The "local map
+data structure can be used to avoid storing the full global map -- there's 
+no requirement that global maps be stored either on CPU or GPU. See below!)
+
+The 'periodic_xcoord' parameter is intended to offer the choice between
+putting "wrapping" logic on the CPU or the GPU. If 'periodic_xcoord' is
+true, then the GPU is aware that the global pixelization is periodic, and
+will automatically "wrap" the xpointing (see below) in map2tod/tod2map
+operations. If 'periodic_xcoord' is false, then the GPU won't perform
+"wrapping", and the CPU caller is responsible for wrapping.
+
+===========
+TIMESTREAMS
+===========
+
+Currently, a timestream is a either a 1-d or a 2-d array
+ 
+   float32 tod[nsamp];
+   float32 tod[ndet][nt];
+
+(Internally, the 2-d case is handled by "flattening" to a 1-d array.)
+
+================
+XPOINTING ARRAYS
+================
+
+The map2tod/tod2map operations use "exploded pointing" throughout,
+represented as either a 2-d or a 3-d array:
+
+   float32 xpointing[3][nsamp];     // axis 0 is {y,x,alpha}
+   float32 xpointing[3][ndet][nt];  // axis 0 is {y,x,alpha}
+
+That is, xpointing[0,:] contains (global) y-coordinates and xpointing[1,:]
+contains x-coordinates. These coordinates must satisfy the following
+constraints:
+
+  1 <= y <= (nypix_global-2)
+  1 <= x <= (nxpix_global-2)                  if periodic_xcoord == False
+  -nxpix_global+1 <= x <= 2*nxpix_global-2    if periodic_xcoord == True
+
+That is, the global pixelization must be "at least large enough to contain the
+xpointing", even if the map-maker is running on a smaller sky fraction (see
+next item, "Local maps").
+
+The 'alpha' values in xpointing[2,:] are detector angles, defined by the
+statement that detectors measure:
+
+   T + cos(2*alpha)*Q + sin(2*alpha)*U
+
+========================
+"LOCAL" PIXEL-SPACE MAPS
+========================
+
+This is the most complicated part, since it's designed to represent a
+variety of data layouts.
+
+Consider a situation where we don't want to store an entire global map in
+memory. (This could either be on the GPU or CPU.) We define a "local map"
+data structure, to store a partial sky map, as follows.
+
+We divide the global map into 64-by-64 "cells". A local map is an arbitrary
+set of cells, packed into a contiguous memory region of length (3*64*64*ncells).
+
+We define the following data structure (the "local pixelization") which describes 
+which cells are stored, and how cells are mapped to memory addresses:
+
+  cell_offsets   2-d integer-valued array indexed by (iycell, ixcell)
+  ystride        integer
+  polstride      integer
+
+These members have the following meaning. Consider one cell in the _global_ 
+map, i.e. pixel index ranges
+
+   64*iycell <= iypix_global < 64*(iycell+1)
+   64*iycell <= iypix_global < 64*(iycell+1)
+
+If cell_offsets[iycell,ixcell] is negative, then cell (iycell, ixcell)
+is not stored as part of the local map.
+
+If cell_offsets[iycell,ixcell] is >= 0, then the cell is a logical array
+of shape (3,64,64), and array element (pol,iy,ix) is stored at the
+following memory address:
+
+  cell_offsets[iycell,ixcell] + (pol * polstride) + (iy * ystride) + ix
+
+Here are some examples of local maps, just to illustrate the flexibility:
+
+ - Consider a rectangular subset of the global map, represented as a 3-d
+   contiguous array with shape:
+
+     float32 local_map[3][64*nycells][64*nxcells]
+    
+   This could be represented as a local map with:
+
+     ystride = 64*nxcells
+     polstride = 64*64*nycells*nxcells
+      (cell_offsets chosen appropriately)
+
+ - Consider a 1-d array of cells, where each cell is contiguous in memory,
+   represented as a 4-d array:
+
+     float32 local_map[ncells][3][64][64]
+
+   This could be represented as a local map with:
+
+     ystride = 64
+     polstride = 64*64
+      (cell_offsets chosen appropriately)
+
+===============================
+POINTING "PLANS" AND "PREPLANS"
+===============================
+
+The most complicated part of the code is creating a "PointingPlan" on the GPU.
+This is a parallel data structure that is initialized from an xpointing array,
+and accelerates map2tod/tod2map operations.
+
+I won't describe the plan in detail, except to say that we factor plan creation
+into two steps:
+
+   - Create PointingPrePlan from xpointing array (takes ~5 milliseconds
+     and needs a few KB to store)
+
+   - Create PointingPlan from PointingPrePlan + xpointing array (takes ~5
+     milliseconds and needs ~100 MB to store)
+
+The idea is that PointingPrePlans are small and can be retained (per-TOD)
+for the duration of the map-maker, whereas PointingPlans are large and 
+should be created/destroyed on the fly.
+
+=========
+TODO LIST
+=========
+
+  - Right now the code is not very well tested! I think testing is my 
+    next priority.
+
+  - Currently, nypix_global and nxpix_global must be multiples of 64.
+    (There's no longer a good reason for this, and it would be easy to change.)
+
+  - Currently, the number of TOD samples 'nsamp' must be a multiple of 32.
+    (I'd like to change this, but it's not totally trivial, and there are a
+     few minor issues I'd like to chat about.)
+
+  - Helper functions for converting maps between different pixelizations
+    (either local or global, with or without wrapping logic).
+
+  - A DynamicLocalPixelization class which adds map cells on-the-fly,
+    as tod2map() gets called sequentially with different TODs. This could
+    be used on the first iteration of a map maker to assign a LocalPixelization
+    to each GPU.
+
+  - An MPIPixelization class with all-to-all logic for distirbuting/reducing
+    maps across GPUs.
+
+  - Kernels should be launched on current cupy stream (I'm currently launching
+    on the default cuda stream).
+
+  - Support both float32 and float64.
+
+  - There are still some optimizations I'd like to explore, for making map2tod()
+    and tod2map() even faster, but I put this on the back-burner since they're
+    pretty fast already.
+
+  - Not currently pip-installable (or conda-installable). This turned out to 
+    be a real headache. I put it "on pause" but I plan to go back to it later.
+
+None of these todo items should be a lot of work individually, but I'm not sure 
+how to prioritize.
+"""
+
 
 import ctypes, os
 import numpy as np
@@ -16,6 +218,37 @@ mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
 
 def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=False):
+    """
+    Arguments:
+    
+      - tod: output array (1-dimensional, length-nsamp).
+         (See "timestreams" in top-level gpu_mm.gpu_mm docstring)
+         Will be overwritten by map2tod().
+
+      - local_map: input array (instance of class LocalMap).
+         (See "local maps" in top-level gpu_mm.gpu_mm docstring)
+
+      - xpointing: shape (3,nsamp) array.
+         (See "xpointing arrays" in top-level gpu_mm.gpu_mm docstring)
+    
+      - plan: either instance of class PointingPlan, or one of
+         the following special values:
+    
+          - None: use plan-free map2tod code (slower)
+          - 'reference': use CPU-based reference code (intended for testing)
+          - 'old' or OldPointingPlan code: use old code from Nov 2023
+             (will be removed soon)
+    
+       - partial_pixelization: does caller intend to run the map-maker
+          on a subset of the sky covered by the observations?
+
+          - if False, then an exception will be thrown if any xpointing
+            values are outside the local_map.
+    
+          - if True, then xpointing values outside the local_map are
+            treated as zeroed pixels.
+    """
+    
     assert isinstance(local_map, LocalMap)
     lpix = local_map.pixelization
     larr = local_map.arr
@@ -40,6 +273,37 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
 
 
 def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=False):
+    """
+    Arguments:
+    
+      - local_map: output array (instance of class LocalMap).
+         (See "local maps" in top-level gpu_mm.gpu_mm docstring)
+         tod2map() will accumulate its output (i.e. add to existing array contents)
+
+      - tod: input array (1-dimensional, length-nsamp).
+         (See "timestreams" in top-level gpu_mm.gpu_mm docstring)
+
+      - xpointing: shape (3,nsamp) array.
+         (See "xpointing arrays" in top-level gpu_mm.gpu_mm docstring)
+    
+      - plan: either instance of class PointingPlan, or one of
+         the following special values:
+    
+          - None: use plan-free map2tod code (slower)
+          - 'reference': use CPU-based reference code (intended for testing)
+          - 'old' or OldPointingPlan code: use old code from Nov 2023
+             (will be removed soon)
+    
+       - partial_pixelization: does caller intend to run the map-maker
+          on a subset of the sky covered by the observations?
+
+          - if False, then an exception will be thrown if any xpointing
+            values are outside the local_map.
+    
+          - if True, then xpointing values outside the local_map are
+            treated as zeroed pixels.
+    """
+
     assert isinstance(local_map, LocalMap)
     lpix = local_map.pixelization
     larr = local_map.arr
@@ -66,24 +330,46 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
 
 
 class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
+    """
+    This class contains the following members, which describe the global
+    pixelization (see "global maps" in the gpu_mm.gpu_mm docstring):
+
+       nypix_global (int)
+       nxpix_global (int)
+       periodic_xcoord (bool)
+
+    and the following members, which describe a local pixelization (i.e.
+    subset of 64-by-64 cells in the global pixelization, see "local maps"
+    in the gpu_mm.gpu_mm docstirng):
+
+      cell_offsets   2-d integer-valued array indexed by (iycell, ixcell)
+      ystride        integer
+      polstride      integer
+    """
+    
     def __init__(self, nypix_global, nxpix_global, cell_offsets, ystride, polstride, periodic_xcoord = True):
         self.cell_offsets_cpu = cp.asnumpy(cell_offsets)   # numpy array
         self.cell_offsets_gpu = cp.asarray(cell_offsets)   # cupy array
         gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, self.cell_offsets_cpu, self.cell_offsets_gpu, ystride, polstride, periodic_xcoord)
 
 
-    # Note: inherits the following members from C++
+    # Note: inherits the following members from C++ (via pybind11)
     #
     #   nypix_global      int
     #   nxpix_global      int
     #   periodic_xcoord   bool
     #   ystride           int
     #   polstride         int
-    #   nycells           int
-    #   nxcells           int
+    #   nycells           int (same as cell_offsets.shape[0])
+    #   nxcells           int (same as cell_offsets.shape[0])
     #   npix              int
     
     def is_simple_rectangle(self):
+        """
+        The simplest case of a local pixelization is a 3-d contiguous array of shape
+        (3, 64*nycells, 64*nxcells). This function returns True if the LocalPixelization
+        is of this simple type.
+        """
         rect_offsets = self._make_rectangular_cell_offsets(self.nycells, self.nxcells)
         return np.array_equal(self.cell_offsets_cpu, rect_offsets)
 
@@ -98,6 +384,20 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         
     @classmethod
     def make_rectangle(cls, nypix_global, nxpix_global, periodic_xcoord = True):
+        """
+        Returns a trivial LocalPixelization which covers the entire global sky.
+        The "local" map will represented as a 3-d contiguous array of shape 
+        (3, nypix_global, nxpix_global).
+
+        This is useful because map2tod() and tod2map() operate on local maps.
+        If you want to operate on a global map instead, you can convert a
+        global map to a local map as follows:
+
+           global_map = ....    # shape (3, nypix_global, nxpix_global)
+           rect_pix = LocalPixelization.make_rectangle(nypix_global, nxpix_global)
+           local_map = LocalMap(rect_pix, global_map)
+        """
+        
         assert nypix_global > 0
         assert nxpix_global > 0
         assert nypix_global % 64 == 0
@@ -117,25 +417,55 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
 
 
 class LocalMap:
+    """
+    A LocalMap consists of:
+        
+       - A LocalPixelization, which describes which 64-by-64 map cells are in
+         the local map, and their layout in memory.
+
+       - An array 'arr' which contains the actual map. (Can be either a numpy
+         array on the CPU, or a cupy array on the GPU.)
+
+    LocalMaps are output arrays to tod2map(), and input arrays to map2tod().
+    (If you want these functions to operate on global maps instead, see the
+    LocalPixelization.make_rectangle() docstring.)
+    """
+        
     def __init__(self, pixelization, arr):
         assert isinstance(pixelization, LocalPixelization)
         self.pixelization = pixelization
         self.arr = arr
+        
+        # FIXME should add some error-checking on arr.shape, arr.dtype
 
 
 class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     """
-    PointingPrePlan(xpointing_gpu, nypix_global, nxpix_global, buf=None, tmp_buf=None)
+    The GPU pointing 'plan' is an argument to map2tod() or tod2map().
+    You'll construct the PointingPrePlan before constructing the PointingPlan.
+    (See "plans and preplans" in the gpu_mm.gpu_mm docstring.)
 
     Constructor arguments:
-        preplan             instance of type gpu_mm.PointingPrePlan
-        xpointing_gpu       shape (3, preplan.nsamp) array, on GPU
-        buf                 1-d uint32 array with length PointingPrePlan.preplan_size
-        tmp_buf             1-d uint32 array with length PointingPrePlan.preplan_size
+     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm.gpu_mm docstring
+     - nypix_global        see "global maps" in gpu_mm.gpu_mm docstring
+     - nxpix_global        see "global maps" in gpu_mm.gpu_mm docstring
+     - periodic_xcoord     see "global maps" in gpu_mm.gpu_mm docstring
+     - buf                 1-d uint32 array with length PointingPrePlan.preplan_size (see below)
+     - tmp_buf             1-d uint32 array with length PointingPrePlan.preplan_size (see below)
 
-    FIXME explain difference between 'buf' and 'tmp_buf'.
+    The 'buf' and 'tmp_buf' arrays are allocated from cupy, and populated by the C++ constructor.
+    If these arrays are None (the default), then they'll be allocated and freed on-the-fly.
+    However, you may find it more efficient to use preallocated buffers, to avoid the overhead
+    of this on-the-fly allocation.
+    
+    IMPORTANT: the PointingPrePlan keeps a reference to the 'buf' array and assumes that it
+    has exclusive access, whereas the 'tmp_buf' array is only used by the constructor temporarily.
+    Therefore, if you're constructing multiple PointingPrePlans, you can use the same 'tmp_buf'
+    for all of them, but 'buf' must be different.
 
-    Inherits from C++ base class:
+    The PointingPrePlan does not keep a reference to the 'xpointing' array.
+
+    Inherits from C++ base class (via pybind11):
         self.nsamp
         self.nypix_global
         self.nxpix_global
@@ -151,7 +481,7 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
         self.get_nmt_cumsum()     intended for unit tests
     """
 
-    # static member
+    # Static member. Currently 1024 (defined in gpu_mm.hpp).
     preplan_size = gpu_mm_pybind11.PointingPrePlan._get_preplan_size()
     
     def __init__(self, xpointing_gpu, nypix_global, nxpix_global, buf=None, tmp_buf=None, periodic_xcoord=True, debug=False):
@@ -165,21 +495,32 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
 
 class PointingPlan(gpu_mm_pybind11.PointingPlan):
     """
-    PointingPlan(preplan, xpointing_gpu, buf=None, tmp_buf=None)
+    The GPU pointing 'plan' is an argument to map2tod() or tod2map().
+    (See "plans and preplans" in the gpu_mm.gpu_mm docstring.)
 
     Constructor arguments:
-        preplan             instance of type gpu_mm.PointingPrePlan
-        xpointing_gpu       shape (3, preplan.nsamp) array, on GPU
-        buf                 1-d uint8 array with length >= preplan.plan_nbytes
-        tmp_buf             1-d uint8 array with length >= preplan.plan_constructor_tmp_nbytes
+     - preplan             instance of class PointingPrePlan
+     - xpointing_gpu       shape (3, nsamp) array, see "xpointing" in gpu_mm.gpu_mm docstring
+     - buf                 1-d uint8 array with length >= preplan.plan_nbytes
+     - tmp_buf             1-d uint8 array with length >= preplan.plan_constructor_tmp_nbytes
 
-    FIXME explain difference between 'buf' and 'tmp_buf'.
+    The 'buf' and 'tmp_buf' arrays are allocated from cupy, and populated by the C++ constructor.
+    If these arrays are None (the default), then they'll be allocated and freed on-the-fly.
+    However, you may find it more efficient to use preallocated buffers, to avoid the overhead
+    of this on-the-fly allocation.
+    
+    IMPORTANT: the PointingPlan keeps a reference to the 'buf' array and assumes that it
+    has exclusive access, whereas the 'tmp_buf' array is only used by the constructor temporarily.
+    Therefore, if you're constructing multiple PointingPlans, you can use the same 'tmp_buf'
+    for all of them, but 'buf' must be different.
 
-    Inherits from C++ base class:
-        self.nsamp          int
+    The PointingPlan does not keep a reference to the 'xpointing' array.
+
+    Inherits from C++ base class (via pybind11):
+        self.nsamp                 int
         self.nypix_global          int
         self.nxpix_global          int
-        self.get_plan_mt()  returns 1-d uint64 array of length preplan.get_nmt_cumsum()[-1]
+        self.get_plan_mt()
         self.__str__()
     """
     
@@ -195,7 +536,36 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
 ####################################################################################################
 
 
+def read_xpointing_npzfile(filename):
+    """
+    Reads a shape (3,nsamp) xpointing array, in an ad hoc .npz file format
+    that I defined in November 2023. I plan to phase out this file format soon!
+    """
+    
+    print(f'Reading xpointing file {filename}')
+        
+    f = np.load(filename)
+    xp = f['xpointing']
+    assert (xp.ndim == 3) and (xp.shape[0] == 3)   # ({x,y,alpha}, ndet, ntod)
+    ndet = xp.shape[1]
+    ntu = xp.shape[2]            # number of time samples 'nt', unpadded
+    ntp = 32 * ((ntu+31) // 32)  # number of time samples 'nt', padded to multiple of 32
+
+    # Nuisance issue: the Nov 2023 file format uses row ordering (x,y,alpha), whereas
+    # we've now switched to ordering (y,x,alpha).
+    
+    xpointing_cpu = np.zeros((3,ndet,ntp), dtype=xp.dtype)
+    xpointing_cpu[0,:,:ntu] = xp[1,:,:]    # FIXME (0,1) index swap here is horrible
+    xpointing_cpu[1,:,:ntu] = xp[0,:,:]    # FIXME (0,1) index swap here is horrible
+    xpointing_cpu[2,:,:ntu] = xp[2,:,:]
+    xpointing_cpu[:,:,ntu:] = xpointing_cpu[:,:,ntu-1].reshape((3,-1,1))
+
+    return xpointing_cpu
+
+
 class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
+    """Old PointingPlan, computed on the CPU. To be deleted soon."""
+    
     def __init__(self, xpointing, ndec, nra, verbose=True):
         assert (ndec % 64) == 0
         assert (nra % 64) == 0
@@ -272,7 +642,9 @@ class PointingPlanTester(gpu_mm_pybind11.PointingPlanTester):
     """
     PointingPlanTester(preplan, xpointing_gpu).
 
-    Only used in unit tests.
+    This class is only used in unit tests, so I didn't write much of a docstring :)
+    For more info, see the C++/CUDA code.
+
     Inherited from C++:
 
       self.nsamp
