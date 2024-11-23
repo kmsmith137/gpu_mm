@@ -97,6 +97,10 @@ data structure, to store a partial sky map, as follows.
 We divide the global map into 64-by-64 "cells". A local map is an arbitrary
 set of cells, packed into a contiguous memory region of length (3*64*64*ncells).
 
+(If nxpix_global or nypix_global is not divisible by 64, then the local map may
+include some "boundary" pixels which are not in the global map. This is allowed,
+and boundary pixels are ignored by the tod2map() and map2tod() operations.)
+
 We define the following data structure (the "local pixelization") which describes 
 which cells are stored, and how cells are mapped to memory addresses:
 
@@ -170,9 +174,6 @@ TODO LIST
 
   - Right now the code is not very well tested! I think testing is my 
     next priority.
-
-  - Currently, nypix_global and nxpix_global must be multiples of 64.
-    (There's no longer a good reason for this, and it would be easy to change.)
 
   - Currently, the number of TOD samples 'nsamp' must be a multiple of 32.
     (I'd like to change this, but it's not totally trivial, and there are a
@@ -370,21 +371,31 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         """
         Returns a trivial LocalPixelization which covers the entire global sky.
         The "local" map will represented as a 3-d contiguous array of shape 
-        (3, nypix_global, nxpix_global).
+        (3, nypix_padded, nxpix_padded), where:
+        
+           nypix_padded = (nypix_global + 63) & ~63   # round up to multiple of 64
+           nxpix_padded = (nxpix_global + 63) & ~63   # round up to multiple of 64
 
         This is useful because map2tod() and tod2map() operate on local maps.
         If you want to operate on a global map instead, you can convert a
         global map to a local map as follows:
 
            global_map = ....    # shape (3, nypix_global, nxpix_global)
+
+           # Pad global map.
+           # This step is only needed if nypix_global or nxpix_global is not a multiple of 64.
+
+           nypix_padded = (nypix_global + 63) & ~63   # round up to multiple of 64
+           nxpix_padded = (nxpix_global + 63) & ~63   # round up to multiple of 64
+           padded_map = cp.zeros((3, nypix_padded, nxpix_padded), dtype = cp.float32)
+           padded_map[:,:nypix_global,:nxpix_global] = global_map
+
            rect_pix = LocalPixelization.make_rectangle(nypix_global, nxpix_global)
            local_map = LocalMap(rect_pix, global_map)
         """
         
         assert nypix_global > 0
         assert nxpix_global > 0
-        assert nypix_global % 64 == 0
-        assert nxpix_global % 64 == 0
 
         nycells = (nypix_global + 63) // 64
         nxcells = (nxpix_global + 63) // 64
@@ -594,8 +605,8 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
             nt = 2**(5-r) * np.random.randint(s//2,s+1)
             
         npix_max = min(nsamp_max//128, 16384)
-        nypix_global = 64 * np.random.randint(npix_max//512, npix_max//128)
-        nxpix_global = 128 * np.random.randint(nypix_global//128 + 2, npix_max//128)
+        nypix_global = np.random.randint(npix_max/8, npix_max//2 + 1)
+        nxpix_global = np.random.randint(nypix_global + 2, npix_max + 1)
         scan_speed = np.random.uniform(0.1, 0.5)
         total_drift = np.random.uniform(0.1*(nxpix_global-nypix_global), (nxpix_global-nypix_global)-2)
                     

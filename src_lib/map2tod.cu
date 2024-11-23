@@ -127,7 +127,7 @@ map2tod_kernel(
 	long offset = valid ? cell_offsets[iycell*nxcells + ixcell] : -1;
 	err = ((offset >= 0) || partial_pixelization) ? err : errflag_not_in_pixelization;
 	
-	// Shared -> global
+	// Global -> shared
 
 	if (offset >= 0) {
 	    for (int y = warpId; y < 64; y += W) {
@@ -165,7 +165,9 @@ map2tod_kernel(
 
 	    // Locate pixel in shared memory.
 	    px.locate(ypix, xpix, iycell, ixcell, err);
-	    
+
+	    // Interpolate local map in shared memory.
+	    // Note: eval_tqu() returns zero if pixel access is outside current map cell.
 	    T t = (1-px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy0, px.ix0, cos_2a, sin_2a);
 	    t +=  (1-px.dy) *   (px.dx) * eval_tqu(shmem, px.iy0, px.ix1, cos_2a, sin_2a);
 	    t +=    (px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy1, px.ix0, cos_2a, sin_2a);

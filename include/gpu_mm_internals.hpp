@@ -87,7 +87,18 @@ template<> struct dtype<int>
 
 // -------------------------------------------------------------------------------------------------
 //
-// FIXME these functions could use more comments!
+// The rest of this file consists of some __device__ inline classes:
+//
+//  - pixel_locator: (ypix, xpix) -> (iy0, iy1, ix0, ix1, dy, dx)
+//      [ given nypix_global, nx_global, periodic_xcoord ]
+//
+//  - cell_enumerator: called by planner to map (ypix, xpix) -> (up to 4 cells)
+//
+//  - map_evaluator: (local_map, pixel_locator output) -> (interpolated map value)
+//      [ used in unplanned_map2tod(), reference_map2tod(), but not the "main" mapt2tod() ]
+//
+//  - map_accumulator: (local_map, pixel_locator output, tod value) -> (updates map)
+//      [ used in unplanned_tod2map(), reference_tod2map(), but not the "main" mapt2tod() ]
 
 
 template<typename T>
@@ -109,6 +120,7 @@ struct pixel_locator
 	: nypix_global(nypix_global_), nxpix_global(nxpix_global_), periodic_xcoord(periodic_xcoord_)
     { }
 
+    // Locate pixel in global coordinates.
     __host__ __device__ inline void locate(T ypix, T xpix, uint &err)
     {
 	iy0 = int(ypix);
@@ -206,7 +218,7 @@ struct cell_enumerator
 };
 
 
-// map_evaluator: used in unplanned_map2tod(), reference_map2tod(),
+// map_evaluator: used in unplanned_map2tod(), reference_map2tod().
 // (Not used in the "main" map2tod().)
 
 template<typename T, bool Device>

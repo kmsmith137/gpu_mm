@@ -41,6 +41,8 @@ class PointingInstance:
 
         # FIXME temporary convenience
         self.lpix = gpu_mm.LocalPixelization.make_rectangle(nypix_global, nxpix_global, self.periodic_xcoord)
+        self.nypix_padded = (self.nypix_global + 63) & ~63   # round up to multiple of 64
+        self.nxpix_padded = (self.nxpix_global + 63) & ~63   # round up to multiple of 64
 
     @classmethod
     def from_toy_pointing(cls, ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, debug_plan=False):
@@ -197,7 +199,7 @@ class PointingInstance:
         
             
     def test_map2tod(self):
-        m = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
+        m = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
         
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
@@ -223,9 +225,9 @@ class PointingInstance:
         
     def test_tod2map(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        m0 = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
+        m0 = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
 
-        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m0))  # GPU -> GPU
+        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m0))  # GPU -> CPU
         gpu_mm.tod2map(lmap_ref, cp.asnumpy(tod), self.xpointing_cpu, plan='reference')
         m_ref = cp.asarray(lmap_ref.arr)  # CPU -> GPU
 
@@ -307,9 +309,9 @@ class PointingInstance:
         self._time_tod2map(local_map, tod, plan=self.plan, label='tod2map')
 
         
-    def time_all(self, ):
+    def time_all(self):
         self.time_pointing_preplan()
         self.time_pointing_plan()
-        self.time_map2tod(time_old=time_old)
-        self.time_tod2map(time_old=time_old)
+        self.time_map2tod()
+        self.time_tod2map()
 

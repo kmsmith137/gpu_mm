@@ -29,7 +29,6 @@ void check_nypix_global(long nypix_global, const char *where)
 {
     xassert(nypix_global > 0);
     xassert(nypix_global <= 64*1024);
-    xassert((nypix_global % 64) == 0);
 }
 
 
@@ -37,7 +36,6 @@ void check_nxpix_global(long nxpix_global, const char *where)
 {
     xassert(nxpix_global > 0);
     xassert(nxpix_global <= 64*1024);
-    xassert((nxpix_global % 64) == 0);
 }
 
 

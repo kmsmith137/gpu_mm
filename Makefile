@@ -128,7 +128,7 @@ install: src_python/gpu_mm/gpu_mm_pybind11.so src_python/gpu_mm/libgpu_mm.so
 # Not part of 'make all', needs explicit 'make source_files.txt'
 source_files.txt: .FORCE
 	rm -f source_files.txt
-	shopt -s nullglob && for d in $(SRCDIRS); do for f in $$d/*.cu $$d/*.hpp $$d/*.cuh; do echo $$f; done; done >$@
+	shopt -s nullglob && for d in $(SRCDIRS); do for f in $$d/*.cu $$d/*.hpp $$d/*.cuh $$d/*.py; do echo $$f; done; done >$@
 
 clean:
 	rm -f $(LIBFILES) $(PYEXTFILES) source_files.txt *~
