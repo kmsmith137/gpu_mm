@@ -236,8 +236,6 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
     
           - None: use plan-free map2tod code (slower)
           - 'reference': use CPU-based reference code (intended for testing)
-          - 'old' or OldPointingPlan code: use old code from Nov 2023
-             (will be removed soon)
     
        - partial_pixelization: does caller intend to run the map-maker
           on a subset of the sky covered by the observations?
@@ -261,13 +259,6 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
         gpu_mm_pybind11.unplanned_map2tod(tod, larr, xpointing, lpix, errflag, partial_pixelization)
     elif plan == 'reference':
         gpu_mm_pybind11.reference_map2tod(tod, larr, xpointing, lpix, partial_pixelization)
-    elif (plan == 'old') or isinstance(plan, OldPointingPlan):
-        assert lpix.is_simple_rectangle()
-        assert larr.shape == (3, 64*lpix.nycells, 64*lpix.nxcells)
-        assert not lpix.periodic_xcoord
-        if isinstance(plan, OldPointingPlan):
-            assert (plan.ndec, plan.nra) == (64*lpix.nycells, 64*lpix.nxcells)
-        gpu_mm_pybind11.old_map2tod(tod, larr, xpointing)
     else:
         raise RuntimeError(f"Bad 'plan' argument to map2tod(): {plan}")
 
@@ -291,8 +282,6 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
     
           - None: use plan-free map2tod code (slower)
           - 'reference': use CPU-based reference code (intended for testing)
-          - 'old' or OldPointingPlan code: use old code from Nov 2023
-             (will be removed soon)
     
        - partial_pixelization: does caller intend to run the map-maker
           on a subset of the sky covered by the observations?
@@ -316,12 +305,6 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
         gpu_mm_pybind11.unplanned_tod2map(larr, tod, xpointing, lpix, errflag, partial_pixelization)
     elif plan == 'reference':
         gpu_mm_pybind11.reference_tod2map(larr, tod, xpointing, lpix, partial_pixelization)
-    elif isinstance(plan, OldPointingPlan):
-        assert lpix.is_simple_rectangle()
-        assert larr.shape == (3, 64*lpix.nycells, 64*lpix.nxcells)
-        assert not lpix.periodic_xcoord
-        assert (plan.ndec, plan.nra) == (64*lpix.nycells, 64*lpix.nxcells)
-        gpu_mm_pybind11.old_tod2map(larr, tod, xpointing, plan.plan_cltod_list, plan.plan_quadruples)
     else:
         raise RuntimeError(f"Bad 'plan' argument to tod2map(): {plan}")
 
@@ -561,25 +544,6 @@ def read_xpointing_npzfile(filename):
     xpointing_cpu[:,:,ntu:] = xpointing_cpu[:,:,ntu-1].reshape((3,-1,1))
 
     return xpointing_cpu
-
-
-class OldPointingPlan(gpu_mm_pybind11.OldPointingPlan):
-    """Old PointingPlan, computed on the CPU. To be deleted soon."""
-    
-    def __init__(self, xpointing, ndec, nra, verbose=True):
-        assert (ndec % 64) == 0
-        assert (nra % 64) == 0
-        gpu_mm_pybind11.OldPointingPlan.__init__(self, xpointing, ndec, nra, verbose)
-        self.plan_cltod_list = cp.asarray(self._plan_cltod_list)  # CPU -> GPU
-        self.plan_quadruples = cp.asarray(self._plan_quadruples)  # CPU -> GPU
-        self.ndec = ndec
-        self.nra = nra
-
-    def map2tod(self, tod, m, xpointing):
-        gpu_mm_pybind11.old_map2tod(tod, m, xpointing)
-            
-    def tod2map(self, m, tod, xpointing):
-        gpu_mm_pybind11.old_tod2map(m, tod, xpointing, self.plan_cltod_list, self.plan_quadruples)
 
 
 class ToyPointing(gpu_mm_pybind11.ToyPointing):

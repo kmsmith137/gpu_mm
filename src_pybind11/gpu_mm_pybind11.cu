@@ -169,15 +169,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("partial_pixelization"));
 
-    // Note: old_map2tod() always uses T=float.
-    m.def("old_map2tod", &gpu_mm::launch_old_map2tod,
-	  py::arg("tod"), py::arg("map"), py::arg("xpointing"));
-
-    // Note: old_map2tod() always uses T=float.
-    m.def("old_tod2map", &gpu_mm::launch_old_tod2map,
-	  py::arg("map"), py::arg("tod"), py::arg("xpointing"),
-	  py::arg("plan_cltod_list"), py::arg("plan_quadruples"));
-
     
     // ---------------------------------------------------------------------------------------------
     //
@@ -185,7 +176,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     using ToyPointing = gpu_mm::ToyPointing<Tmm>;
     using PointingPlanTester = gpu_mm::PointingPlanTester;
-    using OldPointingPlan = gpu_mm::OldPointingPlan;
     
     
     py::class_<ToyPointing>(m, "ToyPointing")
@@ -225,14 +215,6 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_static("get_constructor_tmp_nbytes", &PointingPlanTester::get_constructor_tmp_nbytes, py::arg("preplan"))
 		    
 	.def("__str__", &PointingPlanTester::str)
-    ;
-
-    py::class_<OldPointingPlan>(m, "OldPointingPlan")
-	.def(py::init<const Array<float> &, int, int, bool>(),
-	     py::arg("xpointing"), py::arg("ndec"), py::arg("nra"), py::arg("verbose") = false)
-
-	.def_readonly("_plan_cltod_list", &OldPointingPlan::plan_cltod_list)
-	.def_readonly("_plan_quadruples", &OldPointingPlan::plan_quadruples)
     ;
 					   
     m.def("test_plan_iterator", &gpu_mm::test_plan_iterator,

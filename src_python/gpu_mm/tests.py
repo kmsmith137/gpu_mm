@@ -136,11 +136,6 @@ class PointingInstance:
     @functools.cached_property
     def plan_tester(self):
         return gpu_mm.PointingPlanTester(self.preplan, self.xpointing_gpu)
-
-    @functools.cached_property
-    def old_plan(self):
-        print('    Making OldPointingPlan (slow, done on CPU)')
-        return  gpu_mm.OldPointingPlan(self.xpointing_cpu, self.nypix_global, self.nxpix_global)
     
     
     def _compare_arrays(self, arr1, arr2):
@@ -201,7 +196,7 @@ class PointingInstance:
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
         
             
-    def test_map2tod(self, test_old=False):
+    def test_map2tod(self):
         m = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         
         tod_ref = np.random.normal(size=self.tod_shape)
@@ -212,9 +207,6 @@ class PointingInstance:
 
         self._test_map2tod(m, tod_ref, plan=None, suffix='_unplanned')
         self._test_map2tod(m, tod_ref, plan=self.plan, suffix='')
-
-        if test_old:
-            self._test_map2tod(m, tod_ref, plan='old', suffix='_old')
 
 
     def _test_tod2map(self, tod, m0, m_ref, plan, suffix):
@@ -229,7 +221,7 @@ class PointingInstance:
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
         
         
-    def test_tod2map(self, test_old=False):
+    def test_tod2map(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m0 = cp.random.normal(size=(3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
 
@@ -240,18 +232,14 @@ class PointingInstance:
         self._test_tod2map(tod, m0, m_ref, plan=None, suffix='_unplanned')
         self._test_tod2map(tod, m0, m_ref, plan=self.plan, suffix='')
 
-        if test_old:
-            self._test_tod2map(tod, m0, m_ref, plan=self.old_plan, suffix='_old')
-
         
     def test_all(self):
-        test_old = True   # FIXME define command-line flag
         print(f'    {self.plan}')
         self.test_pointing_preplan()
         self.test_pointing_plan()
         self.test_plan_iterator()
-        self.test_map2tod(test_old=test_old)
-        self.test_tod2map(test_old=test_old)
+        self.test_map2tod()
+        self.test_tod2map()
 
         
     def time_pointing_preplan(self):
@@ -287,16 +275,13 @@ class PointingInstance:
             print(f'    {label}: {1000*dt} ms')
         
 
-    def time_map2tod(self, time_old=False):
+    def time_map2tod(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         local_map = gpu_mm.LocalMap(self.lpix, m)
 
         self._time_map2tod(tod, local_map, plan=None, label='unplanned_map2tod')
         self._time_map2tod(tod, local_map, plan=self.plan, label='map2tod')
-
-        if time_old:
-            self._time_map2tod(tod, local_map, plan='old', label='old_map2tod (does not use a LocalPixelization)')
 
 
     def _time_tod2map(self, local_map, tod, plan, label):
@@ -310,7 +295,7 @@ class PointingInstance:
             print(f'    {label}: {1000*dt} ms')
 
         
-    def time_tod2map(self, time_old=False):
+    def time_tod2map(self):
         # Note: we don't use a zeroed timestream, since tod2map() contains an optimization
         # which may give artificially fast timings when run on an all-zeroes timestream.
         
@@ -321,11 +306,8 @@ class PointingInstance:
         self._time_tod2map(local_map, tod, plan=None, label='unplanned_tod2map')
         self._time_tod2map(local_map, tod, plan=self.plan, label='tod2map')
 
-        if time_old:
-            self._time_tod2map(local_map, tod, plan=self.old_plan, label='old_tod2map (uses plan precomputed on cpu)')
-
+        
     def time_all(self, ):
-        time_old = True    # FIXME define command-line flag
         self.time_pointing_preplan()
         self.time_pointing_plan()
         self.time_map2tod(time_old=time_old)

@@ -47,7 +47,6 @@ HFILES = \
 
 OFILES = \
   src_lib/LocalPixelization.o \
-  src_lib/OldPointingPlan.o \
   src_lib/PointingPlan.o \
   src_lib/PointingPlanTester.o \
   src_lib/PointingPrePlan.o \
@@ -57,14 +56,12 @@ OFILES = \
   src_lib/gpu_point.o \
   src_lib/gpu_utils.o \
   src_lib/map2tod.o \
-  src_lib/map2tod_old.o \
   src_lib/map2tod_reference.o \
   src_lib/map2tod_unplanned.o \
   src_lib/misc.o \
   src_lib/pycufft.o \
   src_lib/test_plan_iterator.o \
   src_lib/tod2map.o \
-  src_lib/tod2map_old.o \
   src_lib/tod2map_reference.o \
   src_lib/tod2map_unplanned.o
 
