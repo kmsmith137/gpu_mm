@@ -62,7 +62,6 @@ OFILES = \
   src_lib/map2tod_unplanned.o \
   src_lib/misc.o \
   src_lib/pycufft.o \
-  src_lib/scratch.o \
   src_lib/test_plan_iterator.o \
   src_lib/tod2map.o \
   src_lib/tod2map_old.o \
