@@ -53,6 +53,7 @@ OFILES = \
   src_lib/ToyPointing.o \
   src_lib/check_arguments.o \
   src_lib/cuts.o \
+  src_lib/expand_dynamic_map.o \
   src_lib/gpu_point.o \
   src_lib/gpu_utils.o \
   src_lib/map2tod.o \

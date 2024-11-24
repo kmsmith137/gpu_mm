@@ -315,3 +315,181 @@ class PointingInstance:
         self.time_map2tod()
         self.time_tod2map()
 
+
+####################################################################################################
+
+
+def make_random_npix():
+    """
+    Usage:
+       nypix_global, nycells = make_random_npix()
+       nxpix_global, nxcells = make_random_npix()
+    """
+
+    # Randomly choose ncells.
+    if np.random.uniform() < 0.05:
+        ncells = 1
+    elif np.random.uniform() < 0.1:
+        ncells = 1024
+    else:
+        ncells = np.random.randint(1, 1025)
+
+    # Randomly choose npix_global.
+    if np.random.uniform() < 0.05:
+        npix_global = 64*ncells - 63
+    elif np.random.uniform() < 0.1:
+        npix_global = 64*ncells
+    elif np.random.uniform() < 0.4:
+        npix_global = np.random.randint(64*ncells-63, 64*ncells+1)
+    elif np.random.uniform() < 0.05:
+        npix_global = 64*1024
+    else:
+        npix_global = np.random.randint(64*ncells-63, 64*1024+1)
+
+    return npix_global, ncells
+
+
+def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
+    """Returns a 'plan_mt' array with no associated xpointing. 
+
+    If 'nmt' is None, then nmt will be randomly generated.
+    Currently only used by test_expand_dynamic_map()."""
+    
+    nycells = (nypix_global + 63) // 64
+    nxcells = (nxpix_global + 63) // 64
+    ncells_tot = nycells * nxcells
+    ncells_hit_max = ncells_tot if (nmt is None) else min(ncells_tot,nmt)
+
+    # ncells_hit
+    if np.random.uniform() < 0.05:
+        ncells_hit = 1
+    elif np.random.uniform() < 0.05:
+        ncells_hit = ncells_hit_max
+    else:
+        ncells_hit = np.random.randint(1, ncells_hit_max+1)
+
+    # nmt
+    if nmt is None:
+        if np.random.uniform() < 0.1:
+            nmt = ncells_hit
+        else:
+            nmt = np.random.randint(ncells_hit, 1024*1024)
+            
+    # print(f'{ncells_hit=}')
+    # print(f'{nmt=}')
+
+    # icell = 1-d array of length 'ncells_hit', containing 20-bit uints.
+    iycell, ixcell = np.mgrid[:nycells, :nxcells]
+    icell = (iycell << 10) + ixcell
+    icell = np.random.permutation(icell.flatten())[:ncells_hit]
+
+    # Reminder: mt bit layout is
+    #   Low 10 bits = Global xcell index
+    #   Next 10 bits = Global ycell index
+    #   Next 26 bits = Primary TOD cache line index
+    #   Next bit = mflag (does cache line overlap multiple map cells?)
+    #   Next bit = zflag (mflag && first appearance of cache line)
+    #   Total: 48 bits
+    
+    plan_mt = np.zeros(nmt, dtype=np.uint)
+    plan_mt[:ncells_hit] = icell
+    plan_mt[ncells_hit:] = icell[np.random.randint(0, ncells_hit, size=nmt-ncells_hit)]
+    plan_mt = np.sort(plan_mt)
+
+    # Higher bits just junk for now
+    plan_mt |= np.random.randint(0, 1<<28, size=nmt, dtype=np.uint) << 20
+
+    return plan_mt
+
+
+def make_random_cell_offsets(nycells, nxcells):
+    """Returns (cell_offsets_cpu, ncells_curr). Currently only used by test_expand_dynamic_map()."""
+    
+    # Randomly initialize 'cell_offsets' to either (-1) or (-2)
+    p0 = np.random.uniform(-0.2, 1.2)
+    x = np.random.uniform(size=(nycells,nxcells))
+    cell_offsets = np.where(x < p0, -1, -2)
+
+    # Randomly generated an unordered set of current cells.
+    #  ncells_curr = integer between 0 and (nycells*nxcells), inclusive
+    #  iycells = 1-d integer-valued array of length ncells_curr
+    #  ixcells = 1-d integer-valued array of length ncells_curr
+    
+    p1 = np.random.uniform(-0.2, 1.2)
+    x = np.random.uniform(size=(nycells,nxcells))
+    mask = np.where(x < p1)
+    iycells, ixcells = np.mgrid[:nycells,:nxcells]
+    iycells = iycells[mask]
+    ixcells = ixcells[mask]
+    ncells_curr = len(iycells)    # also equal to len(ixcells)
+
+    # Assign an ordering to the current cells
+    cell_perm = np.random.permutation(ncells_curr)
+    cell_offsets[iycells,ixcells] = cell_perm * (3*64*64)
+    
+    return cell_offsets, ncells_curr
+    
+
+def test_one_expand_dynamic_map():
+    
+    ### Part 1: make random test instance (plan_nmt_cpu, cell_offsets_cpu, global_ncells_cpu) ###
+    
+    nypix_global, nycells = make_random_npix()
+    nxpix_global, nxcells = make_random_npix()
+    
+    plan_mt_cpu = make_random_plan_mt(nypix_global, nxpix_global)
+    cell_offsets_cpu, global_ncells_cpu = make_random_cell_offsets(nycells, nxcells)
+
+    print(f'test_expand_dynamic_map: npix_global={(nypix_global,nxpix_global)}, ncells={(nycells,nxcells)}, nmt={len(plan_mt_cpu)}, ncells_curr={global_ncells_cpu}')
+
+    ### Part 2: run GPU kernel ###
+
+    plan_mt_gpu = cp.array(plan_mt_cpu)
+    cell_offsets_gpu = cp.array(cell_offsets_cpu)
+    global_ncells_gpu = cp.full((1,), global_ncells_cpu, dtype=cp.uint32)
+    
+    new_ncells_gpu = gpu_mm_pybind11.expand_dynamic_map(global_ncells_gpu, cell_offsets_gpu, plan_mt_gpu)
+    cell_offsets_gpu = cp.asnumpy(cell_offsets_gpu)   # GPU -> CPU
+
+    ### Part 3: figure out which cell_indices should have been updated ###
+    
+    # Output of this part is a pair of 1-d arrays (ixcells, iycells).
+    # The two arrays have the same length (equal to the number of new cells)
+    #
+    # Reminder: mt bit layout is
+    #   Low 10 bits = Global xcell index
+    #   Next 10 bits = Global ycell index
+    #     ...
+    
+    icells = plan_mt_cpu & ((1 << 20) - 1)
+    icells = np.unique(icells)
+    ixcells = icells & ((1<<10) - 1)
+    iycells = icells >> 10
+
+    mask = np.logical_and(ixcells < nxcells, iycells < nycells)
+    ixcells = ixcells[mask]
+    iycells = iycells[mask]
+    
+    mask = (cell_offsets_cpu[iycells,ixcells] == -1)
+    ixcells = ixcells[mask]
+    iycells = iycells[mask]
+
+    ### Part 4: check outputs of GPU kernel ###
+
+    nnew = len(ixcells)
+    # print(f'{new_ncells_gpu=} (expected {global_ncells_cpu} + {nnew} = {global_ncells_cpu+nnew})')
+    assert(new_ncells_gpu == global_ncells_cpu + nnew)
+    assert(cp.asarray(global_ncells_gpu)[0] == global_ncells_cpu + nnew)
+
+    new_offsets = np.sort(cell_offsets_gpu[iycells,ixcells])  # note np.sort() here
+    expected_offsets = (global_ncells_cpu + np.arange(nnew)) * (3*64*64)
+    assert np.all(new_offsets == expected_offsets)
+                
+    mask_2d = (cell_offsets_gpu == cell_offsets_cpu)
+    mask_2d[iycells,ixcells] = True
+    assert np.all(mask_2d)
+
+
+def test_expand_dynamic_map():
+    for _ in range(100):
+        test_one_expand_dynamic_map()

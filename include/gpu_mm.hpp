@@ -210,6 +210,14 @@ extern void reference_tod2map(
 );
 
 
+// Returns updated value of 'global_ncells'.
+extern uint expand_dynamic_map(
+    ksgpu::Array<uint> &global_ncells,        // shape (1,) on GPU
+    ksgpu::Array<long> &cell_offsets,         // shape (nycells, nxcells) on GPU
+    const ksgpu::Array<ulong> &plan_mt        // shape (nmt,) on GPU
+);
+
+
 // -----------------------------------------------------------------------------
 //
 // Internals + testing

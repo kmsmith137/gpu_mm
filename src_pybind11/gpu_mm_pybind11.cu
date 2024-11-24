@@ -169,6 +169,9 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("partial_pixelization"));
 
+    m.def("expand_dynamic_map", &gpu_mm::expand_dynamic_map,
+	  py::arg("global_ncells"), py::arg("cell_offsets"), py::arg("plan_mt"));
+    
     
     // ---------------------------------------------------------------------------------------------
     //

@@ -182,11 +182,6 @@ TODO LIST
   - Helper functions for converting maps between different pixelizations
     (either local or global, with or without wrapping logic).
 
-  - A DynamicLocalPixelization class which adds map cells on-the-fly,
-    as tod2map() gets called sequentially with different TODs. This could
-    be used on the first iteration of a map maker to assign a LocalPixelization
-    to each GPU.
-
   - An MPIPixelization class with all-to-all logic for distirbuting/reducing
     maps across GPUs.
 
@@ -324,7 +319,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
 
     and the following members, which describe a local pixelization (i.e.
     subset of 64-by-64 cells in the global pixelization, see "local maps"
-    in the gpu_mm docstirng):
+    in the gpu_mm docstring):
 
       cell_offsets   2-d integer-valued array indexed by (iycell, ixcell)
       ystride        integer
@@ -346,7 +341,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
     #   polstride         int
     #   nycells           int (same as cell_offsets.shape[0])
     #   nxcells           int (same as cell_offsets.shape[0])
-    #   npix              int
+    #   npix              int (counts only local pixels, does not include factor 3 from TQU)
     
     def is_simple_rectangle(self):
         """
@@ -431,6 +426,13 @@ class LocalMap:
         self.arr = arr
         
         # FIXME should add some error-checking on arr.shape, arr.dtype
+
+
+####################################################################################################
+
+        
+
+####################################################################################################
 
 
 class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
