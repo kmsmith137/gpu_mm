@@ -24,7 +24,7 @@ def test_plan_iterator(niter=100):
         print(f'test_plan_iterator({ncells=}, {min_nmt_per_cell=}, {max_nmt_per_cell=}, {nmt_per_block=}, {warps_per_threadblock=}')
         gpu_mm_pybind11.test_plan_iterator(plan_mt, nmt_per_block, warps_per_threadblock)
 
-        
+
 class PointingInstance:
     def __init__(self, xpointing_cpu, xpointing_gpu, nypix_global, nxpix_global, name, debug_plan=False):
         """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
@@ -221,7 +221,7 @@ class PointingInstance:
         epsilon = self._compare_arrays(local_map.arr, m_ref)
         print(f'    test_tod2map{suffix}: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        
+
         
     def test_tod2map(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
@@ -234,6 +234,83 @@ class PointingInstance:
         self._test_tod2map(tod, m0, m_ref, plan=None, suffix='_unplanned')
         self._test_tod2map(tod, m0, m_ref, plan=self.plan, suffix='')
 
+
+    def test_dynamic_map(self):
+        """Heler method called by test_tod2map()."""
+
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
+        mref = np.zeros(shape=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
+        lmap_ref = gpu_mm.LocalMap(self.lpix, mref)
+        gpu_mm.tod2map(lmap_ref, cp.asnumpy(tod), self.xpointing_cpu, plan='reference')
+        
+        # Reminder: the TOD can either be 1-d (time,) or 2-d (detector, time).
+        nt = tod.shape[-1]
+
+        # Let's divide the TOD into chunks along its time axis.
+        nt_chunks = [ ]
+        nt_remaining = nt
+        
+        while sum(nt_chunks) < nt:
+            n = 32 * np.min(np.random.randint(1, nt_remaining//16 + 2, size=6))
+            n = int(min(n, nt_remaining))
+            nt_chunks.append(n)
+            nt_remaining -= n
+        
+        print(f'    test_dynamic_map: {nt} -> {nt_chunks}')
+    
+        # Loop over chunks (FIXME test cell_mask).
+        
+        # Note initial_ncells=1 here, in order to exercise reallocation mechanism.
+        dmap = gpu_mm.DynamicMap(self.nypix_global, self.nxpix_global, self.dtype, cell_mask=None, periodic_xcoord=self.periodic_xcoord, initial_ncells=1)
+        nt_cumul = 0
+        
+        for nt_chunk in nt_chunks:
+            tod_chunk = cp.copy(tod[..., nt_cumul:(nt_cumul+nt_chunk)])
+            xpointing_chunk = cp.copy(self.xpointing_gpu[..., nt_cumul:(nt_cumul+nt_chunk)])
+            
+            preplan_chunk = gpu_mm.PointingPrePlan(xpointing_chunk, self.nypix_global, self.nxpix_global,
+                                                   periodic_xcoord=self.periodic_xcoord, debug=self.debug_plan)
+            
+            plan_chunk = gpu_mm.PointingPlan(preplan_chunk, xpointing_chunk, debug=self.debug_plan)
+
+            gpu_mm.tod2map(dmap, tod_chunk, xpointing_chunk, plan_chunk, debug=True)
+            print(f'    XXX {nt_chunk} -> {dmap.ncells_curr}')            
+            nt_cumul += nt_chunk
+
+        # DynamicMap -> LocalMap
+        lmap = dmap.finalize()
+        lpix = lmap.pixelization
+        lmap_cpu = cp.asnumpy(lmap.arr)
+        
+        # Now some ad hoc code, to convert the dynamic map ('lmap_cpu') to a rectangular pixelization ('mdyn').
+        # FIXME define a systematic API for this.
+        
+        mdyn = np.zeros(shape=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
+            
+        # iycell_list, ixcell_list, src_offset_list = 1-d arrays.
+        mask = (lpix.cell_offsets_cpu >= 0)
+        iycell_grid, ixcell_grid = np.mgrid[:lpix.nycells, :lpix.nxcells]
+        iycell_list = iycell_grid[mask]
+        ixcell_list = ixcell_grid[mask]
+        src_offset_list = lpix.cell_offsets_cpu[mask]
+
+        assert lpix.ystride == 64
+        assert lpix.polstride == 64*64
+        
+        # Loop over cells in dynamic map.
+        for iycell, ixcell, src_offset in zip(iycell_list, ixcell_list, src_offset_list):
+            dst = mdyn[:, (iycell*64):(iycell*64+64), (ixcell*64):(ixcell*64+64)]
+            src = lmap_cpu[(src_offset):(src_offset+3*64*64)].reshape((3,64,64))
+            dst[:,:,:] = src[:,:,:]
+
+        # Compare 'mref' and 'mdyn'.
+        num = np.sum(np.abs(mref-mdyn))
+        den = np.sum(np.abs(mref)) + np.sum(np.abs(mdyn))
+        assert den > 0
+        epsilon = float(num/den)   # convert zero-dimensional array -> scalar
+        print(f'    test_dynamic_map: {epsilon=}')
+        assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
+        
         
     def test_all(self):
         print(f'    {self.plan}')
@@ -242,6 +319,7 @@ class PointingInstance:
         self.test_plan_iterator()
         self.test_map2tod()
         self.test_tod2map()
+        self.test_dynamic_map()
 
         
     def time_pointing_preplan(self):

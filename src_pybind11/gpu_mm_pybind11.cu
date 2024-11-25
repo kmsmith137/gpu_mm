@@ -84,11 +84,15 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("periodic_xcoord", &LocalPixelization::periodic_xcoord)
 
 	// Local pixelization
+	// Note: npix is mutable, since DynamicMap may change it.
 	.def_readonly("ystride", &LocalPixelization::ystride)
 	.def_readonly("polstride", &LocalPixelization::polstride)
 	.def_readonly("nycells", &LocalPixelization::nycells)
 	.def_readonly("nxcells", &LocalPixelization::nxcells)
-	.def_readonly("npix",  &LocalPixelization::npix, "counts only local pixels, does not include factor 3 from TQU.")
+	.def_readwrite("npix",  &LocalPixelization::npix, "counts only local pixels, does not include factor 3 from TQU.")
+
+	// FIXME temporary kludge needed for DynamicMap, will go away later.
+	.def("copy_gpu_offsets_to_cpu", &LocalPixelization::copy_gpu_offsets_to_cpu);
     ;
 
     
@@ -129,6 +133,9 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix_global", &PointingPlan::nypix_global, "Number of y-pixels")
 	.def_readonly("nxpix_global", &PointingPlan::nxpix_global, "Number of x-pixels")
+	
+	.def("_check_errflags", &PointingPlan::_check_errflags, py::arg("where"),
+	     "I needed this once for tracking down a bug.")
 
 	// We wrap get_plan_mt() with the constraint on_gpu=false.
 	// This is necessary because I wrote a to-python converter for numpy arrays, but not cupy arrays.
@@ -136,7 +143,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	
 	.def("get_plan_mt", [](const PointingPlan &p) { return p.get_plan_mt(false); },
 	     "Length nmt_cumsum[-1] array, coarsely sorted by map cell")
-	     
+
 	.def("__str__", &PointingPlan::str)
     ;
 
@@ -171,6 +178,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     m.def("expand_dynamic_map", &gpu_mm::expand_dynamic_map,
 	  py::arg("global_ncells"), py::arg("cell_offsets"), py::arg("plan_mt"));
+
+    // FIXME temporary kludge that will go away later.
+    m.def("expand_dynamic_map2", &gpu_mm::expand_dynamic_map2,
+	  py::arg("global_ncells"), py::arg("local_pixelization"), py::arg(""));
     
     
     // ---------------------------------------------------------------------------------------------

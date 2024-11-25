@@ -1,5 +1,7 @@
 #include "../include/gpu_mm.hpp"
+
 #include <ksgpu/xassert.hpp>
+#include <ksgpu/cuda_utils.hpp>
 
 using namespace std;
 using namespace ksgpu;
@@ -64,8 +66,14 @@ LocalPixelization::LocalPixelization(
     
     if (!case1 && !case2)
 	throw runtime_error("LocalPixelization constructor: expected either ystride to be a multiple of (3*polstride), or polstride to be a multiple of (64*ystride)");
-    
-    // The rest of the constructor intiializes 'npix', and does a consistency check on the cell_offsets.
+
+    this->_init_npix("LocalPixelization constructor");
+}
+
+
+void LocalPixelization::_init_npix(const char *where)
+{
+    // Intialize 'npix', and do a consistency check on the cell_offsets.
     // This isn't a complete consistency check, but it should catch mis-specified cell_offsets in practice.
     // FIXME some day, I may strengthen this check.
 
@@ -88,9 +96,16 @@ LocalPixelization::LocalPixelization(
     max_offset += 63*ystride;
     max_offset += 63;
 
-    if (max_offset != (3*npix-1))
-	throw runtime_error("LocalPixelization constructor: something is wrong with the cell_offsets -- the cells do not fit together contiguously");
+    if ((npix > 0) && (max_offset != (3*npix-1)))
+	throw runtime_error(string(where) + ": something is wrong with the cell_offsets -- the cells do not fit together contiguously");
 }
 
 
+void LocalPixelization::copy_gpu_offsets_to_cpu()
+{
+    CUDA_CALL(cudaMemcpy(this->cell_offsets_cpu.data, this->cell_offsets_gpu.data, nycells * nxcells * sizeof(long), cudaMemcpyDefault));
+    this->_init_npix("LocalPixelization::copy_gpu_offsets_to_cpu()");
+}
+
+	
 }  // namespace gpu_mm

@@ -182,8 +182,8 @@ map2tod_kernel(
 	__syncthreads();
     }
 
-    // No need for __syncthreads() before calling write_errflags().
-    
+    // No need for __syncthreads() before write_errflags(), since main loop has __syncthreads() at bottom.
+    // Reminder: write_errflags() assumes thread layout is {32,W,1}, and block layout is {B,1,1}.
     write_errflags(errflags, (uint *)shmem, err);
 }
 

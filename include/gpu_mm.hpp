@@ -40,14 +40,20 @@ struct LocalPixelization
     const bool periodic_xcoord;
 
     // Local pixelization
-    const ksgpu::Array<long> cell_offsets_cpu;
-    const ksgpu::Array<long> cell_offsets_gpu;
+    ksgpu::Array<long> cell_offsets_cpu;   // not 'const', since DynamicMap can modify
+    ksgpu::Array<long> cell_offsets_gpu;   // not 'const', since DynamicMap can modify
     const long ystride;
     const long polstride;
     
     long nycells;   // same as cell_offsets.shape[0]
     long nxcells;   // same as cell_offsets.shape[1]
     long npix;      // counts only local pixels, does not include factor 3 from TQU.
+
+    // FIXME temporary kludge needed for DynamicMap, will go away later.
+    void copy_gpu_offsets_to_cpu();
+
+    // Helper, called by constructor, and by copy_gpu_offsets_to_cpu().
+    void _init_npix(const char *where);
 };
 
 
@@ -137,6 +143,9 @@ struct PointingPlan
     
     // Used in unit tests.
     ksgpu::Array<ulong> get_plan_mt(bool gpu) const;
+    
+    // I needed this once for tracking down a bug.
+    void _check_errflags(const std::string &where) const;
 
     std::string str() const;
 };
@@ -215,6 +224,15 @@ extern uint expand_dynamic_map(
     ksgpu::Array<uint> &global_ncells,        // shape (1,) on GPU
     ksgpu::Array<long> &cell_offsets,         // shape (nycells, nxcells) on GPU
     const ksgpu::Array<ulong> &plan_mt        // shape (nmt,) on GPU
+);
+
+// FIXME temporary kludge that will go away later.
+// WARNING: leaves 'local_pixelization' in an inconsistent state.
+// Returns updated value of 'global_ncells'.
+extern uint expand_dynamic_map2(
+    ksgpu::Array<uint> &global_ncells,        // shape (1,) on GPU
+    LocalPixelization &local_pixelization,
+    const PointingPlan &plan
 );
 
 

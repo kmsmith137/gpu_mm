@@ -242,7 +242,7 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
           - if True, then xpointing values outside the local_map are
             treated as zeroed pixels.
     """
-    
+
     assert isinstance(local_map, LocalMap)
     lpix = local_map.pixelization
     larr = local_map.arr
@@ -263,8 +263,8 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
     """
     Arguments:
     
-      - local_map: output array (instance of class LocalMap).
-         (See "local maps" in top-level gpu_mm docstring)
+      - local_map: output array (instance of class LocalMap or DynamicMap).
+         (See "local maps" and "dynamic maps" in top-level gpu_mm docstring)
          tod2map() will accumulate its output (i.e. add to existing array contents)
 
       - tod: input array (1-dimensional, length-nsamp).
@@ -289,9 +289,17 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
             treated as zeroed pixels.
     """
 
-    assert isinstance(local_map, LocalMap)
-    lpix = local_map.pixelization
-    larr = local_map.arr
+    if isinstance(local_map, LocalMap):
+        lpix = local_map.pixelization
+        larr = local_map.arr        
+    elif isinstance(local_map, DynamicMap):
+        if not isinstance(plan, PointingPlan):
+            raise RuntimeError("tod2map(): if output is a DynamicMap, then the 'plan' argument must be a PointingPlan")
+        local_map.extend(plan)
+        lpix = local_map._unstable_pixelization  # okay to use temporarily in this function
+        larr = local_map._unstable_arr           # okay to use temporarily in this function
+    else:
+        raise RuntimeError(f"tod2map(): Bad 'local_map' argument to tod2map(): expected LocalMap or DynamicMap, got: {local_map}")
 
     if isinstance(plan, PointingPlan):
         gpu_mm_pybind11.planned_tod2map(larr, tod, xpointing, lpix, plan, partial_pixelization, debug)
@@ -430,6 +438,90 @@ class LocalMap:
 
 ####################################################################################################
 
+
+class DynamicMap:
+    def __init__(self, nypix_global, nxpix_global, dtype, cell_mask=None, periodic_xcoord=True, initial_ncells=1024):
+        """cell_mask: shape (nycells, nxcells) boolean array"""
+
+        # FIXME more argument checking
+        assert initial_ncells > 0
+        
+        self.nypix_global = nypix_global
+        self.nxpix_global = nxpix_global
+        self.dtype = dtype
+        self.ncells_allocated = initial_ncells
+        self.reallocation_factor = 1.5
+        self.kernel_nblocks = 1024
+
+        # Make 'cell_offsets' array (see LocalPixelization docstring)
+        # Initialize self.max_cells.
+        
+        if cell_mask is None:
+            nycells = (nypix_global + 63) // 64
+            nxcells = (nxpix_global + 63) // 64
+            cell_offsets = np.full((nycells,nxcells), -1, dtype=int)
+        else:
+            cell_mask = np.asarray(cell_mask)
+            assert cell_mask.ndim == 2
+            assert cell_mask.dtype == bool
+            cell_offsets = np.where(cell_mask, -1, -2)
+        
+        # Make LocalPixelization (initially empty)
+        self._unstable_pixelization = LocalPixelization(
+            nypix_global = nypix_global,
+            nxpix_global = nxpix_global,
+            cell_offsets = cell_offsets,
+            ystride = 64,
+            polstride = 64*64,
+            periodic_xcoord = periodic_xcoord)
+
+        # Make local map (initially empty)
+        self._padded_arr = cp.zeros(self.ncells_allocated * 3*64*64, dtype=self.dtype)
+        self._unstable_arr = self._padded_arr[:0]   # shape (0,)
+
+        # The cuda kernel (expand_dynamic_map()) needs an auxiliary one-element array, to track
+        # current number of cells. (We allocate a 32-element cache line and truncate.)
+        self.global_ncells = cp.zeros(32, dtype=cp.uint32)
+        self.global_ncells = self.global_ncells[:1]
+        
+        self.ncells_curr = 0
+        self.is_finalized = False
+        
+
+    def extend(self, plan):
+        """I think this will be moved to a non-member function."""
+
+        # More argument checking!
+        # E.g. should check consistency of (nypix_global, nxpix_global, periodic_xcoord)
+        assert isinstance(plan, PointingPlan)
+        assert not self.is_finalized
+
+        self.ncells_curr = gpu_mm_pybind11.expand_dynamic_map2(self.global_ncells, self._unstable_pixelization, plan)
+
+        if self.ncells_curr > self.ncells_allocated:
+            self.ncells_allocated = int(self.reallocation_factor * self.ncells_allocated)
+            self.ncells_allocated = max(self.ncells_allocated, self.ncells_curr)
+            self._padded_arr = cp.zeros(self.ncells_allocated * 3*64*64, dtype=self.dtype)
+            self._padded_arr[:len(self._unstable_arr)] = self._unstable_arr[:]
+
+        self._unstable_pixelization.npix = self.ncells_curr * (64*64)
+        self._unstable_arr = self._padded_arr[:(self.ncells_curr * 3*64*64)]
+
+
+    def finalize(self):
+        """Returns a LocalMap."""
+        
+        assert not self.is_finalized
+
+        self._unstable_pixelization.copy_gpu_offsets_to_cpu()
+        assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)
+
+        # Shrink overallocated map, and delete original.
+        arr = cp.copy(self._unstable_arr)
+        self._padded_arr = self._unstable_arr = None
+        self.is_finalized = True
+        
+        return LocalMap(self._unstable_pixelization, arr)
         
 
 ####################################################################################################

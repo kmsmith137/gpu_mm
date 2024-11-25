@@ -49,7 +49,8 @@ tod2map_kernel(
     uint nmt,
     uint nmt_per_block,
     bool periodic_xcoord,
-    bool partial_pixelization)
+    bool partial_pixelization,
+    long lmap_size)   // for debugging
 {
     // 48 KB in single precision, 96 KB in double precision.
     // __shared__ T shmem[3*64*64];
@@ -131,6 +132,13 @@ tod2map_kernel(
 		if (!__reduce_or_sync(ALL_LANES, t != 0))
 		    continue;
 
+		// Check for out-of-range memory access
+		if constexpr (Debug) {
+		    assert(polstride > 0);
+		    assert(sg >= 0);
+		    assert(sg + 2*polstride < lmap_size);
+		}
+
 		atomicAdd(lmap + sg, t);
 		atomicAdd(lmap + sg + polstride, shmem[ss+64*64]);
 		atomicAdd(lmap + sg + 2*polstride, shmem[ss+2*64*64]);
@@ -139,6 +147,10 @@ tod2map_kernel(
 
 	__syncthreads();
     }
+
+    // No need for __syncthreads() before write_errflags(), since main loop has __syncthreads() at bottom.
+    // Reminder: write_errflags() assumes thread layout is {32,W,1}, and block layout is {B,1,1}.
+    write_errflags(errflags, (uint *)shmem, err);
 }
 
 
@@ -182,7 +194,8 @@ extern void launch_planned_tod2map(
 	     plan.pp.plan_nmt,                          // uint nmt
 	     plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
 	     plan.periodic_xcoord,                      // bool periodic_xcoord
-	     partial_pixelization);                     // bool partial_pixelization
+	     partial_pixelization,                      // bool partial_pixelization
+	     local_map.size);                           // long lmap_size
     }
     else {
 	tod2map_kernel<T,W,false> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
@@ -200,9 +213,10 @@ extern void launch_planned_tod2map(
 	     local_pixelization.ystride,                // long ystride
 	     local_pixelization.polstride,              // long polstride
 	     plan.pp.plan_nmt,                          // uint nmt
-	     plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
+	     plan.pp.nmt_per_threadblock,               // uint nmt_per_block
 	     plan.periodic_xcoord,                      // bool periodic_xcoord
-	     partial_pixelization);                     // bool partial_pixelization
+	     partial_pixelization,                      // bool partial_pixelization
+	     local_map.size);                           // long lmap_size
     }
 
     CUDA_PEEK("tod2map kernel launch");

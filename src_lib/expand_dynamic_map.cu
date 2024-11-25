@@ -1,4 +1,6 @@
 #include "../include/gpu_mm.hpp"
+
+#include <cassert>
 #include <ksgpu/cuda_utils.hpp>
 
 using namespace ksgpu;
@@ -94,6 +96,7 @@ __global__ void dynamic_map_expander(
 	uint ixcell = icell & ((1U << 10) - 1);;
 	uint iycell = icell >> 10;
 	uint ioff = iycell*nxcells + ixcell;  // index in 'cell_offsets' table.
+	// assert(ioff < nxcells*nycells);
 	cell_offsets[ioff] = long(nglo+i) * long(3*64*64);
     }
 }
@@ -135,6 +138,21 @@ uint expand_dynamic_map(
     CUDA_CALL(cudaMemcpy(ret.data, global_ncells.data, sizeof(uint), cudaMemcpyDefault));
     
     return ret.data[0];
+}
+
+
+// FIXME temporary kludge that will go away later.
+// Returns updated value of 'global_ncells'.
+uint expand_dynamic_map2(
+    ksgpu::Array<uint> &global_ncells,        // shape (1,) on GPU
+    LocalPixelization &local_pixelization,
+    const PointingPlan &plan)
+{
+    return expand_dynamic_map(
+        global_ncells,
+	local_pixelization.cell_offsets_gpu,
+	plan.get_plan_mt(true)   // on_gpu=true
+    );
 }
 
 

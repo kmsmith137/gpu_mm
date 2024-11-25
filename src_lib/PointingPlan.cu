@@ -259,12 +259,16 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     this->plan_mt = (ulong *) (buf.data);
     this->err_gpu = (uint *) (buf.data + mt_nbytes);
 
+    // Set errflags to zero. This isn't logically necessary, but can make debugging less confusing.
+    cudaMemsetAsync(this->err_gpu, 0, err_nbytes);
+
     ulong *unsorted_mt = (ulong *) (tmp_buf.data);
     void *cub_tmp = (void *) (tmp_buf.data + mt_nbytes);
 
     // Number of warps in plan_kernel.
     constexpr int W = 4;
 
+    // Launch plan_kernel.
     if (debug) {
 	plan_kernel<T,W,true> <<< pp.planner_nblocks, {32,W} >>>
 	    (unsorted_mt,                   // ulong *plan_mt,
@@ -292,6 +296,7 @@ PointingPlan::PointingPlan(const PointingPrePlan &preplan, const Array<T> &xpoin
     
     CUDA_PEEK("plan_kernel launch");
 
+    // Launch NVIDIA radix sort.
     CUDA_CALL(cub::DeviceRadixSort::SortKeys(
         cub_tmp,         // void *d_temp_storage
 	cub_nbytes,      // size_t &temp_storage_bytes
@@ -326,6 +331,14 @@ Array<ulong> PointingPlan::get_plan_mt(bool gpu) const
     Array<ulong> ret({pp.plan_nmt}, aflags);
     CUDA_CALL(cudaMemcpy(ret.data, this->plan_mt, pp.plan_nmt * sizeof(ulong), direction));
     return ret;
+}
+
+
+// I needed this once for tracking down a bug.
+void PointingPlan::_check_errflags(const string &where) const
+{
+    long max_nblocks = max(pp.planner_nblocks, pp.pointing_nblocks);
+    check_gpu_errflags(this->err_gpu, max_nblocks, where.c_str());
 }
 
 
