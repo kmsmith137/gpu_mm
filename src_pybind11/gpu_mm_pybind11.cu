@@ -106,6 +106,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &PointingPrePlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix_global", &PointingPrePlan::nypix_global, "Number of y-pixels")
 	.def_readonly("nxpix_global", &PointingPrePlan::nxpix_global, "Number of x-pixels")
+	.def_readonly("periodic_xcoord", &PointingPrePlan::periodic_xcoord, "Boolean flag, indicates whether x-coordinate is periodic")
 	
 	.def_readonly("plan_nbytes", &PointingPrePlan::plan_nbytes, "Length of 'buf' argument to PointingPlan constructor")
 	.def_readonly("plan_constructor_tmp_nbytes", &PointingPrePlan::plan_constructor_tmp_nbytes, "Length of 'tmp_buf' argument to PointingPlan constructor")
@@ -133,6 +134,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readonly("nsamp", &PointingPlan::nsamp, "Number of TOD samples")
 	.def_readonly("nypix_global", &PointingPlan::nypix_global, "Number of y-pixels")
 	.def_readonly("nxpix_global", &PointingPlan::nxpix_global, "Number of x-pixels")
+	.def_readonly("periodic_xcoord", &PointingPlan::periodic_xcoord, "Boolean flag, indicates whether x-coordinate is periodic")
 	
 	.def("_check_errflags", &PointingPlan::_check_errflags, py::arg("where"),
 	     "I needed this once for tracking down a bug.")

@@ -64,8 +64,8 @@ __global__ void dynamic_map_expander(
 
 	if (candidate) {
 	    // Check 'cell_offsets' in global memory.
-	    // Note (cell_offsets[ioff] == -1), rather than (cell_offsets[ioff] < 0), is intentional here.
-	    if (cell_offsets[ioff] == -1) {
+	    // Note that 'cell_offsets' has special semantics: (-1) is "targeted", (-2) is "untargeted"
+	    if (cell_offsets[ioff] == -1) {          // targeted
 		uint n = atomicAdd(&shmem[N+2], 1);  // update local_ncells
 		shmem[N+32+n] = icell;
 	    }
@@ -148,6 +148,10 @@ uint expand_dynamic_map2(
     LocalPixelization &local_pixelization,
     const PointingPlan &plan)
 {
+    xassert(local_pixelization.nypix_global == plan.nypix_global);
+    xassert(local_pixelization.nxpix_global == plan.nxpix_global);
+    xassert(local_pixelization.periodic_xcoord == plan.periodic_xcoord);
+    
     return expand_dynamic_map(
         global_ncells,
 	local_pixelization.cell_offsets_gpu,

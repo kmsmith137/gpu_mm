@@ -147,6 +147,31 @@ Here are some examples of local maps, just to illustrate the flexibility:
      polstride = 64*64
       (cell_offsets chosen appropriately)
 
+   (This type of memory layout is used in "dynamic" maps, see next section.)
+
+==========================
+"DYNAMIC" PIXEL-SPACE MAPS
+==========================
+
+A DynamicMap is a LocalMap which starts empty (i.e. with zero cells), and adds
+cells as needed, whenever tod2map() is called. After all TODs have been processed,
+you call DynamicMap.finalize() to convert the DynamicMap to a LocalMap.
+
+DynamicMaps always use a memory layout of the form
+
+   float32 local_map[ncells][3][64][64];
+
+where 'ncells' increases dynamically when tod2map() is called. The cell ordering
+is arbitrary, and can be inspected after calling DynamicMap.finalize(). For details
+on how this works (and for more info on DynamicMaps in general), see the DynamicMap
+docstring.
+
+(Context: recall that a maximum likelihood map-maker runs in two stages: a 
+"dirty map" stage, followed by a CG stage. The first stage could use a DynamicMap 
+to determine which map cells are needed on each MPI task. At the end of the first
+stage, DynamicMap.finalize() can called, to "freeze in" the pixelization. The CG
+stage would use only LocalMaps -- no DynamicMaps.)
+
 ===============================
 POINTING "PLANS" AND "PREPLANS"
 ===============================
@@ -289,18 +314,30 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
             treated as zeroed pixels.
     """
 
-    if isinstance(local_map, LocalMap):
-        lpix = local_map.pixelization
-        larr = local_map.arr        
-    elif isinstance(local_map, DynamicMap):
+    if isinstance(local_map, DynamicMap):
         if not isinstance(plan, PointingPlan):
-            raise RuntimeError("tod2map(): if output is a DynamicMap, then the 'plan' argument must be a PointingPlan")
-        local_map.extend(plan)
-        lpix = local_map._unstable_pixelization  # okay to use temporarily in this function
-        larr = local_map._unstable_arr           # okay to use temporarily in this function
-    else:
+            raise RuntimeError("tod2map(): if output is a DynamicMap, then the 'plan' argument"
+                               + f" must be a PointingPlan (got: {plan})'")
+        
+        if partial_pixelization != local_map.have_cell_mask:
+            raise RuntimeError(f"tod2map(): {partial_pixelization=} was specified,"
+                               + f" but DynamicMap.have_cell_mask={local_map.have_cell_mask}"
+                               + " (expected these to be equal)")
+        
+        local_map.expand(plan)
+
+        gpu_mm_pybind11.planned_tod2map(local_map._unstable_arr, tod, xpointing,
+                                        local_map._unstable_pixelization, plan,
+                                        partial_pixelization, debug)
+        
+        return
+        
+    if not isinstance(local_map, LocalMap):
         raise RuntimeError(f"tod2map(): Bad 'local_map' argument to tod2map(): expected LocalMap or DynamicMap, got: {local_map}")
 
+    lpix = local_map.pixelization
+    larr = local_map.arr
+    
     if isinstance(plan, PointingPlan):
         gpu_mm_pybind11.planned_tod2map(larr, tod, xpointing, lpix, plan, partial_pixelization, debug)
     elif plan is None:
@@ -441,20 +478,70 @@ class LocalMap:
 
 class DynamicMap:
     def __init__(self, nypix_global, nxpix_global, dtype, cell_mask=None, periodic_xcoord=True, initial_ncells=1024):
-        """cell_mask: shape (nycells, nxcells) boolean array"""
+        """
+        A DynamicMap is a LocalMap which starts empty (i.e. with zero cells), and adds
+        cells as needed, whenever tod2map() is called. After all TODs have been processed,
+        you call DynamicMap.finalize() to convert the DynamicMap to a LocalMap.
 
-        # FIXME more argument checking
+        DynamicMaps always use a memory layout of the form
+        
+            float32 local_map[ncells][3][64][64];
+
+        where 'ncells' increases dynamically when tod2map() is called. The cell ordering is
+        arbitrary, and can be inspected after calling DynamicMap.finalize() -- see below.
+
+        The meaning of the 'cell_mask' argument needs some explanation. This is intended for
+        a situation where you're running the map maker on a "target" subset of the sky, and 
+        want to ignore pixels outside the subset. In this case, 'cell_mask' should be a boolean 
+        array of shape (nycells, nxcells), which is True in the "target" region. Then the
+        DynamicMap() will only add cells which are in the target region.
+
+        Here is some example code which explains typical usage of DynamicMap:
+
+            dmap = DynamicMap(nypix_global, nxpix_global, dtype)
+
+            for (tod, xpointing) in ...:
+                # Here, 'tod' is a cupy array with shape (ndet,nt) or (nt,)
+                # and 'xpointing' is a cupy array with shape (3,ndet,nt) or (3,nt).
+
+                preplan = PointingPrePlan(xpointing, nypix_global, nxpix_global)
+                plan = PointingPlan(preplan, xpointing)
+                tod2map(dmap, tod, xpointing, plan)  # dynamically expands 'dmap'
+        
+            # Finalize (converts DynamicMap -> LocalMap).
+            local_map = dmap.finalize()          # instance of class LocalMap 
+            local_pix = local_map.pixelization   # instance of class LocalPixelization
+            local_arr = local_map.arr            # cupy array, shape (ncells,3,64,64).
+        
+            # The memory layout is: float32 local_map[ncells][3][64][64].
+            # This is encoded (including cell ordering) by the 2-d 'cell_offsets_cpu' array 
+            # in the LocalPixelization. If the i-th cell has indices (iycell, ixcell),
+            # then cell_offsets_cpu[iycell,ixcell] will be (3*64*64*i). Cells which are
+            # not "touched" are represented by negative entries in the cell_offsets array.
+
+        Some limitations of the current code (easy to change -- LMK if you need this):
+
+           - DynamicMap supports tod2map() but not map2tod().
+           - Can only inspect the cell ordering by calling finalize() at the end.
+        """
+
+        assert 0 < nxpix_global <= 64*1024
+        assert 0 < nypix_global <= 64*1024
+        assert dtype == cp.float32   # placeholder for eventually supporting float32 + float64
         assert initial_ncells > 0
         
         self.nypix_global = nypix_global
         self.nxpix_global = nxpix_global
-        self.dtype = dtype
+        self.periodic_xcoord = periodic_xcoord
+        self.have_cell_mask = (cell_mask is not None)
         self.ncells_allocated = initial_ncells
         self.reallocation_factor = 1.5
         self.kernel_nblocks = 1024
+        self.dtype = dtype
 
-        # Make 'cell_offsets' array (see LocalPixelization docstring)
-        # Initialize self.max_cells.
+        # Initialize 'cell_offsets' array (see LocalPixelization docstring).
+        # Array elements are (-1) in "targeted" cells, or (-2) in "untargeted" cells.
+        # (This convention is assumed by the gpu_mm_pybind11.expand_dynamic_map() cuda kernel.)
         
         if cell_mask is None:
             nycells = (nypix_global + 63) // 64
@@ -465,6 +552,11 @@ class DynamicMap:
             assert cell_mask.ndim == 2
             assert cell_mask.dtype == bool
             cell_offsets = np.where(cell_mask, -1, -2)
+
+        # Note: member names beginning with underscores are intended to indicate hidden danger :)
+        #  - self._unstable_pixelization: A LocalPixelization where CPU/GPU state is inconsistent (!)
+        #  - self._unstable_arr: This array is reallocated/resized between calls to tod2map().
+        #  - self._padded_arr: This array is reallocated/resized between calls to tod2map().
         
         # Make LocalPixelization (initially empty)
         self._unstable_pixelization = LocalPixelization(
@@ -479,8 +571,8 @@ class DynamicMap:
         self._padded_arr = cp.zeros(self.ncells_allocated * 3*64*64, dtype=self.dtype)
         self._unstable_arr = self._padded_arr[:0]   # shape (0,)
 
-        # The cuda kernel (expand_dynamic_map()) needs an auxiliary one-element array, to track
-        # current number of cells. (We allocate a 32-element cache line and truncate.)
+        # The cuda kernel needs an auxiliary one-element array, to track the current number of cells.
+        # (We allocate a 32-element cache line and truncate.)
         self.global_ncells = cp.zeros(32, dtype=cp.uint32)
         self.global_ncells = self.global_ncells[:1]
         
@@ -488,13 +580,21 @@ class DynamicMap:
         self.is_finalized = False
         
 
-    def extend(self, plan):
-        """I think this will be moved to a non-member function."""
+    def expand(self, plan):
+        """Adds cells to the pixelization to cover a TOD (or more precisely, the PointingPlan for the TOD).
+        The map will be zero-padded in the new cells (and reallocated if necessary).
 
-        # More argument checking!
-        # E.g. should check consistency of (nypix_global, nxpix_global, periodic_xcoord)
+        This function is intended to be called by tod2map(), when tod2map() is called with a DynamicMap
+        as its first argument, but may be useful on its own.
+        """
+
+        if self.is_finalized:
+            raise RuntimeError("DynamicMap: can't currently call expand() or tod2map() after finalize() [this could be improved]")
+        
         assert isinstance(plan, PointingPlan)
-        assert not self.is_finalized
+        assert plan.nypix_global == self.nypix_global
+        assert plan.nxpix_global == self.nxpix_global
+        assert plan.periodic_xcoord == self.periodic_xcoord
 
         self.ncells_curr = gpu_mm_pybind11.expand_dynamic_map2(self.global_ncells, self._unstable_pixelization, plan)
 
@@ -509,9 +609,10 @@ class DynamicMap:
 
 
     def finalize(self):
-        """Returns a LocalMap."""
-        
-        assert not self.is_finalized
+        """Called at the end of the TOD loop. Returns a LocalMap."""
+
+        if self.is_finalized:
+            raise RuntimeError('Double call to DynamicMap.finalize() [not currently allowed]')
 
         self._unstable_pixelization.copy_gpu_offsets_to_cpu()
         assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)

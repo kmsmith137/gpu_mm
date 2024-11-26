@@ -251,7 +251,7 @@ class PointingInstance:
         nt_remaining = nt
         
         while sum(nt_chunks) < nt:
-            n = 32 * np.min(np.random.randint(1, nt_remaining//16 + 2, size=6))
+            n = 32 * np.min(np.random.randint(1, nt//16 + 2, size=6))
             n = int(min(n, nt_remaining))
             nt_chunks.append(n)
             nt_remaining -= n
@@ -272,9 +272,8 @@ class PointingInstance:
                                                    periodic_xcoord=self.periodic_xcoord, debug=self.debug_plan)
             
             plan_chunk = gpu_mm.PointingPlan(preplan_chunk, xpointing_chunk, debug=self.debug_plan)
-
+            
             gpu_mm.tod2map(dmap, tod_chunk, xpointing_chunk, plan_chunk, debug=True)
-            print(f'    XXX {nt_chunk} -> {dmap.ncells_curr}')            
             nt_cumul += nt_chunk
 
         # DynamicMap -> LocalMap
