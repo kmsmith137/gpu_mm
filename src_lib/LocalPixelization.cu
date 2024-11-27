@@ -107,5 +107,11 @@ void LocalPixelization::copy_gpu_offsets_to_cpu()
     this->_init_npix("LocalPixelization::copy_gpu_offsets_to_cpu()");
 }
 
+void LocalPixelization::copy_cpu_offsets_to_gpu()
+{
+    this->_init_npix("LocalPixelization::copy_cpu_offsets_to_gpu");
+    CUDA_CALL(cudaMemcpy(this->cell_offsets_gpu.data, this->cell_offsets_cpu.data, nycells * nxcells * sizeof(long), cudaMemcpyDefault));
+}
+
 	
 }  // namespace gpu_mm

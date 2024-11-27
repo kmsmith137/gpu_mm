@@ -577,7 +577,8 @@ class DynamicMap:
         self.global_ncells = self.global_ncells[:1]
         
         self.ncells_curr = 0
-        self.is_finalized = False
+        self.pixelization_is_finalized = False
+        self.map_is_finalized = False
         
 
     def expand(self, plan):
@@ -588,8 +589,9 @@ class DynamicMap:
         as its first argument, but may be useful on its own.
         """
 
-        if self.is_finalized:
-            raise RuntimeError("DynamicMap: can't currently call expand() or tod2map() after finalize() [this could be improved]")
+        if self.pixelization_is_finalized:
+            raise RuntimeError("Can't currently call tod2map() [or DynamicMap.expand()]"
+                               + " after MpiPixelization.__init__() [or DynamicMap.permute()].")
         
         assert isinstance(plan, PointingPlan)
         assert plan.nypix_global == self.nypix_global
@@ -607,22 +609,93 @@ class DynamicMap:
         self._unstable_pixelization.npix = self.ncells_curr * (64*64)
         self._unstable_arr = self._padded_arr[:(self.ncells_curr * 3*64*64)]
 
+    
+    def permute(self, iycells, ixcells):
+        """Permutes the pixelization's cell ordering.
+
+        Intended as a helper for MpiPixelization.__init__(), to put the cells in a more MPI-friendly
+        ordering, but may be useful on its own.
+
+        The 'iycells' and 'ixcells' args are integer-valued arrays of length (self.ncells_curr),
+        that give the (y,x) coordinates in the desired (permuted) cell ordering.
+        
+        Currently, permute() finalizes the pixelization -- this isn't logically necessary, but makes 
+        sense if called through MpiPixelization.__init__().
+        """
+
+        if self.pixelization_is_finalized:
+            raise RuntimeError("Can't currently call MpiPixelization.__init__() [or DynamicMap.permute()]"
+                               + " after DynamicMap.finalize() [or MpiPixelization.__init__(), DynamicMap.permute()]")
+
+        self._unstable_pixelization.copy_gpu_offsets_to_cpu()
+        assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)   # gets updated by copy_gpu_offsets_to_cpu()
+        new_offsets = self._unstable_pixelization.cell_offsets_cpu                # cell offsets will be overwritten in-place
+        old_offsets = np.copy(new_offsets)                                        # keep temporary copy of old offsets
+        
+        # Lots of argument checking
+        assert isinstance(iycells, np.ndarray) and isinstance(ixcells, np.ndarray)   # must be on CPU
+        assert iycells.shape == ixcells.shape == (self.ncells_curr,)
+        assert iycells.dtype == ixcells.dtype == int
+        assert 0 <= np.min(iycells) <= np.max(iycells) < old_offsets.shape[0]
+        assert 0 <= np.min(ixcells) <= np.max(ixcells) < old_offsets.shape[1]
+
+        # Update the pixelization.
+        new_offsets[iycells,ixcells] = np.arange(self.ncells_curr) * (3*64*64)
+
+        if not np.all((old_offsets >= 0) == (new_offsets >= 0)):
+            raise RuntimeError('DynamicMap.permute(): specified (iycells,ixcells) do not match footprint of current pixelization')
+
+        # Sync pixelization to GPU and finalize.
+        self.pixelization_is_finalized = True
+        self._unstable_pixelization.copy_cpu_offsets_to_gpu()
+        assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)   # gets updated by copy_cpu_offsets_to_gpu()
+
+        # Remaining code permutes the map array.
+        # FIXME code below does one call to cudaMemcpyAsync() per map cell!
+        # At some point I'll write a cuda kernel (should be very straightforward)
+
+        old_arr = self._unstable_arr
+        self._padded_arr = self._unstable_arr = cp.empty(self.ncells_curr * 3*64*64, dtype=self.dtype)
+        self.ncells_allocated = self.ncells_curr
+
+        # 1-d array, maps (new cell index) -> (old cell index)*3*64*64
+        src_offsets = old_offsets[iycells, ixcells]
+
+        n = 3*64*64
+        for i,j in enumerate(src_offsets):
+            self._unstable_arr[i*n:(i*n+n)] = old_arr[j:(j+n)]
+        
 
     def finalize(self):
         """Called at the end of the TOD loop. Returns a LocalMap."""
 
-        if self.is_finalized:
+        if self.map_is_finalized:
             raise RuntimeError('Double call to DynamicMap.finalize() [not currently allowed]')
 
-        self._unstable_pixelization.copy_gpu_offsets_to_cpu()
-        assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)
+        if not self.pixelization_is_finalized:
+            self._unstable_pixelization.copy_gpu_offsets_to_cpu()
+            self.pixelization_is_finalized = True
 
-        # Shrink overallocated map, and delete original.
-        arr = cp.copy(self._unstable_arr)
-        self._padded_arr = self._unstable_arr = None
-        self.is_finalized = True
+        if self.ncells_allocated > self.ncells_curr:
+            self._unstable_arr = cp.copy(self._unstable_arr)  # shrink overallocated map
+
+        ret = LocalMap(self._unstable_pixelization, self._unstable_arr)
         
-        return LocalMap(self._unstable_pixelization, arr)
+        assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)        
+        self._padded_arr = self._unstable_arr = None    # don't hold references
+        self.map_is_finalized = True
+        
+        return ret
+
+
+    def randomly_permute(self):
+        """Only called during testing."""
+        
+        self._unstable_pixelization.copy_gpu_offsets_to_cpu()
+        iycells, ixcells = np.where(self._unstable_pixelization.cell_offsets_cpu >= 0)
+
+        perm = np.random.permutation(self.ncells_curr)
+        self.permute(iycells[perm], ixcells[perm])
         
 
 ####################################################################################################

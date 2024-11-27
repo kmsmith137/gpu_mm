@@ -92,7 +92,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	.def_readwrite("npix",  &LocalPixelization::npix, "counts only local pixels, does not include factor 3 from TQU.")
 
 	// FIXME temporary kludge needed for DynamicMap, will go away later.
-	.def("copy_gpu_offsets_to_cpu", &LocalPixelization::copy_gpu_offsets_to_cpu);
+	.def("copy_gpu_offsets_to_cpu", &LocalPixelization::copy_gpu_offsets_to_cpu)
+	.def("copy_cpu_offsets_to_gpu", &LocalPixelization::copy_cpu_offsets_to_gpu)
     ;
 
     

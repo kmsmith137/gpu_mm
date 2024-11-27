@@ -276,6 +276,9 @@ class PointingInstance:
             gpu_mm.tod2map(dmap, tod_chunk, xpointing_chunk, plan_chunk, debug=True)
             nt_cumul += nt_chunk
 
+        # Randomly permute the cells (tests DynamicMap.permute())
+        dmap.randomly_permute()
+        
         # DynamicMap -> LocalMap
         lmap = dmap.finalize()
         lpix = lmap.pixelization

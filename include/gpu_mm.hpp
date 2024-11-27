@@ -51,6 +51,7 @@ struct LocalPixelization
 
     // FIXME temporary kludge needed for DynamicMap, will go away later.
     void copy_gpu_offsets_to_cpu();
+    void copy_cpu_offsets_to_gpu();
 
     // Helper, called by constructor, and by copy_gpu_offsets_to_cpu().
     void _init_npix(const char *where);
