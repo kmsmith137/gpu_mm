@@ -184,8 +184,10 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     // FIXME temporary kludge that will go away later.
     m.def("expand_dynamic_map2", &gpu_mm::expand_dynamic_map2,
-	  py::arg("global_ncells"), py::arg("local_pixelization"), py::arg(""));
-    
+	  py::arg("global_ncells"), py::arg("local_pixelization"), py::arg("plan"));
+
+    m.def("local_map_to_global", &gpu_mm::local_map_to_global<float>,
+	  py::arg("local_pixelization"), py::arg("dst"), py::arg("src"));
     
     // ---------------------------------------------------------------------------------------------
     //

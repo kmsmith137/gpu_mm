@@ -238,6 +238,14 @@ extern uint expand_dynamic_map2(
 );
 
 
+template<typename T>
+extern void local_map_to_global(
+    const LocalPixelization &local_pixelization,
+    ksgpu::Array<T> &dst,
+    const ksgpu::Array<T> &src
+);
+
+
 // -----------------------------------------------------------------------------
 //
 // Internals + testing

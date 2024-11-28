@@ -56,6 +56,7 @@ OFILES = \
   src_lib/expand_dynamic_map.o \
   src_lib/gpu_point.o \
   src_lib/gpu_utils.o \
+  src_lib/local_map_to_global.o \
   src_lib/map2tod.o \
   src_lib/map2tod_reference.o \
   src_lib/map2tod_unplanned.o \
@@ -85,7 +86,8 @@ PYFILES = \
   src_python/gpu_mm/gpu_pointing.py \
   src_python/gpu_mm/gpu_utils.py \
   src_python/gpu_mm/pycufft.py \
-  src_python/gpu_mm/tests.py
+  src_python/gpu_mm/tests.py \
+  src_python/gpu_mm/tests_mpi.py
 
 SRCDIRS = \
   include \

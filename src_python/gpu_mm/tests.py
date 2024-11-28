@@ -399,7 +399,7 @@ class PointingInstance:
 ####################################################################################################
 
 
-def make_random_npix():
+def make_random_npix(ncells_max=1024):
     """
     Usage:
        nypix_global, nycells = make_random_npix()
@@ -410,9 +410,9 @@ def make_random_npix():
     if np.random.uniform() < 0.05:
         ncells = 1
     elif np.random.uniform() < 0.1:
-        ncells = 1024
+        ncells = ncells_max
     else:
-        ncells = np.random.randint(1, 1025)
+        ncells = np.random.randint(1, ncells_max+1)
 
     # Randomly choose npix_global.
     if np.random.uniform() < 0.05:
@@ -422,9 +422,9 @@ def make_random_npix():
     elif np.random.uniform() < 0.4:
         npix_global = np.random.randint(64*ncells-63, 64*ncells+1)
     elif np.random.uniform() < 0.05:
-        npix_global = 64*1024
+        npix_global = 64*ncells_max
     else:
-        npix_global = np.random.randint(64*ncells-63, 64*1024+1)
+        npix_global = np.random.randint(64*ncells-63, 64*ncells_max+1)
 
     return npix_global, ncells
 
@@ -508,7 +508,43 @@ def make_random_cell_offsets(nycells, nxcells):
     cell_offsets[iycells,ixcells] = cell_perm * (3*64*64)
     
     return cell_offsets, ncells_curr
+
+
+def make_test_map(pixelization, dtype):
+    assert isinstance(pixelization, gpu_mm.LocalPixelization)
+    assert pixelization.polstride == 64*64
+    assert pixelization.ystride == 64
+
+    ncells = pixelization.npix // (64*64)
+    n = 3*64*64
+        
+    y, x = np.where(pixelization.cell_offsets_cpu >= 0)   # 1-d arrays of length (ncells)
+    cell_off = pixelization.cell_offsets_cpu[y,x]         # 1-d array of length (ncells)
+    cell_ix = cell_off // n
+    assert y.shape == x.shape == cell_ix.shape == (ncells,)
+    assert np.all(cell_off == cell_ix*n)
+
+    m0 = np.zeros((ncells,n), dtype=int)
+    m0 += np.reshape(np.arange(n), (1,-1))
+    m0 += np.reshape(137*y, (-1,1))
+    m0 += np.reshape(2323*x, (-1,1))
     
+    m1 = np.zeros((ncells,n), dtype=dtype)
+    m1[cell_ix,:] = m0[:,:]   # permutes cells and converts dtype
+    
+    return gpu_mm.LocalMap(pixelization, m1.reshape(ncells*n))
+
+
+def make_random_map(pixelization, dtype):
+    """Helper for test()."""
+
+    assert isinstance(pixelization, gpu_mm.LocalPixelization)
+    m = np.random.uniform(-1.0, 1.0, size=3*pixelization.npix)
+    return gpu_mm.LocalMap(pixelization, np.asarray(m,dtype))
+
+
+####################################################################################################
+
 
 def test_one_expand_dynamic_map():
     

@@ -207,9 +207,6 @@ TODO LIST
   - Helper functions for converting maps between different pixelizations
     (either local or global, with or without wrapping logic).
 
-  - An MPIPixelization class with all-to-all logic for distirbuting/reducing
-    maps across GPUs.
-
   - Kernels should be launched on current cupy stream (I'm currently launching
     on the default cuda stream).
 
@@ -367,26 +364,20 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
     in the gpu_mm docstring):
 
       cell_offsets   2-d integer-valued array indexed by (iycell, ixcell)
-      ystride        integer
-      polstride      integer
+      ystride        (int)
+      polstride      (int)
+      nycells        (int)
+      nxcells        (int)
+      npix           (int)
     """
     
     def __init__(self, nypix_global, nxpix_global, cell_offsets, ystride, polstride, periodic_xcoord = True):
         self.cell_offsets_cpu = cp.asnumpy(cell_offsets)   # numpy array
         self.cell_offsets_gpu = cp.asarray(cell_offsets)   # cupy array
+        
+        # Note: most of the members mentioned in the docstring are inherited from pybind11.
+        # (Specifically: nypix_global, nxpix_global, periodic_xcoord, ystride, polstride, nycells, nxcells, npix).
         gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, self.cell_offsets_cpu, self.cell_offsets_gpu, ystride, polstride, periodic_xcoord)
-
-
-    # Note: inherits the following members from C++ (via pybind11)
-    #
-    #   nypix_global      int
-    #   nxpix_global      int
-    #   periodic_xcoord   bool
-    #   ystride           int
-    #   polstride         int
-    #   nycells           int (same as cell_offsets.shape[0])
-    #   nxcells           int (same as cell_offsets.shape[0])
-    #   npix              int (counts only local pixels, does not include factor 3 from TQU)
     
     def is_simple_rectangle(self):
         """
@@ -397,6 +388,23 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         rect_offsets = self._make_rectangular_cell_offsets(self.nycells, self.nxcells)
         return np.array_equal(self.cell_offsets_cpu, rect_offsets)
 
+
+    def __eq__(self, x):
+        assert isinstance(x, LocalPixelization)
+        
+        if self is x:
+            return True
+        
+        # nypix_global, nxpix_global, periodic_xcoord, ystride, polstride, nycells, nxcells, npix).
+        if (self.nypix_global, self.nxpix_global) != (x.nypix_global, x.nxpix_global):
+            return False
+        if (self.periodic_xcoord, self.ystride, self.polstride) != (x.periodic_xcoord, x.ystride, x.polstride):
+            return False
+        if (self.nycells, self.nxcells, self.npix) != (x.nycells, x.nxcells, x.npix):
+            return False
+
+        return np.all(np.maximum(self.cell_offsets_cpu,-1) == np.maximium(x.cell_offsets_cpu,-1))
+    
 
     @classmethod
     def _make_rectangular_cell_offsets(cls, nycells, nxcells):
@@ -467,10 +475,32 @@ class LocalMap:
         
     def __init__(self, pixelization, arr):
         assert isinstance(pixelization, LocalPixelization)
+        assert isinstance(arr, np.ndarray) or isinstance(arr, cp.ndarray)
+
+        # Currently, no check on array size! (might rethink this)
+        # assert arr.size == (3*pixelization.npix,)
+
+        # Currently, we only support float32, but adding support for float64 should be straightforward.
+        assert arr.dtype == np.float32
+        assert arr.flags['C_CONTIGUOUS']
+
         self.pixelization = pixelization
+        self.nypix_global = pixelization.nypix_global
+        self.nxpix_global = pixelization.nxpix_global
+        self.periodic_xcoord = pixelization.periodic_xcoord
+        self.on_gpu = isinstance(arr, cp.ndarray)
+        self.npix = pixelization.npix  # note that array size is (3*npix), and number of cells is npix/64**2
+        self.dtype = arr.dtype
         self.arr = arr
-        
-        # FIXME should add some error-checking on arr.shape, arr.dtype
+
+
+    def to_global(self):
+        """XXX no wrap"""
+
+        src = cp.asnumpy(self.arr)
+        dst = np.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
+
+        gpu_mm_pybind11.local_map_to_global(self.pixelization, dst, src)
 
 
 ####################################################################################################
@@ -696,6 +726,318 @@ class DynamicMap:
 
         perm = np.random.permutation(self.ncells_curr)
         self.permute(iycells[perm], ixcells[perm])
+
+
+####################################################################################################
+
+
+class MpiPixelization:
+    def __init__(self, dmap, comm=None):
+        """
+          - toplevel_pixelization
+          - working_pixelization
+
+        Finalizes the pixelization (can still call dmap.finalize(), but not tod2map(dmap, ...).
+        """
+
+        if comm is None:
+            import mpi4py.MPI
+            comm = mpi4py.MPI.COMM_WORLD
+            
+        assert isinstance(dmap, DynamicMap)
+        assert not dmap.pixelization_is_finalized
+        
+        # FIXME temporary kludge that will go away when I do some code cleanup.
+        dmap._unstable_pixelization.copy_gpu_offsets_to_cpu()
+        cell_offsets = dmap._unstable_pixelization.cell_offsets_cpu
+
+        self.comm = comm
+        self.ntasks = comm.Get_size()
+        self.my_rank = comm.Get_rank()
+        self.nypix_global = dmap.nypix_global
+        self.nxpix_global = dmap.nxpix_global
+        self.periodic_xcoord = dmap.periodic_xcoord
+        self.nycells, self.nxcells = cell_offsets.shape
+        self.mpi = mpi4py.MPI
+
+        # Make sure these 5 quantities are in sync across all MPI tasks.
+        check = [ self.nypix_global, self.nxpix_global, self.periodic_xcoord, self.nycells, self.nxcells ]
+        if not self._is_equal_on_all_tasks(check):
+            raise RuntimeError(f'MpiPixelization: expected (nypix_global, nxpix_global, periodic_xcoord, nycells, nxcells) to be equal on all tasks')
+        
+        # my_hits = 2-d boolean array of shape (nycells, nxcells), indicates which cells are "hit" by local task.
+        my_hits = (cell_offsets >= 0)
+        
+        # all_hits = 3-d boolean array of shape (ntasks, nycells, nxcells), indicates which cells are "hit" by each task.
+        all_hits = np.zeros((self.ntasks,self.nycells,self.nxcells), dtype=bool)
+        comm.Allgather((my_hits, self.nycells*self.nxcells), (all_hits, self.nycells*self.nxcells))
+
+        # Toplevel assignment of cells to tasks is factored into separate CellAssignment class, see below.
+        self.cell_assignment = CellAssignment(all_hits)
+        self.tl_ncells = self.cell_assignment.toplevel_ncells[self.my_rank]
+        self.aux_ncells = self.cell_assignment.aux_ncells[self.my_rank]
+        self.wbuf_ncells = self.cell_assignment.working_ncells[self.my_rank]
+        
+        # Paranoid code check: make sure that the cell assignment is the same on all MPI tasks.
+        assert self._is_equal_on_all_tasks(self.cell_assignment.cell_owners)
+        assert dmap._unstable_pixelization.npix == self.wbuf_ncells * 64*64
+        
+        # 1-d arrays of length (tl_ncells), containing (y,x) cell indices owned by local ("my") task.
+        tl_y, tl_x = np.where(self.cell_assignment.cell_owners == self.my_rank)
+        assert tl_y.shape == tl_x.shape == (self.tl_ncells,)
+
+        # The "auxiliary" buffer is an intermediate buffer in MPI_Alltoallv().
+        # It is logically divided into one sub-buffer for each MPI task.
+        # The r-th sub-buffer is indexed by cells owned by current task, which are also "hit" by task r.
+        # In broadcast() and reduce() [see below], the aux buffer is the Alltoallv() send/recv buffer, respectively.
+
+        # 2-d boolean array of shape (ntasks, toplevel_ncells).
+        aux_hits = all_hits[:, tl_y, tl_x]
+        assert np.sum(aux_hits) == self.aux_ncells
+
+        # The aux_index_map maps [0:aux_ncells) -> [0:toplevel_ncells).
+        self.aux_counts = np.empty(self.ntasks, dtype=int)
+        self.aux_displs = np.empty(self.ntasks, dtype=int)
+        self.aux_index_map = np.empty(self.aux_ncells, dtype=int)
+
+        pos = 0
+        for r in range(self.ntasks):
+            ix = np.where(aux_hits[r,:])[0]    # 1-d array of indices in [0:tl_ncells).
+            n = len(ix)
+            self.aux_counts[r] = n * (3*64*64)
+            self.aux_displs[r] = pos * (3*64*64)
+            self.aux_index_map[pos:(pos+n)] = ix
+            pos += n
+        
+        assert pos == self.aux_ncells
+
+        # The "working" buffer (wbuf) is a LocalMap, as viewed by MPI_Alltoallv().
+        # We'll permute the LocalMap tiling to a more MPI-friendly layout (see call to dbuf.permute() below).
+        # With this permutation, the wbuf consists of one sub-buffer for each MPI task.
+        # The r-th sub-buffer is indexed by cells owned by task r, which are also touched by the local task.
+        # In broadcast() and reduce() [see below], the work buffer is the Alltoallv() recv/send buffer, respectively.
+
+        # The (wbuf_y, wbuf_x) arrays map [0:working_ncells) -> [0:nycells) or [0:nxcells).
+        self.wbuf_counts = np.empty(self.ntasks, dtype=int)
+        self.wbuf_displs = np.empty(self.ntasks, dtype=int)
+        self.wbuf_y = np.empty(self.wbuf_ncells, dtype=int)
+        self.wbuf_x = np.empty(self.wbuf_ncells, dtype=int)
+
+        pos = 0
+        for r in range(self.ntasks):
+            # mask = 2-d boolean array of shape (nycells, nxcells), indicates which cells are in r-th sub-buffer.
+            mask = np.logical_and(my_hits, self.cell_assignment.cell_owners == r) 
+            y, x = np.where(mask)   # xy-indices of cells in r-th sub-buffer.
+            n = len(y)
+            self.wbuf_counts[r] = n * (3*64*64)
+            self.wbuf_displs[r] = pos * (3*64*64)
+            self.wbuf_y[pos:(pos+n)] = y
+            self.wbuf_x[pos:(pos+n)] = x
+            pos += n
+
+        assert pos == self.wbuf_ncells
+
+        # The "root" buffer consists of all cells that were "hit" by any task.
+        # The root pixelization is used gather() [see below].
+
+        self.root_ncells = np.sum(self.cell_assignment.toplevel_ncells)
+        self.root_counts = self.cell_assignment.toplevel_ncells * (3*64*64)
+        self.root_displs = np.empty(self.ntasks, dtype=int)
+        self.root_y = np.empty(self.root_ncells, dtype=int)
+        self.root_x = np.empty(self.root_ncells, dtype=int)
+
+        pos = 0
+        for r in range(self.ntasks):
+            n = self.cell_assignment.toplevel_ncells[r]
+            y, x = np.where(self.cell_assignment.cell_owners == r)
+            assert y.shape == x.shape == (n,)
+            self.root_displs[r] = pos * (3*64*64)
+            self.root_y[pos:(pos+n)] = y
+            self.root_x[pos:(pos+n)] = x
+            pos += n
+
+        assert pos == self.root_ncells
+        
+        # Construct self.toplevel_pixelization (instance of class LocalPixelization).
+        
+        tl_cell_offsets = np.full((self.nycells,self.nxcells), -1)
+        tl_cell_offsets[tl_y,tl_x] = np.arange(self.tl_ncells) * (3*64*64)
+
+        self.toplevel_pixelization = LocalPixelization(
+            nypix_global = dmap.nypix_global,
+            nxpix_global = dmap.nxpix_global,
+            cell_offsets = tl_cell_offsets,
+            ystride = 64,
+            polstride = 64*64,
+            periodic_xcoord = dmap.periodic_xcoord
+        )
+
+        # Construct self.working_pixelization (instance of class LocalPixelization).
+        # Note call to DynamicPixelization.permute() here!
+
+        dmap.permute(self.wbuf_y, self.wbuf_x)
+        self.working_pixelization = dmap._unstable_pixelization
+
+        # Construct self.root_pixelization (instance of class LocalPixelization)
+
+        root_cell_offsets = np.full((self.nycells,self.nxcells), -1)
+        root_cell_offsets[self.root_y, self.root_x] = np.arange(self.root_ncells) * (3*64*64)
+
+        self.root_pixelization = LocalPixelization(
+            nypix_global = dmap.nypix_global,
+            nxpix_global = dmap.nxpix_global,
+            cell_offsets = root_cell_offsets,
+            ystride = 64,
+            polstride = 64*64,
+            periodic_xcoord = dmap.periodic_xcoord
+        )
+        
+    
+    def broadcast(self, toplevel_map):
+        assert isinstance(toplevel_map, LocalMap)
+        assert toplevel_map.pixelization == self.toplevel_pixelization
+
+        src_buf = cp.asnumpy(toplevel_map.arr)  # copies GPU -> CPU if necessary
+        src_buf = np.reshape(src_buf, (self.tl_ncells,3*64*64))
+        aux_buf = np.empty((self.aux_ncells,3*64*64), dtype = src_buf.dtype)
+        dst_buf = np.empty((self.wbuf_ncells,3*64*64), dtype = src_buf.dtype)
+
+        # FIXME vectorize
+        for i in range(self.aux_ncells):
+            j = self.aux_index_map[i]
+            aux_buf[i,:] = src_buf[j,:]
+        
+        self.comm.Alltoallv((aux_buf, (self.aux_counts,self.aux_displs)),
+                            (dst_buf, (self.wbuf_counts,self.wbuf_displs)))
+        
+        return LocalMap(self.working_pixelization, dst_buf.reshape(-1))
+        
+
+    def reduce(self, working_map):
+        assert isinstance(working_map, LocalMap)
+        assert working_map.pixelization == self.working_pixelization
+
+        src_buf = cp.asnumpy(working_map.arr)  # copies GPU -> CPU if necessary
+        src_buf = np.reshape(src_buf, (self.wbuf_ncells,3*64*64))
+        aux_buf = np.empty((self.aux_ncells, 3*64*64), dtype = src_buf.dtype)
+        dst_buf = np.zeros((self.tl_ncells, 3*64*64), dtype = src_buf.dtype)   # note zeros(), not empty()!
+        
+        self.comm.Alltoallv((src_buf, (self.wbuf_counts, self.wbuf_displs)),
+                            (aux_buf, (self.aux_counts, self.aux_displs)))
+
+        for i in range(self.aux_ncells):
+            j = self.aux_index_map[i]
+            dst_buf[j,:] += aux_buf[i,:]
+
+        return LocalMap(self.toplevel_pixelization, dst_buf.reshape(-1))
+
+
+    def gather(self, toplevel_map, root=0):
+        """XXX docstring should reference LocalMap.to_global()"""
+
+        assert isinstance(toplevel_map, LocalMap)
+        assert toplevel_map.pixelization == self.toplevel_pixelization
+        assert 0 <= root < self.ntasks
+        
+        src_buf = cp.asnumpy(toplevel_map.arr)  # copies GPU -> CPU if necessary
+        src_buf = np.reshape(src_buf, (self.tl_ncells,3*64*64))
+        dst_arg = dst_map = None
+
+        if self.my_rank == root:
+            dst_buf = np.empty((self.root_ncells,3*64*64), dtype = src_buf.dtype)
+            dst_arg = (dst_buf, (self.root_counts, self.root_displs))
+            dst_map = LocalMap(self.root_pixelization, dst_buf.reshape(-1))
+
+        self.comm.Gatherv((src_buf, src_buf.size), dst_arg, root=root)
+        return dst_map
+        
+    
+    def _allreduce(self, arr):
+        arr = np.asarray(arr)
+        assert arr.data.c_contiguous
+        ret = np.empty_like(arr)
+        self.comm.Allreduce((arr,arr.size), (ret,ret.size))
+        return ret
+
+    def _allgather(self, arr):
+        arr = np.asarray(arr)
+        assert arr.data.c_contiguous
+        ret = np.empty((self.ntasks,) + arr.shape, dtype=arr.dtype)
+        self.comm.Allgather((arr,arr.size), (ret,arr.size))
+        return ret
+
+
+    def _is_equal_on_all_tasks(self, arr):
+        arr = np.asarray(arr)
+        big_arr = self._allgather(arr)
+        return np.all(arr == big_arr)
+
+    
+class CellAssignment:
+    def __init__(self, all_hits):
+        """Helper class for MpiPixelization: computes the assignment of cells to tasks.
+
+        Constructor argument 'all_hits' is a 3-d boolean array of shape (ntasks, nycells, nxcells) 
+        indicating which cells are "hit" by each task.
+
+        The constructor initializes the following members:
+
+           self.cell_owners      shape (nycells,nxcells) array containing MPI rank of each cell's owner (or -1)
+           self.toplevel_ncells  length (ntasks) array, contains number of cells owned by each task
+           self.working_ncells   length (ntasks) array, contains number of cells "hit" by each task
+           self.aux_ncells       length (ntasks) array, contains number of cells in MPI "aux" buffer
+           self.lb_toplevel      load-balancing summary statistic: max(toplevel_ncells) / mean(toplevel_ncells)
+           self.lb_working       load-balancing summary statistic: max(working_ncells) / mean(working_ncells)
+           self.lb_aux           load-balancing summary statistic: max(toplevel_ncells) / mean(toplevel_ncells)
+
+        Note that this function doesn't call any MPI functions -- it just computes the cell assignment
+        redundantly on each MPI task. The assignment is guaranteed to be the same on all tasks (this gets
+        checked by an assert in MpiPixelization.__init__())/
+
+        I'm currently using the following simple cell assignment algorithm:
+
+          - Define the "weight" of a cell to be the number of tasks which hit the cell.
+
+          - Sort cells by weight.
+
+          - For each cell, consider only tasks which hit the cell, and choose the task which
+            currently has the smallest value of the cost function:
+
+               Cost(task) = sum_{cells assigned to task} (5 + weight(cell))
+        """
+
+        assert all_hits.ndim == 3
+        assert all_hits.dtype == bool
+
+        w_2d = np.sum(all_hits, axis=0)  # 2-d weights array, shape (nycells, nxcells)        
+        y_1d, x_1d = np.where(w_2d > 0)  # 1-d ycell, xcell arrays
+        w_1d = w_2d[y_1d, x_1d]          # 1-d weights array
+
+        self.ntasks = all_hits.shape[0]
+        self.cell_owners = np.full_like(w_2d, -1, dtype=int)
+        curr_costs = np.zeros(self.ntasks, dtype=int)
+
+        # Sort cells by weight.
+        for w,y,x in sorted(zip(w_1d, y_1d, x_1d)):
+            # The 10**10 term ensures that we only assign the cell to a task which hits it.
+            owner = np.argmin(curr_costs - (10**10 * all_hits[:,y,x]))
+            self.cell_owners[y,x] = owner
+            curr_costs[owner] += (5+w)
+
+        # The rest of this function just computes load-balancing summary stats.
+
+        owners_1d = self.cell_owners[y_1d, x_1d]
+        # waux_1d = w_1d - all_hits[owners_1d, y_1d, x_1d]   # FIXME later
+        waux_1d = w_1d
+
+        self.toplevel_ncells = np.bincount(owners_1d, minlength=self.ntasks)
+        self.working_ncells = np.sum(all_hits.reshape((self.ntasks,-1)), axis=1)
+        self.aux_ncells = np.bincount(owners_1d, waux_1d, minlength=self.ntasks)
+        self.aux_ncells = np.array(self.aux_ncells, dtype=int)  # float -> int
+
+        self.lb_toplevel = np.max(self.toplevel_ncells) / np.mean(self.toplevel_ncells)
+        self.lb_working = np.max(self.working_ncells) / np.mean(self.working_ncells)
+        self.lb_aux = np.max(self.aux_ncells) / np.mean(self.aux_ncells)
         
 
 ####################################################################################################
@@ -805,7 +1147,7 @@ def read_xpointing_npzfile(filename):
     """
     
     print(f'Reading xpointing file {filename}')
-        
+    
     f = np.load(filename)
     xp = f['xpointing']
     assert (xp.ndim == 3) and (xp.shape[0] == 3)   # ({x,y,alpha}, ndet, ntod)
