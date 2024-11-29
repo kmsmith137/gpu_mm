@@ -533,6 +533,7 @@ class LocalMap:
         dst = np.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
 
         gpu_mm_pybind11.local_map_to_global(self.pixelization, dst, src)
+        return dst
 
 
 ####################################################################################################

@@ -279,31 +279,10 @@ class PointingInstance:
         # Randomly permute the cells (tests DynamicMap.permute())
         dmap.randomly_permute()
         
-        # DynamicMap -> LocalMap
+        # DynamicMap -> LocalMap -> padded global map
         lmap = dmap.finalize()
-        lpix = lmap.pixelization
-        lmap_cpu = cp.asnumpy(lmap.arr)
-        
-        # Now some ad hoc code, to convert the dynamic map ('lmap_cpu') to a rectangular pixelization ('mdyn').
-        # FIXME define a systematic API for this.
-
-        mdyn = np.zeros(shape=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
-            
-        # iycell_list, ixcell_list, src_offset_list = 1-d arrays.
-        mask = (lpix.cell_offsets_cpu >= 0)
-        iycell_grid, ixcell_grid = np.mgrid[:lpix.nycells, :lpix.nxcells]
-        iycell_list = iycell_grid[mask]
-        ixcell_list = ixcell_grid[mask]
-        src_offset_list = lpix.cell_offsets_cpu[mask]
-
-        assert lpix.ystride == 64
-        assert lpix.polstride == 64*64
-        
-        # Loop over cells in dynamic map.
-        for iycell, ixcell, src_offset in zip(iycell_list, ixcell_list, src_offset_list):
-            dst = mdyn[:, (iycell*64):(iycell*64+64), (ixcell*64):(ixcell*64+64)]
-            src = lmap_cpu[(src_offset):(src_offset+3*64*64)].reshape((3,64,64))
-            dst[:,:,:] = src[:,:,:]
+        mdyn = np.zeros((3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
+        mdyn[:, :self.nypix_global, :self.nxpix_global] = lmap.to_global()
 
         # Compare 'mref' and 'mdyn'.
         num = np.sum(np.abs(mref-mdyn))
