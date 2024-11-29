@@ -179,6 +179,12 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("partial_pixelization"));
 
+    m.def("cell_broadcast", &gpu_mm::cell_broadcast<Tmm>,
+	  py::arg("dst"), py::arg("src"), py::arg("index_map"));
+
+    m.def("cell_reduce", &gpu_mm::cell_reduce<Tmm>,
+	  py::arg("dst"), py::arg("src"), py::arg("index_map"));
+    
     m.def("expand_dynamic_map", &gpu_mm::expand_dynamic_map,
 	  py::arg("global_ncells"), py::arg("cell_offsets"), py::arg("plan_mt"));
 
@@ -186,7 +192,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     m.def("expand_dynamic_map2", &gpu_mm::expand_dynamic_map2,
 	  py::arg("global_ncells"), py::arg("local_pixelization"), py::arg("plan"));
 
-    m.def("local_map_to_global", &gpu_mm::local_map_to_global<float>,
+    m.def("local_map_to_global", &gpu_mm::local_map_to_global<Tmm>,
 	  py::arg("local_pixelization"), py::arg("dst"), py::arg("src"));
     
     // ---------------------------------------------------------------------------------------------

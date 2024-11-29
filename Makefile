@@ -51,6 +51,8 @@ OFILES = \
   src_lib/PointingPlanTester.o \
   src_lib/PointingPrePlan.o \
   src_lib/ToyPointing.o \
+  src_lib/cell_broadcast.o \
+  src_lib/cell_reduce.o \
   src_lib/check_arguments.o \
   src_lib/cuts.o \
   src_lib/expand_dynamic_map.o \

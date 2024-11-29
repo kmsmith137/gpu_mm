@@ -279,7 +279,7 @@ class PointingInstance:
         # Randomly permute the cells (tests DynamicMap.permute())
         dmap.randomly_permute()
         
-        # DynamicMap -> LocalMap -> padded global map
+        # DynamicMap -> LocalMap -> (padded global map).
         lmap = dmap.finalize()
         mdyn = np.zeros((3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
         mdyn[:, :self.nypix_global, :self.nxpix_global] = lmap.to_global()

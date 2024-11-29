@@ -1000,14 +1000,12 @@ class MpiPixelization:
         assert toplevel_map.pixelization == self.toplevel_pixelization
 
         src_buf = cp.asnumpy(toplevel_map.arr)  # copies GPU -> CPU if necessary
-        src_buf = np.reshape(src_buf, (self.tl_ncells,3*64*64))
-        aux_buf = np.empty((self.aux_ncells,3*64*64), dtype = src_buf.dtype)
-        dst_buf = np.empty((self.wbuf_ncells,3*64*64), dtype = src_buf.dtype)
+        src_buf = np.reshape(src_buf, self.tl_ncells * 3*64*64)
+        aux_buf = np.empty(self.aux_ncells * 3*64*64, dtype = src_buf.dtype)
+        dst_buf = np.empty(self.wbuf_ncells * 3*64*64, dtype = src_buf.dtype)
 
-        # FIXME vectorize
-        for i in range(self.aux_ncells):
-            j = self.aux_index_map[i]
-            aux_buf[i,:] = src_buf[j,:]
+        if self.aux_ncells > 0:
+            gpu_mm_pybind11.cell_broadcast(aux_buf, src_buf, self.aux_index_map)
         
         self.comm.Alltoallv((aux_buf, (self.aux_counts,self.aux_displs)),
                             (dst_buf, (self.wbuf_counts,self.wbuf_displs)))
@@ -1026,16 +1024,15 @@ class MpiPixelization:
         assert working_map.pixelization == self.working_pixelization
 
         src_buf = cp.asnumpy(working_map.arr)  # copies GPU -> CPU if necessary
-        src_buf = np.reshape(src_buf, (self.wbuf_ncells,3*64*64))
-        aux_buf = np.empty((self.aux_ncells, 3*64*64), dtype = src_buf.dtype)
-        dst_buf = np.zeros((self.tl_ncells, 3*64*64), dtype = src_buf.dtype)   # note zeros(), not empty()!
+        src_buf = np.reshape(src_buf, self.wbuf_ncells * 3*64*64)
+        aux_buf = np.empty(self.aux_ncells * 3*64*64, dtype = src_buf.dtype)
+        dst_buf = np.empty(self.tl_ncells * 3*64*64, dtype = src_buf.dtype)   # empty() is okay here
         
         self.comm.Alltoallv((src_buf, (self.wbuf_counts, self.wbuf_displs)),
                             (aux_buf, (self.aux_counts, self.aux_displs)))
 
-        for i in range(self.aux_ncells):
-            j = self.aux_index_map[i]
-            dst_buf[j,:] += aux_buf[i,:]
+        if self.aux_ncells > 0:
+            gpu_mm_pybind11.cell_reduce(dst_buf, aux_buf, self.aux_index_map)
 
         return LocalMap(self.toplevel_pixelization, dst_buf.reshape(-1))
 

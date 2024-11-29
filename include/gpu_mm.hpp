@@ -220,6 +220,22 @@ extern void reference_tod2map(
 );
 
 
+template<typename T>
+extern void cell_broadcast(
+    ksgpu::Array<T> &dst,
+    const ksgpu::Array<T> &src,
+    const ksgpu::Array<long> &index_map
+);
+
+
+template<typename T>
+extern void cell_reduce(
+    ksgpu::Array<T> &dst,
+    const ksgpu::Array<T> &src,
+    const ksgpu::Array<long> &index_map
+);
+
+
 // Returns updated value of 'global_ncells'.
 // Note that 'cell_offsets' has special semantics: (-1) is "targeted", (-2) is "untargeted"
 extern uint expand_dynamic_map(
@@ -227,6 +243,7 @@ extern uint expand_dynamic_map(
     ksgpu::Array<long> &cell_offsets,         // shape (nycells, nxcells) on GPU
     const ksgpu::Array<ulong> &plan_mt        // shape (nmt,) on GPU
 );
+
 
 // FIXME temporary kludge that will go away later.
 // WARNING: leaves 'local_pixelization' in an inconsistent state.
