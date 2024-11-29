@@ -6,7 +6,7 @@
 installed. This conda environment ("heavycuda") works for me:
 ```
 conda create -c conda-forge -n heavycuda \
-         cupy scipy matplotlib pybind11 \
+         cupy scipy matplotlib pybind11 mpi4py
          cuda-nvcc libcublas-dev libcufft-dev libcurand-dev
 ```
 

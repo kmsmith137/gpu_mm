@@ -61,7 +61,7 @@ def test_mpi_pixelization(niter=100):
         dmap._unstable_pixelization.copy_gpu_offsets_to_cpu()
         assert np.all( (dmap._unstable_pixelization.cell_offsets_cpu >= 0) == cells_2d)
         
-        mpix = gpu_mm.MpiPixelization(dmap)
+        mpix = gpu_mm.MpiPixelization(dmap, noisy=False)
         n = 3*64*64
         
         # Test 1. check that (mpix.aux_counts) and (mpix.wbuf_counts) are consistent.

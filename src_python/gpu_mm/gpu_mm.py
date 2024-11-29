@@ -172,6 +172,28 @@ to determine which map cells are needed on each MPI task. At the end of the firs
 stage, DynamicMap.finalize() can called, to "freeze in" the pixelization. The CG
 stage would use only LocalMaps -- no DynamicMaps.)
 
+=================
+MPI PIXELIZATIONS
+=================
+
+The MpiPixelization class distributes map cells across MPI tasks. It defines three 
+pixelizations on each MPI task. (These are instances of class LocalPixelization.)
+
+  - self.toplevel_pixelization: assigns each map cell in the survey footprint to a
+     unique MPI task. The toplevel pixelization is used to represent maps in the
+     high-level CG solver.
+        
+  - self.working_pixelization: defines a many-to-one mapping between map cells and
+     MPI tasks, such that each MPI task is assigned all cells which are "hit" by any
+     of the task's TODs. The working pixelization is used in tod2map() and map2tod().
+            
+  - self.root_pixelization: assigns all map cells to the root task.
+
+The MpiPixelization class also defines methods for converting maps between pixelizations
+(broadcast(), reduce(), gather()), which are written with the CG solver in mind. For
+more info, see the MpiPixelization docstring.
+
+
 ===============================
 POINTING "PLANS" AND "PREPLANS"
 ===============================
@@ -224,7 +246,9 @@ how to prioritize.
 """
 
 
-import ctypes, os
+import os
+import time
+import ctypes
 import numpy as np
 import cupy as cp
 
@@ -403,7 +427,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         if (self.nycells, self.nxcells, self.npix) != (x.nycells, x.nxcells, x.npix):
             return False
 
-        return np.all(np.maximum(self.cell_offsets_cpu,-1) == np.maximium(x.cell_offsets_cpu,-1))
+        return np.all(np.maximum(self.cell_offsets_cpu,-1) == np.maximum(x.cell_offsets_cpu,-1))
     
 
     @classmethod
@@ -495,7 +519,15 @@ class LocalMap:
 
 
     def to_global(self):
-        """XXX no wrap"""
+        """Converts the LocalMap to a "global" map, and and returns the global map.
+
+        The global map is represented as a numpy array of shape (3, nypix_global, nxpix_global).
+        Regions of the global map which are not covered by the LocalMap are zeroed.
+        
+        Note: we currently ignore pixels in the LocalMap with (xcoord >= nxpix_global).
+        Another option would be to "wrap" such pixels (if periodic_xcoord=True).
+        If this feature would be useful, I can implement a 'wrap' optional argument.
+        """
 
         src = cp.asnumpy(self.arr)
         dst = np.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
@@ -553,6 +585,7 @@ class DynamicMap:
 
            - DynamicMap supports tod2map() but not map2tod().
            - Can only inspect the cell ordering by calling finalize() at the end.
+           - Cell ordering is nondetermininstic (!)
         """
 
         assert 0 < nxpix_global <= 64*1024
@@ -732,18 +765,70 @@ class DynamicMap:
 
 
 class MpiPixelization:
-    def __init__(self, dmap, comm=None):
-        """
-          - toplevel_pixelization
-          - working_pixelization
+    def __init__(self, dmap, noisy=True, npy_filename=None, comm=None):
+        """Distributes map cells across MPI tasks.
 
-        Finalizes the pixelization (can still call dmap.finalize(), but not tod2map(dmap, ...).
+        The main purpose of this class is to define three pixelizations on each MPI task.
+        (These are instances of class LocalPixelization.)
+
+          - self.toplevel_pixelization: assigns each map cell in the survey footprint to a
+             unique MPI task. The toplevel pixelization is used to represent maps in the
+             high-level CG solver.
+        
+          - self.working_pixelization: defines a many-to-one mapping between map cells and
+             MPI tasks, such that each MPI task is assigned all cells which are "hit" by any
+             of the task's TODs. The working pixelization is used in tod2map() and map2tod().
+            
+          - self.root_pixelization: puts all map cells on the root task. Currently only used
+             in gather().
+
+        And the following three methods, which are used to convert between pixelizations 
+        in the CG solver:
+
+          - broadcast(toplevel_map) -> (working_map).
+            Sends each map cell to all MPI tasks which "hit" the cell.
+            Called at the beginning of each CG iteration, before any map2tod() calls.
+
+          - reduce(working_map) -> (toplevel_map).
+            For each map cell, sum the cell contents over all MPI tasks which "hit" the cell.
+            Called at the end of each CG iteration, to accumulate all tod2map() outputs.
+        
+          - gather(toplevel_map) -> (root_map).
+            Called at the end of the CG solver, to gather the map into a single array,
+            in order to write to disk. (You may also want to call LocalMap.to_global(),
+            see the gather() docstring)
+
+        Constructor arguments:
+
+         - dmap: a DynamicMap on each MPI task. This tells the MpiPixelization constructor
+            which map cells are "hit" by which MPI task(s).
+        
+         - noisy: if True, then some diagnostic info is printed (on MPI task 0).
+
+         - npy_filename: if specified, then a .npy file will be saved (on MPI task 0)
+            which can be used to reconstruct the MpiPixelization. This is intended in
+            order to save examples, for experimenting with load-balancing algorithms.
+
+         - comm: an MPI communicator (if unspecified, then MPI.COMM_WORLD is used)
+        
+        Note 1: The MpiPixelization constructor permutes the cell ordering in 'dmap',
+        in order to make the orering more MPI-friendly! I think this should always be
+        okay, since the cell ordering is arbitrary anyway.
+
+        Note 2: The MpiPixelization constructor finalizes the 'dmap' pixelization, but does
+        not finalize the map itself. (This means that you can still call dmap.finalize(),
+        but you can't further enlarge the pixelization with tod2map(dmap, ...).
+
+        Note 3: I'm currently using a simple load-balancing algorithm that gives decent results
+        in cases where I've tried it, but I might experiment with fancier algorithms later. 
+        For more info, see the CellAssignment docstring.
         """
 
         if comm is None:
             import mpi4py.MPI
             comm = mpi4py.MPI.COMM_WORLD
-            
+
+        t0 = time.time()
         assert isinstance(dmap, DynamicMap)
         assert not dmap.pixelization_is_finalized
         
@@ -772,16 +857,20 @@ class MpiPixelization:
         all_hits = np.zeros((self.ntasks,self.nycells,self.nxcells), dtype=bool)
         comm.Allgather((my_hits, self.nycells*self.nxcells), (all_hits, self.nycells*self.nxcells))
 
+        if (npy_filename is not None) and (self.my_rank == 0):
+            print(f'Writing {npy_filename}')
+            np.save(npy_filename, all_hits)
+            
         # Toplevel assignment of cells to tasks is factored into separate CellAssignment class, see below.
         self.cell_assignment = CellAssignment(all_hits)
         self.tl_ncells = self.cell_assignment.toplevel_ncells[self.my_rank]
         self.aux_ncells = self.cell_assignment.aux_ncells[self.my_rank]
         self.wbuf_ncells = self.cell_assignment.working_ncells[self.my_rank]
-        
+
         # Paranoid code check: make sure that the cell assignment is the same on all MPI tasks.
         assert self._is_equal_on_all_tasks(self.cell_assignment.cell_owners)
         assert dmap._unstable_pixelization.npix == self.wbuf_ncells * 64*64
-        
+
         # 1-d arrays of length (tl_ncells), containing (y,x) cell indices owned by local ("my") task.
         tl_y, tl_x = np.where(self.cell_assignment.cell_owners == self.my_rank)
         assert tl_y.shape == tl_x.shape == (self.tl_ncells,)
@@ -891,9 +980,21 @@ class MpiPixelization:
             polstride = 64*64,
             periodic_xcoord = dmap.periodic_xcoord
         )
+
+        if noisy and (self.my_rank == 0):
+            print(f'MpiPixelization: creation time {(time.time()-t0):.03f} seconds, load balancing stats:'
+                  + f' lb_toplevel={(self.cell_assignment.lb_toplevel):.03f},'
+                  + f' lb_working={(self.cell_assignment.lb_working):.03f},'
+                  + f' lb_aux={(self.cell_assignment.lb_aux):.03f}')
         
     
     def broadcast(self, toplevel_map):
+        """broadcast(toplevel_map) -> (working_map).
+
+        Sends each map cell to all MPI tasks which "hit" the cell.
+        Called at the beginning of each CG iteration, before any map2tod() calls.
+        """
+
         assert isinstance(toplevel_map, LocalMap)
         assert toplevel_map.pixelization == self.toplevel_pixelization
 
@@ -914,6 +1015,12 @@ class MpiPixelization:
         
 
     def reduce(self, working_map):
+        """reduce(working_map) -> (toplevel_map).
+
+        For each map cell, sum the cell contents over all MPI tasks which "hit" the cell.
+        Called at the end of each CG iteration, to accumulate all tod2map() outputs.
+        """
+        
         assert isinstance(working_map, LocalMap)
         assert working_map.pixelization == self.working_pixelization
 
@@ -933,7 +1040,20 @@ class MpiPixelization:
 
 
     def gather(self, toplevel_map, root=0):
-        """XXX docstring should reference LocalMap.to_global()"""
+        """gather(toplevel_map) -> (root_map).
+
+        Called at the end of the CG solver, to gather the map into a single array,
+        in order to write to disk. 
+        
+        Returns a LocalMap (in the root_pixelization) on the root MPI task, and
+        returns None on non-root tasks. This LocalMap covers the part of the sky
+        which is "hit" by any TOD, and has its own pixelization to keep track of
+        which cells are included. 
+
+        If you want to further convert to a "global" map, which is just a 
+        shape (3, nypix_global, nxpix_global) numpy array, then you can call
+        LocalMap.to_global() on the output of gather().
+        """
 
         assert isinstance(toplevel_map, LocalMap)
         assert toplevel_map.pixelization == self.toplevel_pixelization
@@ -992,7 +1112,7 @@ class CellAssignment:
 
         Note that this function doesn't call any MPI functions -- it just computes the cell assignment
         redundantly on each MPI task. The assignment is guaranteed to be the same on all tasks (this gets
-        checked by an assert in MpiPixelization.__init__())/
+        checked by an assert in MpiPixelization.__init__()).
 
         I'm currently using the following simple cell assignment algorithm:
 
@@ -1004,6 +1124,8 @@ class CellAssignment:
             currently has the smallest value of the cost function:
 
                Cost(task) = sum_{cells assigned to task} (5 + weight(cell))
+
+        This algorithm seems to work well in toy examples -- let's see what happens in SO!
         """
 
         assert all_hits.ndim == 3
@@ -1027,12 +1149,10 @@ class CellAssignment:
         # The rest of this function just computes load-balancing summary stats.
 
         owners_1d = self.cell_owners[y_1d, x_1d]
-        # waux_1d = w_1d - all_hits[owners_1d, y_1d, x_1d]   # FIXME later
-        waux_1d = w_1d
 
         self.toplevel_ncells = np.bincount(owners_1d, minlength=self.ntasks)
         self.working_ncells = np.sum(all_hits.reshape((self.ntasks,-1)), axis=1)
-        self.aux_ncells = np.bincount(owners_1d, waux_1d, minlength=self.ntasks)
+        self.aux_ncells = np.bincount(owners_1d, w_1d, minlength=self.ntasks)
         self.aux_ncells = np.array(self.aux_ncells, dtype=int)  # float -> int
 
         self.lb_toplevel = np.max(self.toplevel_ncells) / np.mean(self.toplevel_ncells)

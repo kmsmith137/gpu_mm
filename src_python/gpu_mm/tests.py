@@ -286,7 +286,7 @@ class PointingInstance:
         
         # Now some ad hoc code, to convert the dynamic map ('lmap_cpu') to a rectangular pixelization ('mdyn').
         # FIXME define a systematic API for this.
-        
+
         mdyn = np.zeros(shape=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
             
         # iycell_list, ixcell_list, src_offset_list = 1-d arrays.
