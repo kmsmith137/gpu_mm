@@ -1373,7 +1373,7 @@ class PointingPlanTester(gpu_mm_pybind11.PointingPlanTester):
         
 ####################################################################################################
 
-_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
+_libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "lib", "libgpu_mm.so"))
 
 # All function arguments are pointers, ints, longs, or floats
 _i = ctypes.c_int

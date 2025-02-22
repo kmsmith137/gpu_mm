@@ -5,7 +5,7 @@ import os
 from . import gpu_utils
 from .gpu_utils import GPUvec
 
-mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "libgpu_mm.so"))
+mylib = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "lib", "libgpu_mm.so"))
 
 fillA=mylib.fillA_host
 fillA.argtypes=(ctypes.c_void_p,ctypes.c_void_p,ctypes.c_int,ctypes.c_void_p)

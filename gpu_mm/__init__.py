@@ -1,4 +1,8 @@
+# Note: 'import ksgpu' must precede 'import gpu_mm_pybind11'.
+# (This is because 'import ksgpu' pulls in the libraries ksgpu.so and ksgpu_pybind11...so,
+# using the "ctypes trick" to make their symbols globally visible.)
 import ksgpu
+
 import cupy.cublas
 import cupy.cuda.cufft
 
