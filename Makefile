@@ -47,10 +47,12 @@ NVCC_ARCH ?= $(DEFAULT_NVCC_ARCH)
 # PYEXT_SUFFIX is something like .cpython-312-x86_64-linux-gnu.so.
 
 
+ifneq ($(MAKECMDGOALS),clean)
+  include makefile_helper.out
+endif
+
 makefile_helper.out: makefile_helper.py Makefile
 	$(PYTHON) makefile_helper.py
-
-include makefile_helper.out
 
 
 ####################################################################################################
@@ -193,10 +195,12 @@ $(GPU_MM_PYEXT): $(PYEXT_OFILES) $(GPU_MM_LIB) gpu_mm/lib
 
 # Needed by pip/pipmake: list of all files that go into the (non-editable) wheel.
 wheel_files.txt: Makefile gpu_mm/include gpu_mm/lib
+	rm -f $@
 	for f in $(WHEEL_FILES); do echo $$f; done >>$@
 
 # Needed by pip/pipmake: list of all files that go into the sdist.
 sdist_files.txt: Makefile
+	rm -f $@
 	for f in $(SDIST_FILES); do echo $$f; done >>$@
 
 clean:
