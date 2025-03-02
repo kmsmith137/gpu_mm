@@ -10,17 +10,25 @@ conda create -c conda-forge -n heavycuda \
          cuda-nvcc libcublas-dev libcufft-dev libcurand-dev
 ```
 
-2. Install the `ksgpu` library (https://github.com/kmsmith137/ksgpu).
+If you have the cuda toolkit installed outside conda, then you can
+omit some of these conda packages.
+
+2. Install the `ksgpu` library (See instructions at https://github.com/kmsmith137/ksgpu).
 (This library was previously named `gputils`, but I renamed it since that
 name was taken on pypi etc.)
 
-3. Install `gpu_mm` with:
-
-    make install
-
-to install in python site-packages. (Alternately, you can just do `make`,
-and the subdirectory `src_python` will behave like an importable python
-package.)
+3. Install `gpu_mm` with either:
+```
+      # Clone github repo and make 'editable' install
+      git clone https://github.com/kmsmith137/gpu_mm
+      cd gpu_mm
+      pip install -v -e .
+```
+or:
+```
+     # Install from pypi
+     pip install -v gpu_mm
+```
 
 ### Documentation
 
@@ -38,23 +46,12 @@ Please see:
   - Right now the code is not very well tested! I think testing is my 
     next priority.
 
-  - Currently, nypix_global and nxpix_global must be multiples of 64.
-    (There's no longer a good reason for this, and it would be easy to change.)
-
   - Currently, the number of TOD samples 'nsamp' must be a multiple of 32.
     (I'd like to change this, but it's not totally trivial, and there are a
      few minor issues I'd like to chat about.)
 
   - Helper functions for converting maps between different pixelizations
     (either local or global, with or without wrapping logic).
-
-  - A DynamicLocalPixelization class which adds map cells on-the-fly,
-    as tod2map() gets called sequentially with different TODs. This could
-    be used on the first iteration of a map maker to assign a LocalPixelization
-    to each GPU.
-
-  - An MPIPixelization class with all-to-all logic for distirbuting/reducing
-    maps across GPUs.
 
   - Kernels should be launched on current cupy stream (I'm currently launching
     on the default cuda stream).
@@ -65,9 +62,6 @@ Please see:
     and tod2map() even faster, but I put this on the back-burner since they're
     pretty fast already.
 
-  - Not currently pip-installable (or conda-installable). This turned out to 
-    be a real headache. I put it "on pause" but I plan to go back to it later.
-
   - New feature I'd like to implement some day: full quaternion-based pointing
     computation on the GPU (rather than computing on the CPU and using an
     interpolator).
@@ -75,6 +69,8 @@ Please see:
   - If decompressing data files on the CPU turns out to be a bottleneck, we
     could probably move this to the GPU (https://developer.nvidia.com/nvcomp).
 
+  - Generalized TQU response (e.g. for spinning half-wave plate).
+  
 None of these todo items should be a lot of work individually, but I'm not sure 
 how to prioritize.
 
