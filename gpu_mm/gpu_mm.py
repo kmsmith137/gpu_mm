@@ -304,7 +304,6 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
     else:
         raise RuntimeError(f"Bad 'plan' argument to map2tod(): {plan}")
 
-
 def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=False):
     """
     Arguments:
@@ -370,6 +369,36 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
     else:
         raise RuntimeError(f"Bad 'plan' argument to tod2map(): {plan}")
 
+
+def onthefly_map2tod(tod, local_map, pointing_basis, pointing_coeffs, plan, partial_pixelization=False, debug=False):
+    assert isinstance(local_map, LocalMap)
+    lpix = local_map.pixelization
+    larr = local_map.arr
+
+    gpu_mm_pybind11.onthefly_map2tod(tod, larr, pointing_basis, pointing_coeffs, lpix, plan, partial_pixelization, debug)
+
+def onthefly_tod2map(local_map, tod, pointing_basis, pointing_coeffs, plan, partial_pixelization=False, debug=False):
+    if isinstance(local_map, DynamicMap):
+        if not isinstance(plan, PointingPlan):
+            raise RuntimeError("tod2map(): if output is a DynamicMap, then the 'plan' argument"
+                               + f" must be a PointingPlan (got: {plan})'")
+        if partial_pixelization != local_map.have_cell_mask:
+            raise RuntimeError(f"tod2map(): {partial_pixelization=} was specified,"
+                               + f" but DynamicMap.have_cell_mask={local_map.have_cell_mask}"
+                               + " (expected these to be equal)")
+        local_map.expand(plan)
+        gpu_mm_pybind11.onthefly_tod2map(local_map._unstable_arr, tod, pointing_basis, pointing_coeffs,
+                                        local_map._unstable_pixelization, plan,
+                                        partial_pixelization, debug)
+        return
+
+    if not isinstance(local_map, LocalMap):
+        raise RuntimeError(f"tod2map(): Bad 'local_map' argument to tod2map(): expected LocalMap or DynamicMap, got: {local_map}")
+
+    lpix = local_map.pixelization
+    larr = local_map.arr
+
+    gpu_mm_pybind11.onthefly_tod2map(larr, tod, pointing_basis, pointing_coeffs, lpix, plan, partial_pixelization, debug)
 
 ####################################################################################################
 

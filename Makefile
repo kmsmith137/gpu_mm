@@ -79,12 +79,14 @@ LIB_SRCFILES = \
   src_lib/gpu_utils.cu \
   src_lib/local_map_to_global.cu \
   src_lib/map2tod.cu \
+  src_lib/map2tod_onthefly.cu \
   src_lib/map2tod_reference.cu \
   src_lib/map2tod_unplanned.cu \
   src_lib/misc.cu \
   src_lib/pycufft.cu \
   src_lib/test_plan_iterator.cu \
   src_lib/tod2map.cu \
+  src_lib/tod2map_onthefly.cu \
   src_lib/tod2map_reference.cu \
   src_lib/tod2map_unplanned.cu
 
@@ -191,7 +193,8 @@ $(GPU_MM_LIB): $(LIB_OFILES)
 #     to load the libraries libksgpu.so and ksgpu_pybind11...so with globally visible symbols.
 
 $(GPU_MM_PYEXT): $(PYEXT_OFILES) $(GPU_MM_LIB) gpu_mm/lib
-	$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=\\$$ORIGIN/lib"'
+	$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=/global/common/software/sobs/users/sigurdkn/local/gpu_mm/lib"'
+	#$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=\\$$ORIGIN/lib"'
 
 # Needed by pip/pipmake: list of all files that go into the (non-editable) wheel.
 wheel_files.txt: Makefile gpu_mm/include gpu_mm/lib

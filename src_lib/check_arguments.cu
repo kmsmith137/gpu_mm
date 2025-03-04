@@ -168,6 +168,23 @@ void check_xpointing(const Array<T> &xpointing, long nsamp_expected, const char 
     xassert_eq(nsamp_expected, nsamp_actual);
 }
 
+template<typename T>
+void check_onthefly_pointing(const Array<T> &pointing_basis, const Array<T> &pointing_coeffs, long nsamp_expected, const char *where, bool on_gpu) {
+    xassert(pointing_basis.ndim == 2);
+    xassert(pointing_basis.is_fully_contiguous());
+    _check_location(pointing_basis.aflags, where, "pointing_basis", on_gpu);
+    xassert(pointing_coeffs.ndim == 3);
+    xassert(pointing_coeffs.shape[0] == 3);
+    xassert(pointing_coeffs.is_fully_contiguous());
+    _check_location(pointing_coeffs.aflags, where, "pointing_coeffs", on_gpu);
+    long ndet   = pointing_coeffs.shape[1];
+    long nbasis = pointing_coeffs.shape[2];
+    long nt     = pointing_basis.shape[1];
+    xassert(pointing_basis.shape[0] == nbasis);
+    long nsamp  = ndet*nt;
+    check_nsamp(nsamp, where);
+    xassert_eq(nsamp, nsamp_expected);
+}
 
 void check_cell_offsets_and_init_ncells(const Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu)
 {
@@ -221,6 +238,7 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 #define INSTANTIATE(T) \
     template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
     template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
+    template void check_onthefly_pointing(const Array<T> &pointing_basis, const Array<T> &pointing_coeffs, long nsamp_expected, const char *where, bool on_gpu); \
     template void check_local_map(const Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu); \
     template void check_global_map(const Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu); \
     template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
