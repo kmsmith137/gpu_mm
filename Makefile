@@ -149,9 +149,9 @@ build_sdist: sdist_files.txt
 
 # Symlink {include,lib} into python directory 'gpu_mm'.
 gpu_mm/include:
-	ln -s ../include $@
+	ln -sf ../include $@
 gpu_mm/lib:
-	ln -s ../lib $@
+	ln -sf ../lib $@
 
 # Build object files in src_lib/.
 %.o: %.cu %.d
