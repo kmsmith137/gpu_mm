@@ -161,6 +161,16 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 	  py::arg("local_pixelization"), py::arg("plan"),
 	  py::arg("partial_pixelization"), py::arg("debug"));    
 
+    m.def("response_map2tod", &gpu_mm::launch_response_map2tod<Tmm>,
+	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("response"),
+	  py::arg("local_pixelization"), py::arg("plan"),
+	  py::arg("partial_pixelization"), py::arg("debug"));    
+
+    m.def("response_tod2map", &gpu_mm::launch_response_tod2map<Tmm>,
+	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("response"),
+	  py::arg("local_pixelization"), py::arg("plan"),
+	  py::arg("partial_pixelization"), py::arg("debug"));    
+
     m.def("unplanned_map2tod", &gpu_mm::launch_unplanned_map2tod<Tmm>,
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("errflags"),

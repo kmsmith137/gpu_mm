@@ -50,7 +50,7 @@ TIMESTREAMS
 ===========
 
 Currently, a timestream is a either a 1-d or a 2-d array
- 
+
    float32 tod[nsamp];
    float32 tod[ndet][nt];
 
@@ -129,7 +129,7 @@ Here are some examples of local maps, just to illustrate the flexibility:
    contiguous array with shape:
 
      float32 local_map[3][64*nycells][64*nxcells]
-    
+
    This could be represented as a local map with:
 
      ystride = 64*nxcells
@@ -182,11 +182,11 @@ pixelizations on each MPI task. (These are instances of class LocalPixelization.
   - self.toplevel_pixelization: assigns each map cell in the survey footprint to a
      unique MPI task. The toplevel pixelization is used to represent maps in the
      high-level CG solver.
-        
+
   - self.working_pixelization: defines a many-to-one mapping between map cells and
      MPI tasks, such that each MPI task is assigned all cells which are "hit" by any
      of the task's TODs. The working pixelization is used in tod2map() and map2tod().
-            
+
   - self.root_pixelization: assigns all map cells to the root task.
 
 The MpiPixelization class also defines methods for converting maps between pixelizations
@@ -259,10 +259,10 @@ from . import gpu_mm_pybind11
 mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
 
-def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=False):
+def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, response=None, debug=False):
     """
     Arguments:
-    
+
       - tod: output array (1-dimensional, length-nsamp).
          (See "timestreams" in top-level gpu_mm docstring)
          Will be overwritten by map2tod().
@@ -272,19 +272,19 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
 
       - xpointing: shape (3,nsamp) array.
          (See "xpointing arrays" in top-level gpu_mm docstring)
-    
+
       - plan: either instance of class PointingPlan, or one of
          the following special values:
-    
+
           - None: use plan-free map2tod code (slower)
           - 'reference': use CPU-based reference code (intended for testing)
-    
+
        - partial_pixelization: does caller intend to run the map-maker
           on a subset of the sky covered by the observations?
 
           - if False, then an exception will be thrown if any xpointing
             values are outside the local_map.
-    
+
           - if True, then xpointing values outside the local_map are
             treated as zeroed pixels.
     """
@@ -294,7 +294,10 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
     larr = local_map.arr
 
     if isinstance(plan, PointingPlan):
-        gpu_mm_pybind11.planned_map2tod(tod, larr, xpointing, lpix, plan, partial_pixelization, debug)
+        if response is None:
+            gpu_mm_pybind11.planned_map2tod(tod, larr, xpointing, lpix, plan, partial_pixelization, debug)
+        else:
+            gpu_mm_pybind11.response_map2tod(tod, larr, xpointing, response, lpix, plan, partial_pixelization, debug)
     elif plan is None:
         max_blocks = 2048  # ad hoc
         errflag = cp.zeros(max_blocks, dtype=cp.uint32)
@@ -305,10 +308,10 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, debug=F
         raise RuntimeError(f"Bad 'plan' argument to map2tod(): {plan}")
 
 
-def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=False):
+def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, response=None, debug=False):
     """
     Arguments:
-    
+
       - local_map: output array (instance of class LocalMap or DynamicMap).
          (See "local maps" and "dynamic maps" in top-level gpu_mm docstring)
          tod2map() will accumulate its output (i.e. add to existing array contents)
@@ -318,19 +321,19 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
 
       - xpointing: shape (3,nsamp) array.
          (See "xpointing arrays" in top-level gpu_mm docstring)
-    
+
       - plan: either instance of class PointingPlan, or one of
          the following special values:
-    
+
           - None: use plan-free map2tod code (slower)
           - 'reference': use CPU-based reference code (intended for testing)
-    
+
        - partial_pixelization: does caller intend to run the map-maker
           on a subset of the sky covered by the observations?
 
           - if False, then an exception will be thrown if any xpointing
             values are outside the local_map.
-    
+
           - if True, then xpointing values outside the local_map are
             treated as zeroed pixels.
     """
@@ -339,28 +342,36 @@ def tod2map(local_map, tod, xpointing, plan, partial_pixelization=False, debug=F
         if not isinstance(plan, PointingPlan):
             raise RuntimeError("tod2map(): if output is a DynamicMap, then the 'plan' argument"
                                + f" must be a PointingPlan (got: {plan})'")
-        
+
         if partial_pixelization != local_map.have_cell_mask:
             raise RuntimeError(f"tod2map(): {partial_pixelization=} was specified,"
                                + f" but DynamicMap.have_cell_mask={local_map.have_cell_mask}"
                                + " (expected these to be equal)")
-        
+
         local_map.expand(plan)
 
-        gpu_mm_pybind11.planned_tod2map(local_map._unstable_arr, tod, xpointing,
-                                        local_map._unstable_pixelization, plan,
-                                        partial_pixelization, debug)
-        
+        if response is None:
+            gpu_mm_pybind11.planned_tod2map(local_map._unstable_arr, tod, xpointing,
+                local_map._unstable_pixelization, plan, partial_pixelization, debug)
+        else:
+            # Arbitrary per-detector T and P response.
+            # This may be a few percent slower due to some extra multiplications
+            gpu_mm_pybind11.response_tod2map(local_map._unstable_arr, tod, xpointing,
+                response, local_map._unstable_pixelization, plan, partial_pixelization, debug)
+
         return
-        
+
     if not isinstance(local_map, LocalMap):
         raise RuntimeError(f"tod2map(): Bad 'local_map' argument to tod2map(): expected LocalMap or DynamicMap, got: {local_map}")
 
     lpix = local_map.pixelization
     larr = local_map.arr
-    
+
     if isinstance(plan, PointingPlan):
-        gpu_mm_pybind11.planned_tod2map(larr, tod, xpointing, lpix, plan, partial_pixelization, debug)
+        if response is None:
+            gpu_mm_pybind11.planned_tod2map(larr, tod, xpointing, lpix, plan, partial_pixelization, debug)
+        else:
+            gpu_mm_pybind11.response_tod2map(larr, tod, xpointing, response, lpix, plan, partial_pixelization, debug)
     elif plan is None:
         max_blocks = 2048  # ad hoc
         errflag = cp.zeros(max_blocks, dtype=cp.uint32)
@@ -394,15 +405,15 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
       nxcells        (int)
       npix           (int)
     """
-    
+
     def __init__(self, nypix_global, nxpix_global, cell_offsets, ystride, polstride, periodic_xcoord = True):
         self.cell_offsets_cpu = cp.asnumpy(cell_offsets)   # numpy array
         self.cell_offsets_gpu = cp.asarray(cell_offsets)   # cupy array
-        
+
         # Note: most of the members mentioned in the docstring are inherited from pybind11.
         # (Specifically: nypix_global, nxpix_global, periodic_xcoord, ystride, polstride, nycells, nxcells, npix).
         gpu_mm_pybind11.LocalPixelization.__init__(self, nypix_global, nxpix_global, self.cell_offsets_cpu, self.cell_offsets_gpu, ystride, polstride, periodic_xcoord)
-    
+
     def is_simple_rectangle(self):
         """
         The simplest case of a local pixelization is a 3-d contiguous array of shape
@@ -415,10 +426,10 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
 
     def __eq__(self, x):
         assert isinstance(x, LocalPixelization)
-        
+
         if self is x:
             return True
-        
+
         # nypix_global, nxpix_global, periodic_xcoord, ystride, polstride, nycells, nxcells, npix).
         if (self.nypix_global, self.nxpix_global) != (x.nypix_global, x.nxpix_global):
             return False
@@ -428,7 +439,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
             return False
 
         return np.all(np.maximum(self.cell_offsets_cpu,-1) == np.maximum(x.cell_offsets_cpu,-1))
-    
+
 
     @classmethod
     def _make_rectangular_cell_offsets(cls, nycells, nxcells):
@@ -436,15 +447,15 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
         cell_offsets[:,:] = 64 * np.arange(nxcells).reshape((1,-1))
         cell_offsets[:,:] += 64*64 * nxcells * np.arange(nycells).reshape((-1,1))
         return cell_offsets
-        
-        
+
+
     @classmethod
     def make_rectangle(cls, nypix_global, nxpix_global, periodic_xcoord = True):
         """
         Returns a trivial LocalPixelization which covers the entire global sky.
         The "local" map will represented as a 3-d contiguous array of shape 
         (3, nypix_padded, nxpix_padded), where:
-        
+
            nypix_padded = (nypix_global + 63) & ~63   # round up to multiple of 64
            nxpix_padded = (nxpix_global + 63) & ~63   # round up to multiple of 64
 
@@ -465,7 +476,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
            rect_pix = LocalPixelization.make_rectangle(nypix_global, nxpix_global)
            local_map = LocalMap(rect_pix, global_map)
         """
-        
+
         assert nypix_global > 0
         assert nxpix_global > 0
 
@@ -485,7 +496,7 @@ class LocalPixelization(gpu_mm_pybind11.LocalPixelization):
 class LocalMap:
     """
     A LocalMap consists of:
-        
+
        - A LocalPixelization, which describes which 64-by-64 map cells are in
          the local map, and their layout in memory.
 
@@ -496,7 +507,7 @@ class LocalMap:
     (If you want these functions to operate on global maps instead, see the
     LocalPixelization.make_rectangle() docstring.)
     """
-        
+
     def __init__(self, pixelization, arr):
         assert isinstance(pixelization, LocalPixelization)
         assert isinstance(arr, np.ndarray) or isinstance(arr, cp.ndarray)
@@ -523,7 +534,7 @@ class LocalMap:
 
         The global map is represented as a numpy array of shape (3, nypix_global, nxpix_global).
         Regions of the global map which are not covered by the LocalMap are zeroed.
-        
+
         Note: we currently ignore pixels in the LocalMap with (xcoord >= nxpix_global).
         Another option would be to "wrap" such pixels (if periodic_xcoord=True).
         If this feature would be useful, I can implement a 'wrap' optional argument.
@@ -547,7 +558,7 @@ class DynamicMap:
         you call DynamicMap.finalize() to convert the DynamicMap to a LocalMap.
 
         DynamicMaps always use a memory layout of the form
-        
+
             float32 local_map[ncells][3][64][64];
 
         where 'ncells' increases dynamically when tod2map() is called. The cell ordering is
@@ -570,12 +581,12 @@ class DynamicMap:
                 preplan = PointingPrePlan(xpointing, nypix_global, nxpix_global)
                 plan = PointingPlan(preplan, xpointing)
                 tod2map(dmap, tod, xpointing, plan)  # dynamically expands 'dmap'
-        
+
             # Finalize (converts DynamicMap -> LocalMap).
             local_map = dmap.finalize()          # instance of class LocalMap 
             local_pix = local_map.pixelization   # instance of class LocalPixelization
             local_arr = local_map.arr            # cupy array, shape (ncells,3,64,64).
-        
+
             # The memory layout is: float32 local_map[ncells][3][64][64].
             # This is encoded (including cell ordering) by the 2-d 'cell_offsets_cpu' array 
             # in the LocalPixelization. If the i-th cell has indices (iycell, ixcell),
@@ -593,7 +604,7 @@ class DynamicMap:
         assert 0 < nypix_global <= 64*1024
         assert dtype == cp.float32   # placeholder for eventually supporting float32 + float64
         assert initial_ncells > 0
-        
+
         self.nypix_global = nypix_global
         self.nxpix_global = nxpix_global
         self.periodic_xcoord = periodic_xcoord
@@ -606,7 +617,7 @@ class DynamicMap:
         # Initialize 'cell_offsets' array (see LocalPixelization docstring).
         # Array elements are (-1) in "targeted" cells, or (-2) in "untargeted" cells.
         # (This convention is assumed by the gpu_mm_pybind11.expand_dynamic_map() cuda kernel.)
-        
+
         if cell_mask is None:
             nycells = (nypix_global + 63) // 64
             nxcells = (nxpix_global + 63) // 64
@@ -621,7 +632,7 @@ class DynamicMap:
         #  - self._unstable_pixelization: A LocalPixelization where CPU/GPU state is inconsistent (!)
         #  - self._unstable_arr: This array is reallocated/resized between calls to tod2map().
         #  - self._padded_arr: This array is reallocated/resized between calls to tod2map().
-        
+
         # Make LocalPixelization (initially empty)
         self._unstable_pixelization = LocalPixelization(
             nypix_global = nypix_global,
@@ -639,11 +650,11 @@ class DynamicMap:
         # (We allocate a 32-element cache line and truncate.)
         self.global_ncells = cp.zeros(32, dtype=cp.uint32)
         self.global_ncells = self.global_ncells[:1]
-        
+
         self.ncells_curr = 0
         self.pixelization_is_finalized = False
         self.map_is_finalized = False
-        
+
 
     def expand(self, plan):
         """Adds cells to the pixelization to cover a TOD (or more precisely, the PointingPlan for the TOD).
@@ -656,7 +667,7 @@ class DynamicMap:
         if self.pixelization_is_finalized:
             raise RuntimeError("Can't currently call tod2map() [or DynamicMap.expand()]"
                                + " after MpiPixelization.__init__() [or DynamicMap.permute()].")
-        
+
         assert isinstance(plan, PointingPlan)
         assert plan.nypix_global == self.nypix_global
         assert plan.nxpix_global == self.nxpix_global
@@ -673,7 +684,7 @@ class DynamicMap:
         self._unstable_pixelization.npix = self.ncells_curr * (64*64)
         self._unstable_arr = self._padded_arr[:(self.ncells_curr * 3*64*64)]
 
-    
+
     def permute(self, iycells, ixcells):
         """Permutes the pixelization's cell ordering.
 
@@ -682,7 +693,7 @@ class DynamicMap:
 
         The 'iycells' and 'ixcells' args are integer-valued arrays of length (self.ncells_curr),
         that give the (y,x) coordinates in the desired (permuted) cell ordering.
-        
+
         Currently, permute() finalizes the pixelization -- this isn't logically necessary, but makes 
         sense if called through MpiPixelization.__init__().
         """
@@ -695,7 +706,7 @@ class DynamicMap:
         assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)   # gets updated by copy_gpu_offsets_to_cpu()
         new_offsets = self._unstable_pixelization.cell_offsets_cpu                # cell offsets will be overwritten in-place
         old_offsets = np.copy(new_offsets)                                        # keep temporary copy of old offsets
-        
+
         # Lots of argument checking
         assert isinstance(iycells, np.ndarray) and isinstance(ixcells, np.ndarray)   # must be on CPU
         assert iycells.shape == ixcells.shape == (self.ncells_curr,)
@@ -728,7 +739,7 @@ class DynamicMap:
         n = 3*64*64
         for i,j in enumerate(src_offsets):
             self._unstable_arr[i*n:(i*n+n)] = old_arr[j:(j+n)]
-        
+
 
     def finalize(self):
         """Called at the end of the TOD loop. Returns a LocalMap."""
@@ -744,17 +755,17 @@ class DynamicMap:
             self._unstable_arr = cp.copy(self._unstable_arr)  # shrink overallocated map
 
         ret = LocalMap(self._unstable_pixelization, self._unstable_arr)
-        
+
         assert self._unstable_pixelization.npix == (self.ncells_curr * 64 * 64)        
         self._padded_arr = self._unstable_arr = None    # don't hold references
         self.map_is_finalized = True
-        
+
         return ret
 
 
     def randomly_permute(self):
         """Only called during testing."""
-        
+
         self._unstable_pixelization.copy_gpu_offsets_to_cpu()
         iycells, ixcells = np.where(self._unstable_pixelization.cell_offsets_cpu >= 0)
 
@@ -775,11 +786,11 @@ class MpiPixelization:
           - self.toplevel_pixelization: assigns each map cell in the survey footprint to a
              unique MPI task. The toplevel pixelization is used to represent maps in the
              high-level CG solver.
-        
+
           - self.working_pixelization: defines a many-to-one mapping between map cells and
              MPI tasks, such that each MPI task is assigned all cells which are "hit" by any
              of the task's TODs. The working pixelization is used in tod2map() and map2tod().
-            
+
           - self.root_pixelization: puts all map cells on the root task. Currently only used
              in gather().
 
@@ -793,7 +804,7 @@ class MpiPixelization:
           - reduce(working_map) -> (toplevel_map).
             For each map cell, sum the cell contents over all MPI tasks which "hit" the cell.
             Called at the end of each CG iteration, to accumulate all tod2map() outputs.
-        
+
           - gather(toplevel_map) -> (root_map).
             Called at the end of the CG solver, to gather the map into a single array,
             in order to write to disk. (You may also want to call LocalMap.to_global(),
@@ -803,7 +814,7 @@ class MpiPixelization:
 
          - dmap: a DynamicMap on each MPI task. This tells the MpiPixelization constructor
             which map cells are "hit" by which MPI task(s).
-        
+
          - noisy: if True, then some diagnostic info is printed (on MPI task 0).
 
          - npy_filename: if specified, then a .npy file will be saved (on MPI task 0)
@@ -811,7 +822,7 @@ class MpiPixelization:
             order to save examples, for experimenting with load-balancing algorithms.
 
          - comm: an MPI communicator (if unspecified, then MPI.COMM_WORLD is used)
-        
+
         Note 1: The MpiPixelization constructor permutes the cell ordering in 'dmap',
         in order to make the orering more MPI-friendly! I think this should always be
         okay, since the cell ordering is arbitrary anyway.
@@ -832,7 +843,7 @@ class MpiPixelization:
         t0 = time.time()
         assert isinstance(dmap, DynamicMap)
         assert not dmap.pixelization_is_finalized
-        
+
         # FIXME temporary kludge that will go away when I do some code cleanup.
         dmap._unstable_pixelization.copy_gpu_offsets_to_cpu()
         cell_offsets = dmap._unstable_pixelization.cell_offsets_cpu
@@ -850,10 +861,10 @@ class MpiPixelization:
         check = [ self.nypix_global, self.nxpix_global, self.periodic_xcoord, self.nycells, self.nxcells ]
         if not self._is_equal_on_all_tasks(check):
             raise RuntimeError(f'MpiPixelization: expected (nypix_global, nxpix_global, periodic_xcoord, nycells, nxcells) to be equal on all tasks')
-        
+
         # my_hits = 2-d boolean array of shape (nycells, nxcells), indicates which cells are "hit" by local task.
         my_hits = (cell_offsets >= 0)
-        
+
         # all_hits = 3-d boolean array of shape (ntasks, nycells, nxcells), indicates which cells are "hit" by each task.
         all_hits = np.zeros((self.ntasks,self.nycells,self.nxcells), dtype=bool)
         comm.Allgather((my_hits, self.nycells*self.nxcells), (all_hits, self.nycells*self.nxcells))
@@ -861,7 +872,7 @@ class MpiPixelization:
         if (npy_filename is not None) and (self.my_rank == 0):
             print(f'Writing {npy_filename}')
             np.save(npy_filename, all_hits)
-            
+
         # Toplevel assignment of cells to tasks is factored into separate CellAssignment class, see below.
         self.cell_assignment = CellAssignment(all_hits)
         self.tl_ncells = self.cell_assignment.toplevel_ncells[self.my_rank]
@@ -898,7 +909,7 @@ class MpiPixelization:
             self.aux_displs[r] = pos * (3*64*64)
             self.aux_index_map[pos:(pos+n)] = ix
             pos += n
-        
+
         assert pos == self.aux_ncells
 
         # The "working" buffer (wbuf) is a LocalMap, as viewed by MPI_Alltoallv().
@@ -947,9 +958,9 @@ class MpiPixelization:
             pos += n
 
         assert pos == self.root_ncells
-        
+
         # Construct self.toplevel_pixelization (instance of class LocalPixelization).
-        
+
         tl_cell_offsets = np.full((self.nycells,self.nxcells), -1)
         tl_cell_offsets[tl_y,tl_x] = np.arange(self.tl_ncells) * (3*64*64)
 
@@ -987,8 +998,8 @@ class MpiPixelization:
                   + f' lb_toplevel={(self.cell_assignment.lb_toplevel):.03f},'
                   + f' lb_working={(self.cell_assignment.lb_working):.03f},'
                   + f' lb_aux={(self.cell_assignment.lb_aux):.03f}')
-        
-    
+
+
     def broadcast(self, toplevel_map):
         """broadcast(toplevel_map) -> (working_map).
 
@@ -1006,12 +1017,12 @@ class MpiPixelization:
 
         if self.aux_ncells > 0:
             gpu_mm_pybind11.cell_broadcast(aux_buf, src_buf, self.aux_index_map)
-        
+
         self.comm.Alltoallv((aux_buf, (self.aux_counts,self.aux_displs)),
                             (dst_buf, (self.wbuf_counts,self.wbuf_displs)))
-        
+
         return LocalMap(self.working_pixelization, dst_buf.reshape(-1))
-        
+
 
     def reduce(self, working_map):
         """reduce(working_map) -> (toplevel_map).
@@ -1019,7 +1030,7 @@ class MpiPixelization:
         For each map cell, sum the cell contents over all MPI tasks which "hit" the cell.
         Called at the end of each CG iteration, to accumulate all tod2map() outputs.
         """
-        
+
         assert isinstance(working_map, LocalMap)
         assert working_map.pixelization == self.working_pixelization
 
@@ -1027,7 +1038,7 @@ class MpiPixelization:
         src_buf = np.reshape(src_buf, self.wbuf_ncells * 3*64*64)
         aux_buf = np.empty(self.aux_ncells * 3*64*64, dtype = src_buf.dtype)
         dst_buf = np.empty(self.tl_ncells * 3*64*64, dtype = src_buf.dtype)   # empty() is okay here
-        
+
         self.comm.Alltoallv((src_buf, (self.wbuf_counts, self.wbuf_displs)),
                             (aux_buf, (self.aux_counts, self.aux_displs)))
 
@@ -1042,7 +1053,7 @@ class MpiPixelization:
 
         Called at the end of the CG solver, to gather the map into a single array,
         in order to write to disk. 
-        
+
         Returns a LocalMap (in the root_pixelization) on the root MPI task, and
         returns None on non-root tasks. This LocalMap covers the part of the sky
         which is "hit" by any TOD, and has its own pixelization to keep track of
@@ -1056,7 +1067,7 @@ class MpiPixelization:
         assert isinstance(toplevel_map, LocalMap)
         assert toplevel_map.pixelization == self.toplevel_pixelization
         assert 0 <= root < self.ntasks
-        
+
         src_buf = cp.asnumpy(toplevel_map.arr)  # copies GPU -> CPU if necessary
         src_buf = np.reshape(src_buf, (self.tl_ncells,3*64*64))
         dst_arg = dst_map = None
@@ -1068,8 +1079,8 @@ class MpiPixelization:
 
         self.comm.Gatherv((src_buf, src_buf.size), dst_arg, root=root)
         return dst_map
-        
-    
+
+
     def _allreduce(self, arr):
         arr = np.asarray(arr)
         assert arr.data.c_contiguous
@@ -1090,7 +1101,7 @@ class MpiPixelization:
         big_arr = self._allgather(arr)
         return np.all(arr == big_arr)
 
-    
+
 class CellAssignment:
     def __init__(self, all_hits):
         """Helper class for MpiPixelization: computes the assignment of cells to tasks.
@@ -1156,7 +1167,7 @@ class CellAssignment:
         self.lb_toplevel = np.max(self.toplevel_ncells) / np.mean(self.toplevel_ncells)
         self.lb_working = np.max(self.working_ncells) / np.mean(self.working_ncells)
         self.lb_aux = np.max(self.aux_ncells) / np.mean(self.aux_ncells)
-        
+
 
 ####################################################################################################
 
@@ -1179,7 +1190,7 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
     If these arrays are None (the default), then they'll be allocated and freed on-the-fly.
     However, you may find it more efficient to use preallocated buffers, to avoid the overhead
     of this on-the-fly allocation.
-    
+
     IMPORTANT: the PointingPrePlan keeps a reference to the 'buf' array and assumes that it
     has exclusive access, whereas the 'tmp_buf' array is only used by the constructor temporarily.
     Therefore, if you're constructing multiple PointingPrePlans, you can use the same 'tmp_buf'
@@ -1205,7 +1216,7 @@ class PointingPrePlan(gpu_mm_pybind11.PointingPrePlan):
 
     # Static member. Currently 1024 (defined in gpu_mm.hpp).
     preplan_size = gpu_mm_pybind11.PointingPrePlan._get_preplan_size()
-    
+
     def __init__(self, xpointing_gpu, nypix_global, nxpix_global, buf=None, tmp_buf=None, periodic_xcoord=True, debug=False):
         if buf is None:
             buf = cp.empty(self.preplan_size, dtype=cp.uint32)
@@ -1230,7 +1241,7 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
     If these arrays are None (the default), then they'll be allocated and freed on-the-fly.
     However, you may find it more efficient to use preallocated buffers, to avoid the overhead
     of this on-the-fly allocation.
-    
+
     IMPORTANT: the PointingPlan keeps a reference to the 'buf' array and assumes that it
     has exclusive access, whereas the 'tmp_buf' array is only used by the constructor temporarily.
     Therefore, if you're constructing multiple PointingPlans, you can use the same 'tmp_buf'
@@ -1245,7 +1256,7 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
         self.get_plan_mt()
         self.__str__()
     """
-    
+
     def __init__(self, preplan, xpointing_gpu, buf=None, tmp_buf=None, debug=False):
         if buf is None:
             buf = cp.empty(preplan.plan_nbytes, dtype=cp.uint8)
@@ -1254,7 +1265,7 @@ class PointingPlan(gpu_mm_pybind11.PointingPlan):
 
         gpu_mm_pybind11.PointingPlan.__init__(self, preplan, xpointing_gpu, buf, tmp_buf, debug)
 
-            
+
 ####################################################################################################
 
 
@@ -1263,9 +1274,9 @@ def read_xpointing_npzfile(filename):
     Reads a shape (3,nsamp) xpointing array, in an ad hoc .npz file format
     that I defined in November 2023. I plan to phase out this file format soon!
     """
-    
+
     print(f'Reading xpointing file {filename}')
-    
+
     f = np.load(filename)
     xp = f['xpointing']
     assert (xp.ndim == 3) and (xp.shape[0] == 3)   # ({x,y,alpha}, ndet, ntod)
@@ -1275,7 +1286,7 @@ def read_xpointing_npzfile(filename):
 
     # Nuisance issue: the Nov 2023 file format uses row ordering (x,y,alpha), whereas
     # we've now switched to ordering (y,x,alpha).
-    
+
     xpointing_cpu = np.zeros((3,ndet,ntp), dtype=xp.dtype)
     xpointing_cpu[0,:,:ntu] = xp[1,:,:]    # FIXME (0,1) index swap here is horrible
     xpointing_cpu[1,:,:ntu] = xp[0,:,:]    # FIXME (0,1) index swap here is horrible
@@ -1320,7 +1331,7 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
     @staticmethod
     def make_random(nsamp_max, noisy=True):
         assert nsamp_max >= 64*1024
-        
+
         if np.random.randint(0,2):
             # Case 1: TOD arrays have shape (nsamp)
             ndet = None
@@ -1331,13 +1342,13 @@ class ToyPointing(gpu_mm_pybind11.ToyPointing):
             s = int((nsamp_max/32.)**0.5)
             ndet = 2**r * np.random.randint(s//2,s+1)
             nt = 2**(5-r) * np.random.randint(s//2,s+1)
-            
+
         npix_max = min(nsamp_max//128, 16384)
         nypix_global = np.random.randint(npix_max/8, npix_max//2 + 1)
         nxpix_global = np.random.randint(nypix_global + 2, npix_max + 1)
         scan_speed = np.random.uniform(0.1, 0.5)
         total_drift = np.random.uniform(0.1*(nxpix_global-nypix_global), (nxpix_global-nypix_global)-2)
-                    
+
         return ToyPointing(ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, noisy=noisy)
 
 
@@ -1364,13 +1375,13 @@ class PointingPlanTester(gpu_mm_pybind11.PointingPlanTester):
 
     def __init__(self, preplan, xpointing_gpu):
         assert isinstance(preplan, PointingPrePlan)
-        
+
         tmp_nbytes = gpu_mm_pybind11.PointingPlanTester.get_constructor_tmp_nbytes(preplan)
         tmp = cp.empty(tmp_nbytes, dtype=cp.uint8)
-        
+
         gpu_mm_pybind11.PointingPlanTester.__init__(self, preplan, xpointing_gpu, tmp)
-        
-        
+
+
 ####################################################################################################
 
 _libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "lib", "libgpu_mm.so"))

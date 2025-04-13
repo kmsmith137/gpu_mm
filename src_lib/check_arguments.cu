@@ -42,26 +42,26 @@ void check_nxpix_global(long nxpix_global, const char *where)
 void check_err(uint err, const char *where, uint errflags_to_ignore)
 {
     err &= ~errflags_to_ignore;
-    
+
     // Note: errflag_bad_{xy}pix should come before errflag_not_in_pixelization.
-    
+
     if (err & errflag_bad_ypix)
-	throw runtime_error(string(where) + ": xpointing y-value is outside range [1,nypix_global-2].");
+        throw runtime_error(string(where) + ": xpointing y-value is outside range [1,nypix_global-2].");
     if (err & errflag_bad_xpix)
-	throw runtime_error(string(where) + ": xpointing x-value is outside range, perhaps you want the 'periodic_xcoord' flag?");
+        throw runtime_error(string(where) + ": xpointing x-value is outside range, perhaps you want the 'periodic_xcoord' flag?");
     if (err & errflag_inconsistent_nmt)
-	throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
+        throw runtime_error(string(where) + ": inconsistent value of nmt between preplan/plan?! (should never happen)");
     if (err & errflag_not_in_pixelization)
-	throw runtime_error(string(where) + ": xpointing (y,x) value is not in LocalPixelization (perhaps pixelization is too small, or you want the 'partial_pixelization' flag");
+        throw runtime_error(string(where) + ": xpointing (y,x) value is not in LocalPixelization (perhaps pixelization is too small, or you want the 'partial_pixelization' flag");
     if (err)
-	throw runtime_error(string(where) + ": bad errflags?! (should never happen)");
+        throw runtime_error(string(where) + ": bad errflags?! (should never happen)");
 }
 
 void check_cpu_errflags(const uint *errflags_cpu, int nelts, const char *where, uint errflags_to_ignore)
 {
     uint err = 0;
     for (int i = 0; i < nelts; i++)
-	err |= errflags_cpu[i];
+        err |= errflags_cpu[i];
 
     check_err(err, where, errflags_to_ignore);
 }
@@ -76,9 +76,9 @@ void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *where, 
 static void _check_location(int aflags, const char *where, const char *arr_name, bool on_gpu)
 {
     if (on_gpu && ksgpu::af_on_gpu(aflags))
-	return;
+        return;
     if (!on_gpu && ksgpu::af_on_host(aflags))
-	return;
+        return;
 
     stringstream ss;
     ss << where << ": expected " << arr_name << " to be in " << (on_gpu ? "GPU" : "CPU") << " memory";
@@ -95,10 +95,10 @@ void check_global_map_and_init_npix(const Array<T> &map, long &nypix_global, lon
 
     nypix_global = map.shape[1];
     nxpix_global = map.shape[2];
-    
+
     check_nypix_global(nypix_global, where);
     check_nxpix_global(nxpix_global, where);
-    
+
     _check_location(map.aflags, where, "map", on_gpu);
 }
 
@@ -168,6 +168,16 @@ void check_xpointing(const Array<T> &xpointing, long nsamp_expected, const char 
     xassert_eq(nsamp_expected, nsamp_actual);
 }
 
+template<typename T>
+void check_response(const Array<T> &response, long nsamp_expected, long &ndet, long &nperdet, const char * where, bool on_gpu)
+{
+    xassert(response.ndim == 2);
+    xassert(response.shape[0] == 2); // T,P
+    ndet    = response.shape[1];
+    nperdet = nsamp_expected / ndet;
+    xassert(ndet*nperdet == nsamp_expected);
+    _check_location(response.aflags, where, "response", on_gpu);
+}
 
 void check_cell_offsets_and_init_ncells(const Array<long> &cell_offsets, long &nycells, long &nxcells, const char *where, bool on_gpu)
 {
@@ -176,7 +186,7 @@ void check_cell_offsets_and_init_ncells(const Array<long> &cell_offsets, long &n
 
     nycells = cell_offsets.shape[0];
     nxcells = cell_offsets.shape[1];
-    
+
     xassert(nycells > 0);
     xassert(nxcells > 0);
     xassert_le(nycells, 1024);
@@ -190,7 +200,7 @@ void check_cell_offsets(const Array<long> &cell_offsets, long nycells_expected, 
 {
     long nycells_actual, nxcells_actual;
     check_cell_offsets_and_init_ncells(cell_offsets, nycells_actual, nxcells_actual, where, on_gpu);
-    
+
     xassert_eq(nycells_expected, nycells_actual);
     xassert_eq(nxcells_expected, nxcells_actual);
 }
@@ -199,21 +209,21 @@ void check_cell_offsets(const Array<long> &cell_offsets, long nycells_expected, 
 void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *where, const char *bufname)
 {
     if ((buf.ndim != 1) || (buf.size < min_nbytes)) {
-	stringstream ss;
-	ss << where << ": expected '" << bufname << "' to be 1-d array of length >= " << min_nbytes << ", actual shape=" << buf.shape_str();
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << where << ": expected '" << bufname << "' to be 1-d array of length >= " << min_nbytes << ", actual shape=" << buf.shape_str();
+        throw runtime_error(ss.str());
     }
 
     if (!buf.on_gpu()) {
-	stringstream ss;
-	ss << where << ": array '" << bufname << "' must be on GPU";
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << where << ": array '" << bufname << "' must be on GPU";
+        throw runtime_error(ss.str());
     }
 
     if (!buf.is_fully_contiguous()) {
-	stringstream ss;
-	ss << where << ": array '" << bufname << "' must be contiguous";
-	throw runtime_error(ss.str());
+        stringstream ss;
+        ss << where << ": array '" << bufname << "' must be contiguous";
+        throw runtime_error(ss.str());
     }
 }
 
@@ -221,6 +231,7 @@ void check_buffer(const Array<unsigned char> &buf, long min_nbytes, const char *
 #define INSTANTIATE(T) \
     template void check_tod(const Array<T> &tod, long nsamp, const char *where, bool on_gpu); \
     template void check_xpointing(const Array<T> &xpointing, long nsamp, const char *where, bool on_gpu); \
+    template void check_response(const Array<T> &response, long nsamp_expected, long &ndet, long &nperdet, const char * where, bool on_gpu); \
     template void check_local_map(const Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu); \
     template void check_global_map(const Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu); \
     template void check_tod_and_init_nsamp(const Array<T> &tod, long &nsamp, const char *where, bool on_gpu); \
