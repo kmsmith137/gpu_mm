@@ -67,16 +67,19 @@ def destroy_plan(plan):
     C.destroy_plan(plan.ctypes.data)
 
 def rfft(dat, out=None, axis=-1, plan=None, plan_cache=None):
-    # We apparently only support 2d input arrays
-    axis = axis % dat.ndim
-    if dat.ndim != 2:
-        raise ValueError("pycufft.rfft only supports 2d arrays")
     if dat.dtype != np.float32:
         raise ValueError("pycufft.rfft only supports single precision")
+    # Flatten pre-dimensions
+    pre = dat.shape[:-1]
+    dat = dat.reshape(-1,dat.shape[-1])
+    if axis > 1 or axis < -2:
+        raise ValueError("pycufft.rfft only supports 2d arrays, an axis %d is outside the 2d-flattened range")
+    axis %= 2
     if out is None:
         oshape = dat.shape[:axis] + (dat.shape[axis]//2+1,)+dat.shape[axis+1:]
         out    = cp.empty(oshape, dtype=np.complex64)
     elif out.dtype != np.complex64:
+        out    = out.reshape(-1,out.shape[-1])
         raise ValueError("pycufft.rfft only supports single precision")
     if plan is None and plan_cache is not None:
         plan = plan_cache.get("r2c", dat.shape, axis)
@@ -84,6 +87,8 @@ def rfft(dat, out=None, axis=-1, plan=None, plan_cache=None):
         C.cufft_r2c_gpu(out.data.ptr, dat.data.ptr, dat.shape[0], dat.shape[1], axis)
     else:
         C.cufft_r2c_gpu_wplan(out.data.ptr, dat.data.ptr, dat.shape[0], dat.shape[1], axis, plan.ctypes.data)
+    # Restore full shape
+    out = out.reshape(pre+out.shape[-1:])
     return out
 
 def irfft(dat, out=None, n=None, axis=-1, plan=None, plan_cache=None):
