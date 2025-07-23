@@ -67,12 +67,12 @@ static void launch_pre_map2tod(T *tod, const ulong *plan_mt, int nmt)
 
 // Helper for map2tod_kernel().
 template<typename T>
-__device__ T eval_tqu(T *sp, int iy, int ix, T cos_2a, T sin_2a)
+__device__ T eval_tqu(T *sp, int iy, int ix, T t_resp, T q_resp, T u_resp)
 {
     bool in_cell = ((ix | iy) & ~63) == 0;
     int s = (iy << 6) | ix;
 
-    T ret = in_cell ? (sp[s] + (cos_2a * sp[s+64*64]) + (sin_2a * sp[s+2*64*64])) : 0;
+    T ret = in_cell ? (t_resp*sp[s] + q_resp*sp[s+64*64] + u_resp*sp[s+2*64*64]) : 0;
     __syncwarp();
     return ret;
 }
@@ -80,14 +80,16 @@ __device__ T eval_tqu(T *sp, int iy, int ix, T cos_2a, T sin_2a)
 
 template<typename T, int W, bool Debug>
 __global__ void __launch_bounds__(32*W, 1)
-map2tod_kernel(
+response_map2tod_kernel(
     T *tod,
     const T *lmap,
     const T *xpointing,
+    const T *response, // [{t,p},ndet] flattened
     const long *cell_offsets,
     const ulong *plan_mt,
     uint *errflags,
-    long nsamp,
+    long ndet,
+    long nperdet,
     int nypix_global,
     int nxpix_global,
     int nycells,
@@ -115,6 +117,8 @@ map2tod_kernel(
 
     plan_iterator<W,Debug> iterator(plan_mt, nmt, nmt_per_block);
     pixel_locator<T> px(nypix_global, nxpix_global, periodic_xcoord);
+
+    long nsamp = ndet*nperdet;
 
     // Outer loop over map cells
 
@@ -148,7 +152,7 @@ map2tod_kernel(
         while (iterator.get_cl()) {
             bool mflag = iterator.icl_flagged & (1U << 26);
             uint icl = iterator.icl;
-            long s = (long(icl) << 5) + laneId;
+            long s   = (long(icl) << 5) + laneId;
 
             if (offset < 0) {
                 if (!mflag)
@@ -160,18 +164,25 @@ map2tod_kernel(
             T xpix = xpointing[s + nsamp];
             T alpha = xpointing[s + 2*nsamp];
 
+            // T response
+            long det = s/nperdet;
+            T t_resp = response[det];
+            // Q and U response
+            T p_resp = response[det+ndet];
             T cos_2a, sin_2a;
             dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
+            T q_resp = p_resp*cos_2a;
+            T u_resp = p_resp*sin_2a;
 
             // Locate pixel in shared memory.
             px.locate(ypix, xpix, iycell, ixcell, err);
 
             // Interpolate local map in shared memory.
             // Note: eval_tqu() returns zero if pixel access is outside current map cell.
-            T t = (1-px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy0, px.ix0, cos_2a, sin_2a);
-            t +=  (1-px.dy) *   (px.dx) * eval_tqu(shmem, px.iy0, px.ix1, cos_2a, sin_2a);
-            t +=    (px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy1, px.ix0, cos_2a, sin_2a);
-            t +=    (px.dy) *   (px.dx) * eval_tqu(shmem, px.iy1, px.ix1, cos_2a, sin_2a);
+            T t = (1-px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy0, px.ix0, t_resp, q_resp, u_resp);
+            t +=  (1-px.dy) *   (px.dx) * eval_tqu(shmem, px.iy0, px.ix1, t_resp, q_resp, u_resp);
+            t +=    (px.dy) * (1-px.dx) * eval_tqu(shmem, px.iy1, px.ix0, t_resp, q_resp, u_resp);
+            t +=    (px.dy) *   (px.dx) * eval_tqu(shmem, px.iy1, px.ix1, t_resp, q_resp, u_resp);
 
             if (mflag)
                 atomicAdd(tod+s, t);
@@ -189,10 +200,11 @@ map2tod_kernel(
 
 
 template<typename T>
-void launch_planned_map2tod(
+void launch_response_map2tod(
     ksgpu::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
     const ksgpu::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
     const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const ksgpu::Array<T> &response,            // shape (2,ndet)
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
@@ -201,11 +213,13 @@ void launch_planned_map2tod(
     static constexpr int W = 16;  // warps per threadblock
     static constexpr int shmem_nbytes = 3 * 64 * 64 * sizeof(T);
 
-    check_tod(tod, plan.nsamp, "launch_map2tod", true);                      // on_gpu = true
-    check_local_map(local_map, local_pixelization, "launch_map2tod", true);  // on_gpu = true
-    check_xpointing(xpointing, plan.nsamp, "launch_map2tod", true);          // on_gpu = true
+    check_tod(tod, plan.nsamp, "launch_response_map2tod", true);                      // on_gpu = true
+    check_local_map(local_map, local_pixelization, "launch_response_map2tod", true);  // on_gpu = true
+    check_xpointing(xpointing, plan.nsamp, "launch_response_map2tod", true);          // on_gpu = true
+    long ndet, nperdet;
+    check_response(response, plan.nsamp, ndet, nperdet, "launch_response_map2tod", true); // on_gpu = true
 
-    // Verify consistency of (nypix, nxpix, periodic_xcoord) between plan and lppix    
+    // Verify consistency of (nypix, nxpix, periodic_xcoord) between plan and lppix
     xassert_eq(local_pixelization.nypix_global, plan.nypix_global);
     xassert_eq(local_pixelization.nxpix_global, plan.nxpix_global);
     xassert_eq(local_pixelization.periodic_xcoord, plan.periodic_xcoord);
@@ -213,14 +227,16 @@ void launch_planned_map2tod(
     launch_pre_map2tod(tod.data, plan.plan_mt, plan.pp.plan_nmt);
 
     if (debug) {
-        map2tod_kernel<T,W,true> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
+        response_map2tod_kernel<T,W,true> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
             (tod.data,                                  // T *tod
              local_map.data,                            // const T *lmap
              xpointing.data,                            // const T *xpointing
+             response.data,                             // const T *response
              local_pixelization.cell_offsets_gpu.data,  // const long *cell_offsets
              plan.plan_mt,                              // const ulong *plan_mt
              plan.err_gpu,                              // uint *errflags
-             plan.nsamp,                                // long nsamp
+             ndet,                                      // long ndet (nsamp=ndet*nperdet)
+             nperdet,                                   // long nperdet
              plan.nypix_global,                         // int nypix_global
              plan.nxpix_global,                         // int nxpix_global
              local_pixelization.nycells,                // int nycells
@@ -233,14 +249,16 @@ void launch_planned_map2tod(
              partial_pixelization);                     // bool partial_pixelization
     }
     else {
-        map2tod_kernel<T,W,false> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
+        response_map2tod_kernel<T,W,false> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
             (tod.data,                                  // T *tod
              local_map.data,                            // const T *lmap
              xpointing.data,                            // const T *xpointing
+             response.data,                             // const T *response
              local_pixelization.cell_offsets_gpu.data,  // const long *cell_offsets
              plan.plan_mt,                              // const ulong *plan_mt
              plan.err_gpu,                              // uint *errflags
-             plan.nsamp,                                // long nsamp
+             ndet,                                      // long ndet (nsamp=ndet*nperdet)
+             nperdet,                                   // long nperdet
              plan.nypix_global,                         // int nypix_global
              plan.nxpix_global,                         // int nxpix_global
              local_pixelization.nycells,                // int nycells
@@ -266,10 +284,11 @@ void launch_planned_map2tod(
 
 
 #define INSTANTIATE(T) \
-    template void launch_planned_map2tod( \
+    template void launch_response_map2tod( \
         ksgpu::Array<T> &tod,        \
         const ksgpu::Array<T> &local_map, \
         const ksgpu::Array<T> &xpointing, \
+        const ksgpu::Array<T> &response, \
         const LocalPixelization &local_pixelization, \
         const PointingPlan &plan, \
         bool partial_pixelization, \

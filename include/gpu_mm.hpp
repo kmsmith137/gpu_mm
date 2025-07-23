@@ -18,21 +18,21 @@ struct LocalPixelization
 {
     // This constructor is intended to be called from C++.
     // The 'cell_offsets' array can be either on the CPU or GPU.
-    
+
     LocalPixelization(long nypix_global, long nxpix_global,
-		      const ksgpu::Array<long> &cell_offsets,
-		      long ystride, long polstride,
-		      bool periodic_xcoord = true);
+                      const ksgpu::Array<long> &cell_offsets,
+                      long ystride, long polstride,
+                      bool periodic_xcoord = true);
 
     // This constructor is intended to be called from python.
     // The caller is responsible for ensuring that the 'cell_offsets_cpu'
     // and 'cell_offsets_gpu' arrays have the same contents!
-    
+
     LocalPixelization(long nypix_global, long nxpix_global,
-		      const ksgpu::Array<long> &cell_offsets_cpu,
-		      const ksgpu::Array<long> &cell_offsets_gpu,
-		      long ystride, long polstride,
-		      bool periodic_xcoord = true);
+                      const ksgpu::Array<long> &cell_offsets_cpu,
+                      const ksgpu::Array<long> &cell_offsets_gpu,
+                      long ystride, long polstride,
+                      bool periodic_xcoord = true);
 
     // Global pixelization
     const long nypix_global;
@@ -44,7 +44,7 @@ struct LocalPixelization
     ksgpu::Array<long> cell_offsets_gpu;   // not 'const', since DynamicMap can modify
     const long ystride;
     const long polstride;
-    
+
     long nycells;   // same as cell_offsets.shape[0]
     long nxcells;   // same as cell_offsets.shape[1]
     long npix;      // counts only local pixels, does not include factor 3 from TQU.
@@ -63,19 +63,19 @@ struct PointingPrePlan
     static constexpr int preplan_size = 1024;
 
     // This constructor allocates GPU memory, and is intended to be called from C++.
-    
+
     template<typename T>
     PointingPrePlan(const ksgpu::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
-		    bool periodic_xcoord = true, bool debug = false);
-    
+                    bool periodic_xcoord = true, bool debug = false);
+
     // This constructor uses externally allocated GPU memory, and is intended to be called from python.
     // The 'nmt_gpu' and 'err_gpu' arrays should have length preplan_size.
-    
+
     template<typename T>
     PointingPrePlan(const ksgpu::Array<T> &xpointing_gpu, long nypix_global, long nxpix_global,
-		    const ksgpu::Array<uint> &nmt_gpu, const ksgpu::Array<uint> &err_gpu,
-		    bool periodic_xcoord = true, bool debug = false);
-    
+                    const ksgpu::Array<uint> &nmt_gpu, const ksgpu::Array<uint> &err_gpu,
+                    bool periodic_xcoord = true, bool debug = false);
+
     long nsamp = 0;
     long nypix_global = 0;
     long nxpix_global = 0;
@@ -103,7 +103,7 @@ struct PointingPrePlan
     // Copies nmt_cumsum array to host, and returns it as a numpy array.
     // Temporary hack, used in tests.test_pointing_preplan().
     ksgpu::Array<uint> get_nmt_cumsum() const;
-    
+
     std::string str() const;
 };
 
@@ -116,7 +116,7 @@ struct PointingPlan
     const bool periodic_xcoord;
 
     const PointingPrePlan pp;
-    
+
     ksgpu::Array<unsigned char> buf;
 
     // The 'buf' array logically consists of two buffers:
@@ -124,27 +124,27 @@ struct PointingPlan
     //   uint err[B];           // where B = max(pp.planner_nblocks, pp.pointing_nblocks)
     //
     // The 'plan_mt' and 'err_gpu' pointers point directly to these buffers, for convenience.
-   
+
     ulong *plan_mt = nullptr;
     uint *err_gpu = nullptr;    // 128-byte aligned
 
     // This constructor uses externally allocated GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
-		 const ksgpu::Array<T> &xpointing_gpu,
-		 const ksgpu::Array<unsigned char> &buf,
-		 const ksgpu::Array<unsigned char> &tmp_buf,
-		 bool debug = false);
+                 const ksgpu::Array<T> &xpointing_gpu,
+                 const ksgpu::Array<unsigned char> &buf,
+                 const ksgpu::Array<unsigned char> &tmp_buf,
+                 bool debug = false);
 
     // This constructor allocates GPU memory.
     template<typename T>
     PointingPlan(const PointingPrePlan &pp,
-		 const ksgpu::Array<T> &xpointing_gpu,
-		 bool debug = false);
-    
+                 const ksgpu::Array<T> &xpointing_gpu,
+                 bool debug = false);
+
     // Used in unit tests.
     ksgpu::Array<ulong> get_plan_mt(bool gpu) const;
-    
+
     // I needed this once for tracking down a bug.
     void _check_errflags(const std::string &where) const;
 
@@ -176,11 +176,11 @@ extern void launch_planned_tod2map(
 );
 
 template<typename T>
-extern void launch_planned_onthefly_tod2map(
-    ksgpu::Array<T> &local_map,                 // total size (3 * local_pixelization.npix)
-    const ksgpu::Array<T> &tod,                 // shape (nsamp,) or (ndet,nt)
-    const ksgpu::Array<T> &pointing_basis,      // shape (nbasis,nt)
-    const ksgpu::Array<T> &pointing_coeffs,     // shape ({y,x,alpha},ndet,nbasis)
+extern void launch_response_map2tod(
+    ksgpu::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const ksgpu::Array<T> &response,            // shape (ndet,2)
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
@@ -188,12 +188,12 @@ extern void launch_planned_onthefly_tod2map(
 );
 
 template<typename T>
-void launch_planned_onthefly_map2tod(
-    ksgpu::Array<T> &tod,                       // shape (nsamp,) or (ndet,nt)
-    const ksgpu::Array<T> &local_map,           // total size (3 * local_pixelization.npix)
-    const ksgpu::Array<T> &pointing_basis,      // shape (nbasis,nt)
-    const ksgpu::Array<T> &pointing_coeffs,     // shape ({y,x,alpha},ndet,nbasis)
-    const LocalPixelization &local_pixelization,
+extern void launch_response_tod2map(
+    ksgpu::Array<T> &local_map,                 // total size (3 * local_pixelization.npix)
+    const ksgpu::Array<T> &tod,                 // shape (nsamp,) or (ndet,nt)
+    const ksgpu::Array<T> &xpointing,           // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
+    const ksgpu::Array<T> &response,            // shape (ndet,2)
+    const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
     bool debug
@@ -299,20 +299,20 @@ struct ToyPointing
     // Version of constructor which allocates xpointing arrays.
     // If ndet <= 0, then the xpointing arrays will have shape (3,nt).
     // If ndet > 0, then the xpointing arrays will have shape (3,ndet,nt).
-    
+
     ToyPointing(long ndet, long nt,
-		long nypix_global,
-		long nxpix_global,
-		double scan_speed,     // map pixels per TOD sample
-		double total_drift,    // total drift over full TOD, in x-pixels
-		bool noisy = true);
+                long nypix_global,
+                long nxpix_global,
+                double scan_speed,     // map pixels per TOD sample
+                double total_drift,    // total drift over full TOD, in x-pixels
+                bool noisy = true);
 
     // Version of constructor with externally allocated xpointing arrays (intended for python)
     ToyPointing(long nypix_global, long nxpix_global,
-		double scan_speed, double total_drift,
-		const ksgpu::Array<T> &xpointing_cpu,
-		const ksgpu::Array<T> &xpointing_gpu,
-		bool noisy = true);
+                double scan_speed, double total_drift,
+                const ksgpu::Array<T> &xpointing_cpu,
+                const ksgpu::Array<T> &xpointing_gpu,
+                bool noisy = true);
 
     long nypix_global;
     long nxpix_global;
@@ -322,7 +322,7 @@ struct ToyPointing
 
     // Since ToyPointing is only used in unit tests, assume the caller
     // wants array copies on both CPU and GPU.
-    
+
     ksgpu::Array<T> xpointing_cpu;
     ksgpu::Array<T> xpointing_gpu;
 
@@ -345,7 +345,7 @@ extern void check_gpu_errflags(const uint *errflags_gpu, int nelts, const char *
 // Check arrays, in cases where we know the dimensions in advance.
 template<typename T> extern void check_tod(const ksgpu::Array<T> &tod, long nsamp, const char *where, bool on_gpu);
 template<typename T> extern void check_xpointing(const ksgpu::Array<T> &xpointing, long nsamp, const char *where, bool on_gpu);
-template<typename T> extern void check_onthefly_pointing(const ksgpu::Array<T> &pointing_basis, const ksgpu::Array<T> &pointing_coeffs, long nsamp_expected, const char *where, bool on_gpu);
+template<typename T> extern void check_response(const ksgpu::Array<T> &response, long nsamp_expected, long &ndet, long &nperdet, const char * where, bool on_gpu);
 template<typename T> extern void check_global_map(const ksgpu::Array<T> &map, long nypix_global, long nxpix_global, const char *where, bool on_gpu);
 template<typename T> extern void check_local_map(const ksgpu::Array<T> &map, const LocalPixelization &lpix, const char *where, bool on_gpu);
 extern void check_cell_offsets(const ksgpu::Array<long> &cell_offsets, long nycells_expected, long nxcells_expected, const char *where, bool on_gpu);
@@ -374,15 +374,15 @@ struct PointingPlanTester
     // Version of constructor with externally allocated tmp array (intended for python)
     template<typename T>
     PointingPlanTester(const PointingPrePlan &pp,
-		       const ksgpu::Array<T> &xpointing_gpu,
-		       const ksgpu::Array<unsigned char> &tmp);    
+                       const ksgpu::Array<T> &xpointing_gpu,
+                       const ksgpu::Array<unsigned char> &tmp);
 
     // Same meaning as in PointingPrePlan.
     long nsamp = 0;
     long nypix_global = 0;
     long nxpix_global = 0;
     bool periodic_xcoord;
-    
+
     long plan_nmt = 0;
     long ncl_per_threadblock = 0;
     long planner_nblocks = 0;
@@ -390,7 +390,7 @@ struct PointingPlanTester
     // All arrays are on the CPU.
     // (iypix, ixpix) = which map pixel does each time sample fall into?
     // (Computed on GPU and copied to CPU, in order to guarantee roundoff consistency with other GPU code.)
-    
+
     ksgpu::Array<int> iypix_arr;   // length nsamp
     ksgpu::Array<int> ixpix_arr;   // length nsamp
 

@@ -28,11 +28,12 @@ def test_plan_iterator(niter=100):
 class PointingInstance:
     def __init__(self, xpointing_cpu, xpointing_gpu, nypix_global, nxpix_global, name, debug_plan=False):
         """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
-
-        self.xpointing_cpu = xpointing_cpu
-        self.xpointing_gpu = xpointing_gpu
-        self.dtype = xpointing_gpu.dtype
-        self.tod_shape = xpointing_gpu.shape[1:]
+        # Go to ndet form
+        def fix_shape(a): return a.reshape(3,-1,a.shape[-1])
+        self.xpointing_cpu = fix_shape(xpointing_cpu)
+        self.xpointing_gpu = fix_shape(xpointing_gpu)
+        self.dtype = self.xpointing_gpu.dtype
+        self.tod_shape = self.xpointing_gpu.shape[1:]
         self.nypix_global = nypix_global
         self.nxpix_global = nxpix_global
         self.periodic_xcoord = False    # FIXME
@@ -47,15 +48,15 @@ class PointingInstance:
     @classmethod
     def from_toy_pointing(cls, ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift, debug_plan=False):
         tp = gpu_mm.ToyPointing(ndet, nt, nypix_global, nxpix_global, scan_speed, total_drift)
-        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix_global, tp.nxpix_global, str(tp), debug_plan)        
+        return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix_global, tp.nxpix_global, str(tp), debug_plan)
 
-    
+
     @classmethod
     def make_random(cls, nsamp_max, debug_plan=False):
         tp = gpu_mm.ToyPointing.make_random(nsamp_max, noisy=False)
         return PointingInstance(tp.xpointing_cpu, tp.xpointing_gpu, tp.nypix_global, tp.nxpix_global, str(tp), debug_plan)
 
-    
+
     @classmethod
     def from_file(cls, filename, debug_plan=False):
         xpointing_cpu = gpu_mm.read_xpointing_npzfile(filename)
@@ -65,10 +66,10 @@ class PointingInstance:
         xmin = np.min(xpointing_cpu[1,:])
         xmax = np.max(xpointing_cpu[1,:])
         print(f'{filename}: {xpointing_cpu.shape=}, ymin={float(ymin)} ymax={float(ymax)} xmin={float(xmin)} xmax={float(xmax)}')
-        
+
         assert ymin >= 0
         assert xmin >= 0
-        
+
         return PointingInstance(
             xpointing_cpu = xpointing_cpu,
             xpointing_gpu = cp.asarray(xpointing_cpu),
@@ -78,7 +79,7 @@ class PointingInstance:
             debug_plan = debug_plan
         )
 
-    
+
     @classmethod
     def generate_test_instances(cls):
         for _ in range(10):
@@ -90,7 +91,7 @@ class PointingInstance:
         for t in cls.generate_act_instances(debug_plan=True):
             yield t
 
-            
+
     @classmethod
     def generate_timing_instances(cls):
         yield cls.from_toy_pointing(
@@ -101,11 +102,11 @@ class PointingInstance:
             scan_speed = 0.5,    # pixels per TOD sample
             total_drift = 1024   # x-pixels
         )
-        
+
         for t in cls.generate_act_instances():
             yield t
 
-    
+
     @classmethod
     def generate_act_instances(cls, debug_plan=False):
         if 'HOME' not in os.environ:
@@ -115,6 +116,7 @@ class PointingInstance:
         d = os.path.join(os.environ['HOME'], 'xpointing')
         if not os.path.isdir(d):
             print(f"Directory {d} not found, ACT xpointing files will not be analyzed")
+            return
 
         flag = False
         for f in sorted(os.listdir(d)):
@@ -124,7 +126,7 @@ class PointingInstance:
 
         if not flag:
             print(f"No xpointing files found in directory {d}")
-            
+
 
     @functools.cached_property
     def preplan(self):
@@ -138,19 +140,19 @@ class PointingInstance:
     @functools.cached_property
     def plan_tester(self):
         return gpu_mm.PointingPlanTester(self.preplan, self.xpointing_gpu)
-    
-    
+
+
     def _compare_arrays(self, arr1, arr2):
         num = cp.sum(cp.abs(arr1-arr2))
         den = cp.sum(cp.abs(arr1)) + cp.sum(cp.abs(arr2))
         assert den > 0
         return float(num/den)   # convert zero-dimensional array -> scalar
 
-    
+
     def test_pointing_preplan(self):
         nmt_cumsum_fast = self.preplan.get_nmt_cumsum()
         nmt_cumsum_slow = self.plan_tester.nmt_cumsum
-        
+
         assert nmt_cumsum_fast.shape == nmt_cumsum_slow.shape
         assert np.all(nmt_cumsum_fast == nmt_cumsum_slow)
         print('    test_pointing_preplan: pass')
@@ -185,22 +187,22 @@ class PointingInstance:
         print('    test_plan_iterator: pass')
 
 
-    def _test_map2tod(self, m, tod_ref, plan, suffix):
+    def _test_map2tod(self, m, tod_ref, plan, suffix, response=None):
         """Helper method called by test_map2tod()."""
-        
+
         local_map = gpu_mm.LocalMap(self.lpix, m)
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, debug=True)  # note debug=True here
+        gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, response=response, debug=True)  # note debug=True here
         cp.cuda.runtime.deviceSynchronize()
-        
+
         epsilon = self._compare_arrays(tod_ref, tod)
         print(f'    test_map2tod{suffix}: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        
-            
+
+
     def test_map2tod(self):
         m = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
-        
+
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
         lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m))  # GPU -> CPU
@@ -210,19 +212,37 @@ class PointingInstance:
         self._test_map2tod(m, tod_ref, plan=None, suffix='_unplanned')
         self._test_map2tod(m, tod_ref, plan=self.plan, suffix='')
 
+    def test_map2tod_response(self):
+        m = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
 
-    def _test_tod2map(self, tod, m0, m_ref, plan, suffix):
+        tod_ref = np.random.normal(size=self.tod_shape)
+        tod_ref = np.asarray(tod_ref, dtype=self.dtype)
+        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m))  # GPU -> CPU
+        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True)
+        tod_ref = cp.array(tod_ref)  # CPU -> GPU
+
+        # Set up response, 2 in T, -1 in P. To keep the reference tod the same,
+        # we must modify m to compensate for this.
+        ndet, nperdet = self.tod_shape
+        response= cp.zeros((2,ndet),self.dtype)
+        response[0] = 2
+        response[1] = -1
+        m[0]  /=  2
+        m[1:] /= -1
+        self._test_map2tod(m, tod_ref, plan=self.plan, response=response, suffix='_response')
+
+    def _test_tod2map(self, tod, m0, m_ref, plan, suffix, response=None):
         """Helper method called by test_tod2map()."""
-        
+
         local_map = gpu_mm.LocalMap(self.lpix, cp.copy(m0))
-        gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, debug=True)   # note debug=True here
+        gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, response=response, debug=True)   # note debug=True here
         cp.cuda.runtime.deviceSynchronize()
 
         epsilon = self._compare_arrays(local_map.arr, m_ref)
         print(f'    test_tod2map{suffix}: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
 
-        
+
     def test_tod2map(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m0 = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
@@ -234,6 +254,21 @@ class PointingInstance:
         self._test_tod2map(tod, m0, m_ref, plan=None, suffix='_unplanned')
         self._test_tod2map(tod, m0, m_ref, plan=self.plan, suffix='')
 
+    def test_tod2map_response(self):
+        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
+        m0 = cp.zeros((3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
+        lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m0))  # GPU -> CPU
+        gpu_mm.tod2map(lmap_ref, cp.asnumpy(tod), self.xpointing_cpu, plan='reference')
+        m_ref = cp.asarray(lmap_ref.arr)  # CPU -> GPU
+
+        # Set up response. Both T and P are set to 2 here, since that makes it easy
+        # to figure out what the answer should be. R = aP, d = Rm, q = R'd = aP'd
+        ndet, nperdet = self.tod_shape
+        response= cp.zeros((2,ndet),self.dtype)
+        response[:] = 2
+        tod        /= 2
+
+        self._test_tod2map(tod, m0, m_ref, plan=self.plan, response=response, suffix='_response')
 
     def test_dynamic_map(self):
         """Heler method called by test_tod2map()."""
@@ -242,43 +277,43 @@ class PointingInstance:
         mref = np.zeros(shape=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
         lmap_ref = gpu_mm.LocalMap(self.lpix, mref)
         gpu_mm.tod2map(lmap_ref, cp.asnumpy(tod), self.xpointing_cpu, plan='reference')
-        
+
         # Reminder: the TOD can either be 1-d (time,) or 2-d (detector, time).
         nt = tod.shape[-1]
 
         # Let's divide the TOD into chunks along its time axis.
         nt_chunks = [ ]
         nt_remaining = nt
-        
+
         while sum(nt_chunks) < nt:
             n = 32 * np.min(np.random.randint(1, nt//16 + 2, size=6))
             n = int(min(n, nt_remaining))
             nt_chunks.append(n)
             nt_remaining -= n
-        
+
         print(f'    test_dynamic_map: {nt} -> {nt_chunks}')
-    
+
         # Loop over chunks (FIXME test cell_mask).
-        
+
         # Note initial_ncells=1 here, in order to exercise reallocation mechanism.
         dmap = gpu_mm.DynamicMap(self.nypix_global, self.nxpix_global, self.dtype, cell_mask=None, periodic_xcoord=self.periodic_xcoord, initial_ncells=1)
         nt_cumul = 0
-        
+
         for nt_chunk in nt_chunks:
             tod_chunk = cp.copy(tod[..., nt_cumul:(nt_cumul+nt_chunk)])
             xpointing_chunk = cp.copy(self.xpointing_gpu[..., nt_cumul:(nt_cumul+nt_chunk)])
-            
+
             preplan_chunk = gpu_mm.PointingPrePlan(xpointing_chunk, self.nypix_global, self.nxpix_global,
                                                    periodic_xcoord=self.periodic_xcoord, debug=self.debug_plan)
-            
+
             plan_chunk = gpu_mm.PointingPlan(preplan_chunk, xpointing_chunk, debug=self.debug_plan)
-            
+
             gpu_mm.tod2map(dmap, tod_chunk, xpointing_chunk, plan_chunk, debug=True)
             nt_cumul += nt_chunk
 
         # Randomly permute the cells (tests DynamicMap.permute())
         dmap.randomly_permute()
-        
+
         # DynamicMap -> LocalMap -> (padded global map).
         lmap = dmap.finalize()
         mdyn = np.zeros((3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
@@ -291,8 +326,8 @@ class PointingInstance:
         epsilon = float(num/den)   # convert zero-dimensional array -> scalar
         print(f'    test_dynamic_map: {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
-        
-        
+
+
     def test_all(self):
         print(f'    {self.plan}')
         self.test_pointing_preplan()
@@ -300,9 +335,11 @@ class PointingInstance:
         self.test_plan_iterator()
         self.test_map2tod()
         self.test_tod2map()
+        self.test_map2tod_response()
+        self.test_tod2map_response()
         self.test_dynamic_map()
 
-        
+
     def time_pointing_preplan(self):
         print()
         for _ in range(10):
@@ -311,13 +348,13 @@ class PointingInstance:
             print(f'    time_pointing_preplan: {1000*(time.time()-t0)} ms')
             del pp
 
-            
+
     def time_pointing_plan(self):
         pp = self.preplan
         buf = cp.zeros(pp.plan_nbytes, dtype=np.uint8)
-        tmp_buf = cp.zeros(pp.plan_constructor_tmp_nbytes, dtype=np.uint8)        
+        tmp_buf = cp.zeros(pp.plan_constructor_tmp_nbytes, dtype=np.uint8)
         print()
-        
+
         for _ in range(10):
             t0 = time.time()
             p = gpu_mm.PointingPlan(pp, self.xpointing_gpu, buf, tmp_buf)
@@ -325,49 +362,55 @@ class PointingInstance:
             del p
 
 
-    def _time_map2tod(self, tod, local_map, plan, label):
+    def _time_map2tod(self, tod, local_map, plan, label, response=None):
         print()
-        
+
         for _ in range(10):
             t0 = time.time()
-            gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, debug=False)
+            gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, response=response, debug=False)
             cp.cuda.runtime.deviceSynchronize()
             dt = time.time()-t0
             print(f'    {label}: {1000*dt} ms')
-        
+
 
     def time_map2tod(self):
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         local_map = gpu_mm.LocalMap(self.lpix, m)
+        ndet, nperdet = self.tod_shape
+        response = cp.ones((2,ndet),self.dtype)
 
         self._time_map2tod(tod, local_map, plan=None, label='unplanned_map2tod')
         self._time_map2tod(tod, local_map, plan=self.plan, label='map2tod')
+        self._time_map2tod(tod, local_map, plan=self.plan, response=response, label='response_map2tod')
 
 
-    def _time_tod2map(self, local_map, tod, plan, label):
+    def _time_tod2map(self, local_map, tod, plan, label, response=None):
         print()
-        
+
         for _ in range(10):
             t0 = time.time()
-            gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, debug=False)
+            gpu_mm.tod2map(local_map, tod, self.xpointing_gpu, plan, response=response, debug=False)
             cp.cuda.runtime.deviceSynchronize()
             dt = time.time() - t0
             print(f'    {label}: {1000*dt} ms')
 
-        
+
     def time_tod2map(self):
         # Note: we don't use a zeroed timestream, since tod2map() contains an optimization
         # which may give artificially fast timings when run on an all-zeroes timestream.
-        
+
         tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
         m = cp.zeros((3, self.nypix_global, self.nxpix_global), dtype=self.dtype)
         local_map = gpu_mm.LocalMap(self.lpix, m)
+        ndet, nperdet = self.tod_shape
+        response = cp.ones((2,ndet),self.dtype)
 
         self._time_tod2map(local_map, tod, plan=None, label='unplanned_tod2map')
         self._time_tod2map(local_map, tod, plan=self.plan, label='tod2map')
+        self._time_tod2map(local_map, tod, plan=self.plan, response=response, label='response_tod2map')
 
-        
+
     def time_all(self):
         self.time_pointing_preplan()
         self.time_pointing_plan()
@@ -409,11 +452,11 @@ def make_random_npix(ncells_max=1024):
 
 
 def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
-    """Returns a 'plan_mt' array with no associated xpointing. 
+    """Returns a 'plan_mt' array with no associated xpointing.
 
     If 'nmt' is None, then nmt will be randomly generated.
     Currently only used by test_expand_dynamic_map()."""
-    
+
     nycells = (nypix_global + 63) // 64
     nxcells = (nxpix_global + 63) // 64
     ncells_tot = nycells * nxcells
@@ -433,7 +476,7 @@ def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
             nmt = ncells_hit
         else:
             nmt = np.random.randint(ncells_hit, 1024*1024)
-            
+
     # print(f'{ncells_hit=}')
     # print(f'{nmt=}')
 
@@ -449,7 +492,7 @@ def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
     #   Next bit = mflag (does cache line overlap multiple map cells?)
     #   Next bit = zflag (mflag && first appearance of cache line)
     #   Total: 48 bits
-    
+
     plan_mt = np.zeros(nmt, dtype=np.uint)
     plan_mt[:ncells_hit] = icell
     plan_mt[ncells_hit:] = icell[np.random.randint(0, ncells_hit, size=nmt-ncells_hit)]
@@ -463,7 +506,7 @@ def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
 
 def make_random_cell_offsets(nycells, nxcells):
     """Returns (cell_offsets_cpu, ncells_curr). Currently only used by test_expand_dynamic_map()."""
-    
+
     # Randomly initialize 'cell_offsets' to either (-1) or (-2)
     p0 = np.random.uniform(-0.2, 1.2)
     x = np.random.uniform(size=(nycells,nxcells))
@@ -473,7 +516,7 @@ def make_random_cell_offsets(nycells, nxcells):
     #  ncells_curr = integer between 0 and (nycells*nxcells), inclusive
     #  iycells = 1-d integer-valued array of length ncells_curr
     #  ixcells = 1-d integer-valued array of length ncells_curr
-    
+
     p1 = np.random.uniform(-0.2, 1.2)
     x = np.random.uniform(size=(nycells,nxcells))
     mask = np.where(x < p1)
@@ -485,7 +528,7 @@ def make_random_cell_offsets(nycells, nxcells):
     # Assign an ordering to the current cells
     cell_perm = np.random.permutation(ncells_curr)
     cell_offsets[iycells,ixcells] = cell_perm * (3*64*64)
-    
+
     return cell_offsets, ncells_curr
 
 
@@ -496,7 +539,7 @@ def make_test_map(pixelization, dtype):
 
     ncells = pixelization.npix // (64*64)
     n = 3*64*64
-        
+
     y, x = np.where(pixelization.cell_offsets_cpu >= 0)   # 1-d arrays of length (ncells)
     cell_off = pixelization.cell_offsets_cpu[y,x]         # 1-d array of length (ncells)
     cell_ix = cell_off // n
@@ -507,10 +550,10 @@ def make_test_map(pixelization, dtype):
     m0 += np.reshape(np.arange(n), (1,-1))
     m0 += np.reshape(137*y, (-1,1))
     m0 += np.reshape(2323*x, (-1,1))
-    
+
     m1 = np.zeros((ncells,n), dtype=dtype)
     m1[cell_ix,:] = m0[:,:]   # permutes cells and converts dtype
-    
+
     return gpu_mm.LocalMap(pixelization, m1.reshape(ncells*n))
 
 
@@ -526,12 +569,12 @@ def make_random_map(pixelization, dtype):
 
 
 def test_one_expand_dynamic_map():
-    
+
     ### Part 1: make random test instance (plan_nmt_cpu, cell_offsets_cpu, global_ncells_cpu) ###
-    
+
     nypix_global, nycells = make_random_npix()
     nxpix_global, nxcells = make_random_npix()
-    
+
     plan_mt_cpu = make_random_plan_mt(nypix_global, nxpix_global)
     cell_offsets_cpu, global_ncells_cpu = make_random_cell_offsets(nycells, nxcells)
 
@@ -542,12 +585,12 @@ def test_one_expand_dynamic_map():
     plan_mt_gpu = cp.array(plan_mt_cpu)
     cell_offsets_gpu = cp.array(cell_offsets_cpu)
     global_ncells_gpu = cp.full((1,), global_ncells_cpu, dtype=cp.uint32)
-    
+
     new_ncells_gpu = gpu_mm_pybind11.expand_dynamic_map(global_ncells_gpu, cell_offsets_gpu, plan_mt_gpu)
     cell_offsets_gpu = cp.asnumpy(cell_offsets_gpu)   # GPU -> CPU
 
     ### Part 3: figure out which cell_indices should have been updated ###
-    
+
     # Output of this part is a pair of 1-d arrays (ixcells, iycells).
     # The two arrays have the same length (equal to the number of new cells)
     #
@@ -555,7 +598,7 @@ def test_one_expand_dynamic_map():
     #   Low 10 bits = Global xcell index
     #   Next 10 bits = Global ycell index
     #     ...
-    
+
     icells = plan_mt_cpu & ((1 << 20) - 1)
     icells = np.unique(icells)
     ixcells = icells & ((1<<10) - 1)
@@ -564,7 +607,7 @@ def test_one_expand_dynamic_map():
     mask = np.logical_and(ixcells < nxcells, iycells < nycells)
     ixcells = ixcells[mask]
     iycells = iycells[mask]
-    
+
     mask = (cell_offsets_cpu[iycells,ixcells] == -1)
     ixcells = ixcells[mask]
     iycells = iycells[mask]
@@ -579,7 +622,7 @@ def test_one_expand_dynamic_map():
     new_offsets = np.sort(cell_offsets_gpu[iycells,ixcells])  # note np.sort() here
     expected_offsets = (global_ncells_cpu + np.arange(nnew)) * (3*64*64)
     assert np.all(new_offsets == expected_offsets)
-                
+
     mask_2d = (cell_offsets_gpu == cell_offsets_cpu)
     mask_2d[iycells,ixcells] = True
     assert np.all(mask_2d)

@@ -79,14 +79,14 @@ LIB_SRCFILES = \
   src_lib/gpu_utils.cu \
   src_lib/local_map_to_global.cu \
   src_lib/map2tod.cu \
-  src_lib/map2tod_onthefly.cu \
+  src_lib/map2tod_response.cu \
   src_lib/map2tod_reference.cu \
   src_lib/map2tod_unplanned.cu \
   src_lib/misc.cu \
   src_lib/pycufft.cu \
   src_lib/test_plan_iterator.cu \
   src_lib/tod2map.cu \
-  src_lib/tod2map_onthefly.cu \
+  src_lib/tod2map_response.cu \
   src_lib/tod2map_reference.cu \
   src_lib/tod2map_unplanned.cu
 
