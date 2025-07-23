@@ -74,6 +74,7 @@ LIB_SRCFILES = \
   src_lib/cell_reduce.cu \
   src_lib/check_arguments.cu \
   src_lib/cuts.cu \
+  src_lib/deglitching.cu \
   src_lib/expand_dynamic_map.cu \
   src_lib/gpu_point.cu \
   src_lib/gpu_utils.cu \

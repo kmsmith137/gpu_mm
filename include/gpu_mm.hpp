@@ -286,6 +286,15 @@ extern void local_map_to_global(
 );
 
 
+// Deglitching
+
+extern void get_border_means(
+    ksgpu::Array<float> &out,             // shape (R,2) 
+    const ksgpu::Array<float> &signal,    // shape (ndet,ntime)
+    const ksgpu::Array<int> &index_map    // shape (R,5)
+);
+
+
 // -----------------------------------------------------------------------------
 //
 // Internals + testing

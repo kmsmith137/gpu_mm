@@ -2,6 +2,7 @@ import sys
 
 if (len(sys.argv) == 2) and (sys.argv[1] == 'test'):
     from . import tests
+    tests.test_deglitching()
     tests.test_plan_iterator()
     tests.test_expand_dynamic_map()
     for p in tests.PointingInstance.generate_test_instances():

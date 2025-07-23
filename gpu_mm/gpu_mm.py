@@ -1412,6 +1412,57 @@ class PointingPlanTester(gpu_mm_pybind11.PointingPlanTester):
 
 
 ####################################################################################################
+#
+# Deglitching
+
+
+def get_border_means(out, signal, index_map):
+    """
+    Compute deglitching means, on GPU.
+
+      - signal: shape (ndet,ntod) float32 cupy array
+    
+      - index_map: shape (R,5) int32 cupy array containing indices for the mean computations
+           R = number of means to compute
+           index_map[:,0] = detector indices
+           index_map[:,1:3] = time index range for first mean
+           index_map[:,3:5] = time index range for second mean
+
+      - out: shape (R,2) float32 cupy array containing means (caller must allocate)
+    """
+
+    gpu_mm_pybind11.get_border_means(out, signal, index_map)
+    
+    
+def reference_get_border_means(signal, index_map):
+    """
+    Python reference implementation of GPU get_border_means(), intended for testing and documentation.
+    See get_border_means() docstring
+
+      - signal: shape (ndet,ntod) array
+      - index_map: shape (R,5) array containing indices for the mean computations
+      - returns a shape (R,2) array.
+    """
+    
+    R = len(index_map)
+    bvals = np.zeros((R,2), signal.dtype)
+    
+    for ri in range(R):
+        di, b00, b01, b10, b11 = index_map[ri,:]
+        bvals1 = signal[di,b00:b01]
+        bvals2 = signal[di,b10:b11]
+        v1 = np.mean(bvals1) if (bvals1.size > 0) else 0.0
+        v2 = np.mean(bvals2) if (bvals2.size > 0) else 0.0
+        if bvals1.size == 0: v1 = v2
+        if bvals2.size == 0: v2 = v1
+        bvals[ri,0] = v1
+        bvals[ri,1] = v2
+
+    return bvals
+
+
+####################################################################################################
+
 
 _libgpu_mm = ctypes.cdll.LoadLibrary(os.path.join(os.path.dirname(__file__), "lib", "libgpu_mm.so"))
 

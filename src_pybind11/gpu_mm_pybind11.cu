@@ -204,6 +204,11 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
 
     m.def("local_map_to_global", &gpu_mm::local_map_to_global<Tmm>,
 	  py::arg("local_pixelization"), py::arg("dst"), py::arg("src"));
+
+    // Cuts
+
+    m.def("get_border_means", &gpu_mm::get_border_means,
+	  py::arg("out"), py::arg("signal"), py::arg("index_map"));
     
     // ---------------------------------------------------------------------------------------------
     //

@@ -25,6 +25,44 @@ def test_plan_iterator(niter=100):
         gpu_mm_pybind11.test_plan_iterator(plan_mt, nmt_per_block, warps_per_threadblock)
 
 
+def test_deglitching():
+    for _ in range(50):
+        R = np.random.randint(1, 10000)
+        ndet = np.random.randint(1, 100)
+        ntime = np.random.randint(10, 100)
+
+        signal = np.random.normal(size=(ndet,ntime))
+        signal = np.array(signal, dtype=np.float32)
+        index_map = np.zeros((R,5), dtype=np.int32)
+
+        for r in range(R):
+            index_map[r,0] = np.random.randint(0, ndet)
+            index_map[r,1:] = sorted(np.random.randint(0, ntime, size=4))
+
+            if np.random.uniform() < 0.1:
+                index_map[r,2] = index_map[r,1]
+            if np.random.uniform() < 0.1:
+                index_map[r,4] = index_map[r,3]
+
+        bvals = gpu_mm.reference_get_border_means(signal, index_map)
+
+        signal_gpu = cp.asarray(signal)
+        index_map_gpu = cp.asarray(index_map)
+        bvals_gpu = cp.zeros((R,2), dtype=np.float32)
+
+        gpu_mm.get_border_means(bvals_gpu, signal_gpu, index_map_gpu)
+        bvals_gpu = cp.asnumpy(bvals_gpu)
+
+        epsilon = np.max(np.abs(bvals - bvals_gpu))
+        # print(f'test_make_border_means: {epsilon=}')
+        assert epsilon < 1.0e-5
+
+        print(f'test_deglitching(): pass')
+
+
+####################################################################################################
+
+
 class PointingInstance:
     def __init__(self, xpointing_cpu, xpointing_gpu, nypix_global, nxpix_global, name, debug_plan=False):
         """Note: the xpointing arrays can be either shape (3,nsamp) or shape (3,ndet,nsamp)."""
