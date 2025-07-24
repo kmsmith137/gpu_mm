@@ -1429,19 +1429,83 @@ def get_border_means(out, signal, index_map):
            index_map[:,3:5] = time index range for second mean
 
       - out: shape (R,2) float32 cupy array containing means (caller must allocate)
+    
+    The idea is that 'index_map' is computed on the CPU, and copied to the GPU.
+    The CPU-side code to compute 'index_map' might look something like this:
+
+        # Warning: untested!
+
+        R = len(borders)
+        index_map = np.zeros((R,5), dtype=np.int32)   # note int32, not int!
+    
+        for di, (b1,b2) in enumerate(cuts.bins):
+            index_map[b1:b2,0] = di
+            index_map[b1:b2,1] = borders[b1:b2,0,0]
+            index_map[b1:b2,2] = borders[b1:b2,0,1]
+            index_map[b1:b2,3] = borders[b1:b2,1,0]
+            index_map[b1:b2,4] = borders[b1:b2,1,1]
+
+        index_map = cp.asarray(index_map)  # CPU -> GPU
+
+    For more info on what get_border_means() computes, it's easiest to refer to
+    the code for reference_get_border_means() in gpu_mm.py.
     """
 
     gpu_mm_pybind11.get_border_means(out, signal, index_map)
+
+
+def deglitch(signal, bvals, index_map2):
+    """
+    Subtract deglitching offsets, on GPU.
+
+      - signal: shape (ndet,ntod) float32 cupy array
+
+      - bvals: shape (R,2) float32 cupy array containing border means
+         (this is the output array from get_border_means())
     
+      - index_map2: shape (R,4) int32 cupy array containing indices for the mean computation
+        Each index 0 <= r < R represents one time range [t1:t2] for a fixed detector.
+    
+           index_map2[:,0] = detector index 'di'
+           index_map2[:,1] = first r-value with same detector index di.
+           index_map2[:,2] = starting time index 't1' of bin.
+           index_map2[:,3] = ending time index 't2' of bin.
+
+    The idea is that 'index_map2' is computed on the CPU, and copied to the GPU.
+    The CPU-side code to compute 'index_map2' might look something like this:
+
+        # Warning: untested!
+    
+        R = len(cuts.ranges)
+        index_map2 = np.zeros((R,4), dtype=np.int32)    # note int32, not int!
+
+        for di, (b1,b2) in enumerate(cuts.bins):
+            if b1 >= b2: continue
+            index_map2[b1:b2,0] = di
+            index_map2[b1:b2,1] = b1
+            index_map2[b1:b2,2] = cuts.ranges[b1:b2,0]
+            index_map2[b1:b2,3] = cuts.ranges[b1:b2,1]
+
+        index_map2 = cp.asarray(index_map2)  # CPU -> GPU
+    
+    For more info on what deglitch() computes, it's easiest to refer to
+    the code for reference_deglitch() in gpu_mm.py.
+    """
+
+    jumps = bvals[:,1]-bvals[:,0]
+    cumj = cp.cumsum(jumps)
+    gpu_mm_pybind11.deglitch(signal, bvals, cumj, index_map2)
+
     
 def reference_get_border_means(signal, index_map):
     """
     Python reference implementation of GPU get_border_means(), intended for testing and documentation.
-    See get_border_means() docstring
-
+    
       - signal: shape (ndet,ntod) array
       - index_map: shape (R,5) array containing indices for the mean computations
       - returns a shape (R,2) array.
+
+    For more info on arguments, see get_border_means() docstring.
     """
     
     R = len(index_map)
@@ -1459,6 +1523,39 @@ def reference_get_border_means(signal, index_map):
         bvals[ri,1] = v2
 
     return bvals
+
+
+def reference_deglitch(signal, bvals, index_map2):
+    """
+    Python reference implementation of GPU deglitch(), intended for testing and documentation.
+    
+      - signal: shape (ndet,ntod) array
+      - bvals: shape (R,2) array
+      - index_map2: shape (R,4) array
+    
+    For more info on arguments, see deglitch() docstring.
+    """
+
+    R = len(index_map2)
+    nsamp = signal.shape[1]
+
+    # Will subtract v2-v1 from entire region after that cut.
+    jumps = bvals[:,1]-bvals[:,0]
+    cumj  = np.cumsum(jumps)
+    
+    # Will subtract cumj[i] for range[i,1]:range[i+1,0].
+    # Will set range[i,0]:range[i,1] to bvals[i,1]-cumj[i]
+    for ri in range(R):
+        di, r0, t1, t2 = index_map2[ri,:]
+        
+        dcumj = cumj[ri]
+        if r0 > 0: dcumj = dcumj - cumj[r0-1]
+
+        not_last = (ri < R-1) and (index_map2[ri+1,0] == di)
+        t3 = index_map2[ri+1,2] if not_last else nsamp
+        
+        signal[di,t1:t2] = bvals[ri,1] - dcumj
+        signal[di,t2:t3] -= dcumj
 
 
 ####################################################################################################

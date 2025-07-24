@@ -294,6 +294,13 @@ extern void get_border_means(
     const ksgpu::Array<int> &index_map    // shape (R,5)
 );
 
+extern void deglitch(
+    ksgpu::Array<float> &signal,          // shape (ndet,ntime)
+    const ksgpu::Array<float> &bvals,     // shape (R,2)
+    const ksgpu::Array<float> &cumj,      // shape (R,)
+    const ksgpu::Array<int> &index_map2   // shape (R,4)
+);
+
 
 // -----------------------------------------------------------------------------
 //

@@ -27,12 +27,14 @@ def test_plan_iterator(niter=100):
 
 def test_deglitching():
     for _ in range(50):
-        R = np.random.randint(1, 10000)
-        ndet = np.random.randint(1, 100)
-        ntime = np.random.randint(10, 100)
-
+        R = np.random.randint(1, 100)
+        ndet = np.random.randint(1, 10)
+        ntime = np.random.randint(10**3//ndet, 10**5//ndet)
         signal = np.random.normal(size=(ndet,ntime))
         signal = np.array(signal, dtype=np.float32)
+
+        # Part 1: test make_border_means()
+        
         index_map = np.zeros((R,5), dtype=np.int32)
 
         for r in range(R):
@@ -57,6 +59,41 @@ def test_deglitching():
         # print(f'test_make_border_means: {epsilon=}')
         assert epsilon < 1.0e-5
 
+        # Part 2: test deglitch()
+        
+        pairs = [ ]
+        for _ in range(R):
+            d = np.random.randint(ndet)
+            pairs.append((d, np.random.randint(ntime)))
+            pairs.append((d, np.random.randint(ntime)))
+
+        pairs = np.reshape(sorted(pairs), (R,2,2))
+        assert np.all(pairs[:,0,0] == pairs[:,1,0])
+        
+        index_map2 = np.zeros((R,4), dtype=np.int32)
+        index_map2[:,0] = pairs[:,0,0]
+        index_map2[:,2] = pairs[:,0,1]
+        index_map2[:,3] = pairs[:,1,1]
+
+        # Initialize index_map2[:,1]
+        (r0, d0) = (0, -1)
+        for r in range(R):
+            d = index_map2[r,0]
+            if (d != d0):
+                (r0, d0) = (r, d)
+            index_map2[r,1] = r0
+
+        gpu_mm.reference_deglitch(signal, bvals, index_map2)
+        
+        bvals_gpu = cp.asarray(bvals)   # synchronize 'bvals' on CPU/GPU, to eliminate roundoff
+        index_map2_gpu = cp.asarray(index_map2)
+        gpu_mm.deglitch(signal_gpu, bvals_gpu, index_map2_gpu)
+        signal_gpu = cp.asnumpy(signal_gpu)        
+
+        epsilon = np.max(np.abs(signal - signal_gpu))
+        # print(f'test deglitch: {epsilon=}')
+        assert epsilon < 1.0e-5
+        
         print(f'test_deglitching(): pass')
 
 
