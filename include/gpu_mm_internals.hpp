@@ -181,7 +181,11 @@ struct cell_enumerator
     __device__ inline void _process_pair(int icell0, int icell1, int &icell_even, int &icell_odd)
     {
 	icell1 = (icell0 != icell1) ? icell1 : -1;
-	
+
+	// Note behavior in wrapped cases:
+	//   (icell0,icell1) = (2n,0)  =>  (icell_even,icell_odd) = (2n,0)
+	//   (icell0,icell1) = (2n+1,0)  =>  (icell_even,icell_odd) = (0,2n+1)
+
 	bool flag = (icell0 & 1);
 	icell_even = flag ? icell1 : icell0;
 	icell_odd = flag ? icell0 : icell1;
@@ -199,9 +203,11 @@ struct cell_enumerator
 	_process_pair(iycell0, iycell1, iy0, iy1);
 	_process_pair(ixcell0, ixcell1, ix0, ix1);
 
-	ix2 = (ix0 != 0) ? -1 : 0;
+	ix2 = ((ix0 != 0) && (ix1 != 0)) ? -1 : 0;
 	ix0 = (ix0 != 0) ? ix0 : -1;
-	
+	ix1 = (ix1 != 0) ? ix1 : -1;
+
+	// The behavior of this function is defined by these asserts.
 	if constexpr (Debug) {
 	    assert((iycell0 == iy0) || (iycell0 == iy1));
 	    assert((iycell1 == iy0) || (iycell1 == iy1));	    

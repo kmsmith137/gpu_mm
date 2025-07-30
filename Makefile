@@ -194,8 +194,8 @@ $(GPU_MM_LIB): $(LIB_OFILES)
 #     to load the libraries libksgpu.so and ksgpu_pybind11...so with globally visible symbols.
 
 $(GPU_MM_PYEXT): $(PYEXT_OFILES) $(GPU_MM_LIB) gpu_mm/lib
-	$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=/global/common/software/sobs/users/sigurdkn/local/gpu_mm/lib"'
-	#$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=\\$$ORIGIN/lib"'
+	#$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=/global/common/software/sobs/users/sigurdkn/local/gpu_mm/lib"'
+	$(NVCC) $(NVCC_ARCH) -shared -o $@ $(PYEXT_OFILES) -lgpu_mm -Lgpu_mm/lib -Xcompiler '"-Wl,-rpath=\\$$ORIGIN/lib"'
 
 # Needed by pip/pipmake: list of all files that go into the (non-editable) wheel.
 wheel_files.txt: Makefile gpu_mm/include gpu_mm/lib
