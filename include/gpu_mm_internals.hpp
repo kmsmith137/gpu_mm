@@ -131,23 +131,36 @@ struct pixel_locator
 
 	bool yvalid = (ypix >= 0) && (ypix <= nypix_global-1);
 	err = yvalid ? err : (err | errflag_bad_ypix);
-	
-	const int ix0_max = periodic_xcoord ? (nxpix_global-1) : (nxpix_global-2);
-	const T xmin = periodic_xcoord ? (-nxpix_global) : 0;
-	const T xmax = periodic_xcoord ? (2*nxpix_global) : (nxpix_global-1);
 
-	xpix = (xpix >= 0) ? xpix : (xpix + nxpix_global);
-	xpix = (xpix <= nxpix_global) ? xpix : (xpix - nxpix_global);
-	
-	ix0 = int(xpix);
-	ix0 = max(ix0, 0);
-	ix0 = min(ix0, ix0_max);
-	ix1 = ix0 + 1;
-	ix1 = (ix1 < nxpix_global) ? ix1 : 0;   // wrap around (periodic case only)
-	dx = xpix - ix0;
-	
-	bool xvalid = (xpix >= xmin) && (xpix <= xmax);
-	err = xvalid ? err : (err | errflag_bad_xpix);
+	// No warp divergence, since 'periodic_xcoord' is the same on all threads.
+	if (periodic_xcoord) {
+	    // Avoid calling fmod() or using integer mod (%-operator), by restricting to this range.
+	    bool xvalid = (xpix >= -nxpix_global) && (xpix <= 2*nxpix_global);
+	    err = xvalid ? err : (err | errflag_bad_xpix);
+
+	    xpix = (xpix >= 0) ? xpix : (xpix + nxpix_global);
+	    xpix = (xpix <= nxpix_global) ? xpix : (xpix - nxpix_global);
+	    // xpix is now in the range [-eps, nxpix_global+eps], where eps=roundoff
+
+	    ix0 = int(xpix);
+	    ix0 = max(ix0, 0);
+	    dx = xpix - ix0;
+
+	    ix0 = (ix0 < nxpix_global) ? ix0 : 0;
+	    
+	    ix1 = ix0 + 1;
+	    ix1 = (ix1 < nxpix_global) ? ix1 : 0;
+	}
+	else {
+	    bool xvalid = (xpix >= 0) && (xpix <= nxpix_global-2);
+	    err = xvalid ? err : (err | errflag_bad_xpix);
+
+	    ix0 = int(xpix);
+	    ix0 = max(ix0, 0);
+	    ix0 = min(ix0, nxpix_global-2);
+	    ix1 = ix0 + 1;
+	    dx = xpix - ix0;
+	}
     }
 
     // Locate pixel in "cell coordinates".
