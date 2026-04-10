@@ -544,13 +544,13 @@ def make_random_plan_mt(nypix_global, nxpix_global, nmt=None):
         ncells_hit = ncells_hit_max
     else:
         ncells_hit = np.random.randint(1, ncells_hit_max+1)
-
+    
     # nmt
     if nmt is None:
         if np.random.uniform() < 0.1:
             nmt = ncells_hit
         else:
-            nmt = np.random.randint(ncells_hit, 1024*1024)
+            nmt = np.random.randint(ncells_hit, 1024*1024+1)
 
     # print(f'{ncells_hit=}')
     # print(f'{nmt=}')
