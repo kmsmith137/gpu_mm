@@ -99,7 +99,8 @@ response_map2tod_kernel(
     uint nmt,
     uint nmt_per_block,
     bool periodic_xcoord,
-    bool partial_pixelization)
+    bool partial_pixelization,
+    bool accum)
 {
     // 48 KB in single precision, 96 KB in double precision.
     // __shared__ T shmem[3*64*64];
@@ -155,7 +156,7 @@ response_map2tod_kernel(
             long s   = (long(icl) << 5) + laneId;
 
             if (offset < 0) {
-                if (!mflag)
+                if (!accum && !mflag)
                     tod[s] = 0;
                 continue;
             }
@@ -186,6 +187,8 @@ response_map2tod_kernel(
 
             if (mflag)
                 atomicAdd(tod+s, t);
+            else if (accum)
+                tod[s] += t;
             else
                 tod[s] = t;
         }
@@ -208,7 +211,8 @@ void launch_response_map2tod(
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
-    bool debug)
+    bool debug,
+    bool accum)
 {
     static constexpr int W = 16;  // warps per threadblock
     static constexpr int shmem_nbytes = 3 * 64 * 64 * sizeof(T);
@@ -224,7 +228,8 @@ void launch_response_map2tod(
     xassert_eq(local_pixelization.nxpix_global, plan.nxpix_global);
     xassert_eq(local_pixelization.periodic_xcoord, plan.periodic_xcoord);
 
-    launch_pre_map2tod(tod.data, plan.plan_mt, plan.pp.plan_nmt);
+    if (!accum)
+        launch_pre_map2tod(tod.data, plan.plan_mt, plan.pp.plan_nmt);
 
     if (debug) {
         response_map2tod_kernel<T,W,true> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
@@ -246,7 +251,8 @@ void launch_response_map2tod(
              plan.pp.plan_nmt,                          // uint nmt
              plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
              plan.periodic_xcoord,                      // bool periodic_xcoord
-             partial_pixelization);                     // bool partial_pixelization
+             partial_pixelization,                      // bool partial_pixelization
+             accum);                                    // bool accum
     }
     else {
         response_map2tod_kernel<T,W,false> <<< plan.pp.pointing_nblocks, {32,W}, shmem_nbytes >>>
@@ -268,7 +274,8 @@ void launch_response_map2tod(
              plan.pp.plan_nmt,                          // uint nmt
              plan.pp.nmt_per_threadblock,               // uint nmt_per_block,
              plan.periodic_xcoord,                      // bool periodic_xcoord
-             partial_pixelization);                     // bool partial_pixelization
+             partial_pixelization,                      // bool partial_pixelization
+             accum);                                    // bool accum
     }
 
     CUDA_PEEK("map2tod kernel launch");
@@ -292,7 +299,8 @@ void launch_response_map2tod(
         const LocalPixelization &local_pixelization, \
         const PointingPlan &plan, \
         bool partial_pixelization, \
-        bool debug)
+        bool debug, \
+        bool accum)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

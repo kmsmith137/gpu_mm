@@ -262,38 +262,46 @@ class PointingInstance:
         print('    test_plan_iterator: pass')
 
 
-    def _test_map2tod(self, m, tod_ref, plan, suffix, response=None):
+    def _test_map2tod(self, m, tod_ref, plan, suffix, response=None, tod_accum=None):
         """Helper method called by test_map2tod()."""
 
+        accum = (tod_accum is not None)
+        tod_gpu = cp.array(tod_accum) if accum else cp.random.normal(size=self.tod_shape, dtype=self.dtype)
+        
         local_map = gpu_mm.LocalMap(self.lpix, m)
-        tod = cp.random.normal(size=self.tod_shape, dtype=self.dtype)
-        gpu_mm.map2tod(tod, local_map, self.xpointing_gpu, plan, response=response, debug=True)  # note debug=True here
+        gpu_mm.map2tod(tod_gpu, local_map, self.xpointing_gpu, plan, response=response, debug=True, accum=accum)  # note debug=True here
         cp.cuda.runtime.deviceSynchronize()
 
-        epsilon = self._compare_arrays(tod_ref, tod)
-        print(f'    test_map2tod{suffix}: {epsilon=}')
+        epsilon = self._compare_arrays(tod_ref, tod_gpu)
+        print(f'    test_map2tod{suffix}({accum=}): {epsilon=}')
         assert epsilon < 1.0e-6   # FIXME dtype=dependent threshold
 
 
     def test_map2tod(self):
         m = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
+        accum = (np.random.randint(2) != 0)
 
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
+        tod_accum = cp.array(tod_ref) if accum else None
+        
         lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m))  # GPU -> CPU
-        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True)
+        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True, accum=accum)
         tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
-        self._test_map2tod(m, tod_ref, plan=None, suffix='_unplanned')
-        self._test_map2tod(m, tod_ref, plan=self.plan, suffix='')
+        self._test_map2tod(m, tod_ref, plan=None, suffix='_unplanned', tod_accum=tod_accum)
+        self._test_map2tod(m, tod_ref, plan=self.plan, suffix='', tod_accum=tod_accum)
 
     def test_map2tod_response(self):
         m = cp.random.normal(size=(3, self.nypix_padded, self.nxpix_padded), dtype=self.dtype)
-
+        accum = (np.random.randint(2) != 0)
+        
         tod_ref = np.random.normal(size=self.tod_shape)
         tod_ref = np.asarray(tod_ref, dtype=self.dtype)
+        tod_accum = cp.array(tod_ref) if accum else None
+        
         lmap_ref = gpu_mm.LocalMap(self.lpix, cp.asnumpy(m))  # GPU -> CPU
-        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True)
+        gpu_mm.map2tod(tod_ref, lmap_ref, self.xpointing_cpu, plan='reference', debug=True, accum=accum)
         tod_ref = cp.array(tod_ref)  # CPU -> GPU
 
         # Set up response, 2 in T, -1 in P. To keep the reference tod the same,
@@ -304,7 +312,7 @@ class PointingInstance:
         response[1] = -1
         m[0]  /=  2
         m[1:] /= -1
-        self._test_map2tod(m, tod_ref, plan=self.plan, response=response, suffix='_response')
+        self._test_map2tod(m, tod_ref, plan=self.plan, response=response, suffix='_response', tod_accum=tod_accum)
 
     def _test_tod2map(self, tod, m0, m_ref, plan, suffix, response=None):
         """Helper method called by test_tod2map()."""

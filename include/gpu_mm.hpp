@@ -160,7 +160,8 @@ extern void launch_planned_map2tod(
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
-    bool debug
+    bool debug,
+    bool accum       // if true, map2tod result is added to 'tod'; if false, 'tod' is overwritten.
 );
 
 
@@ -184,7 +185,8 @@ extern void launch_response_map2tod(
     const LocalPixelization &local_pixelization, 
     const PointingPlan &plan,
     bool partial_pixelization,
-    bool debug
+    bool debug,
+    bool accum       // if true, map2tod result is added to 'tod'; if false, 'tod' is overwritten.
 );
 
 template<typename T>
@@ -206,7 +208,8 @@ extern void launch_unplanned_map2tod(
     const ksgpu::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
     ksgpu::Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
-    bool partial_pixelization
+    bool partial_pixelization,
+    bool accum       // if true, map2tod result is added to 'tod'; if false, 'tod' is overwritten.
 );
 
 
@@ -228,7 +231,8 @@ extern void reference_map2tod(
     const ksgpu::Array<T> &local_map,  // total size (3 * local_pixelization.npix)
     const ksgpu::Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
-    bool partial_pixelization
+    bool partial_pixelization,
+    bool accum       // if true, map2tod result is added to 'tod'; if false, 'tod' is overwritten.
 );
 
 

@@ -5,8 +5,8 @@ MAP2TOD AND TOD2MAP OPERATIONS
 
 Most of this file is concerned with defining two functions:
 
-  map2tod(timestream, local_map, xpointing, plan, partial_pixelization=False, debug=False)
-  tod2map(local_map, timestream, xpointing, plan, partial_pixelization=False, debug=False)
+  map2tod(timestream, local_map, xpointing, plan, partial_pixelization=False, response=None, debug=False, accum=False)
+  tod2map(local_map, timestream, xpointing, plan, partial_pixelization=False, debug=False, accum=False)
 
 The map2tod() function overwrites the output TOD array, and the tod2map() function accumulates
 its output to the existing map array.
@@ -259,13 +259,14 @@ from . import gpu_mm_pybind11
 mm_dtype = np.float64 if (gpu_mm_pybind11._get_tsize() == 8) else np.float32
 
 
-def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, response=None, debug=False):
+def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, response=None, debug=False, accum=False):
     """
     Arguments:
 
       - tod: output array (1-dimensional, length-nsamp).
          (See "timestreams" in top-level gpu_mm docstring)
-         Will be overwritten by map2tod().
+         If accum is False, 'tod' is overwritten. If accum is True,
+         the map2tod result is added to the existing contents of 'tod'.
 
       - local_map: input array (instance of class LocalMap).
          (See "local maps" in top-level gpu_mm docstring)
@@ -287,6 +288,9 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, respons
 
           - if True, then xpointing values outside the local_map are
             treated as zeroed pixels.
+
+       - accum: if True, the map2tod result is added to the existing
+          contents of 'tod'. If False (default), 'tod' is overwritten.
     """
 
     assert isinstance(local_map, LocalMap)
@@ -295,15 +299,15 @@ def map2tod(tod, local_map, xpointing, plan, partial_pixelization=False, respons
 
     if isinstance(plan, PointingPlan):
         if response is None:
-            gpu_mm_pybind11.planned_map2tod(tod, larr, xpointing, lpix, plan, partial_pixelization, debug)
+            gpu_mm_pybind11.planned_map2tod(tod, larr, xpointing, lpix, plan, partial_pixelization, debug, accum)
         else:
-            gpu_mm_pybind11.response_map2tod(tod, larr, xpointing, response, lpix, plan, partial_pixelization, debug)
+            gpu_mm_pybind11.response_map2tod(tod, larr, xpointing, response, lpix, plan, partial_pixelization, debug, accum)
     elif plan is None:
         max_blocks = 2048  # ad hoc
         errflag = cp.zeros(max_blocks, dtype=cp.uint32)
-        gpu_mm_pybind11.unplanned_map2tod(tod, larr, xpointing, lpix, errflag, partial_pixelization)
+        gpu_mm_pybind11.unplanned_map2tod(tod, larr, xpointing, lpix, errflag, partial_pixelization, accum)
     elif plan == 'reference':
-        gpu_mm_pybind11.reference_map2tod(tod, larr, xpointing, lpix, partial_pixelization)
+        gpu_mm_pybind11.reference_map2tod(tod, larr, xpointing, lpix, partial_pixelization, accum)
     else:
         raise RuntimeError(f"Bad 'plan' argument to map2tod(): {plan}")
 

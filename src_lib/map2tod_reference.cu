@@ -19,7 +19,8 @@ void reference_map2tod(
     const Array<T> &lmap,
     const Array<T> &xpointing,
     const LocalPixelization &lpix,
-    bool partial_pixelization)
+    bool partial_pixelization,
+    bool accum)
 {
     long nsamp;
     check_tod_and_init_nsamp(tod, nsamp, "reference_map2tod", false);  // on_gpu = false
@@ -32,15 +33,20 @@ void reference_map2tod(
     uint err = 0;
     
     for (long s = 0; s < nsamp; s++) {
-	T ypix = xpointing.data[s];
-	T xpix = xpointing.data[s + nsamp];
-	T alpha = xpointing.data[s + 2*nsamp];
-	
- 	T sin_2a, cos_2a;
-	dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
-	
-	px.locate(ypix, xpix, err);
-	tod.data[s] = mev.eval(px, cos_2a, sin_2a, err);
+        T ypix = xpointing.data[s];
+        T xpix = xpointing.data[s + nsamp];
+        T alpha = xpointing.data[s + 2*nsamp];
+        
+        T sin_2a, cos_2a;
+        dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
+        
+        px.locate(ypix, xpix, err);
+        T t = mev.eval(px, cos_2a, sin_2a, err);
+
+        if (accum)
+            tod.data[s] += t;
+        else
+            tod.data[s] = t;
     }
 
     check_err(err, "reference_map2tod");
@@ -53,7 +59,8 @@ void reference_map2tod(
 	const Array<T> &local_map, \
 	const Array<T> &xpointing, \
 	const LocalPixelization &local_pixelization, \
-	bool partial_pixelization)
+	bool partial_pixelization, \
+	bool accum)
 
 INSTANTIATE(float);
 INSTANTIATE(double);

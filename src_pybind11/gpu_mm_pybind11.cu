@@ -154,7 +154,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     m.def("planned_map2tod", &gpu_mm::launch_planned_map2tod<Tmm>,
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("plan"),
-	  py::arg("partial_pixelization"), py::arg("debug"));    
+	  py::arg("partial_pixelization"), py::arg("debug"), py::arg("accum"));
 
     m.def("planned_tod2map", &gpu_mm::launch_planned_tod2map<Tmm>,
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),
@@ -164,7 +164,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     m.def("response_map2tod", &gpu_mm::launch_response_map2tod<Tmm>,
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"), py::arg("response"),
 	  py::arg("local_pixelization"), py::arg("plan"),
-	  py::arg("partial_pixelization"), py::arg("debug"));    
+	  py::arg("partial_pixelization"), py::arg("debug"), py::arg("accum"));
 
     m.def("response_tod2map", &gpu_mm::launch_response_tod2map<Tmm>,
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"), py::arg("response"),
@@ -174,7 +174,7 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     m.def("unplanned_map2tod", &gpu_mm::launch_unplanned_map2tod<Tmm>,
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"),
 	  py::arg("local_pixelization"), py::arg("errflags"),
-	  py::arg("partial_pixelization"));
+	  py::arg("partial_pixelization"), py::arg("accum"));
 
     m.def("unplanned_tod2map", &gpu_mm::launch_unplanned_tod2map<Tmm>,
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),
@@ -183,7 +183,8 @@ PYBIND11_MODULE(gpu_mm_pybind11, m)  // extension module gets compiled to gpu_mm
     
     m.def("reference_map2tod", &gpu_mm::reference_map2tod<Tmm>,
 	  py::arg("tod"), py::arg("local_map"), py::arg("xpointing"),
-	  py::arg("local_pixelization"), py::arg("partial_pixelization"));
+	  py::arg("local_pixelization"), py::arg("partial_pixelization"),
+	  py::arg("accum"));
 
     m.def("reference_tod2map", &gpu_mm::reference_tod2map<Tmm>,
 	  py::arg("local_map"), py::arg("tod"), py::arg("xpointing"),

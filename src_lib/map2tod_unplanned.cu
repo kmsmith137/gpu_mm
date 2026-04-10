@@ -30,7 +30,8 @@ __global__ void unplanned_map2tod_kernel(
     long ystride,
     long polstride,
     bool periodic_xcoord,
-    bool partial_pixelization)
+    bool partial_pixelization,
+    bool accum)
 {
     // For write_errflags().
     __shared__ uint shmem[W];
@@ -48,15 +49,20 @@ __global__ void unplanned_map2tod_kernel(
     uint err = 0;   // FIXME currently ignored
 
     for (long s = s0 + 32*warpId + laneId; s < s1; s += 32*W) {
-	T ypix = xpointing[s];
-	T xpix = xpointing[s + nsamp];
-	T alpha = xpointing[s + 2*nsamp];
-
-	T sin_2a, cos_2a;
-	dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
-
-	px.locate(ypix, xpix, err);
-	tod[s] = mev.eval(px, cos_2a, sin_2a, err);
+        T ypix = xpointing[s];
+        T xpix = xpointing[s + nsamp];
+        T alpha = xpointing[s + 2*nsamp];
+        
+        T sin_2a, cos_2a;
+        dtype<T>::xsincos(2*alpha, &sin_2a, &cos_2a);
+        
+        px.locate(ypix, xpix, err);
+        T t = mev.eval(px, cos_2a, sin_2a, err);
+        
+        if (accum)
+            tod[s] += t;
+        else
+            tod[s] = t;
     }
 
     // No need for __syncthreads() before write_errflags(), since no one else uses shared memory.
@@ -72,7 +78,8 @@ void launch_unplanned_map2tod(
     const Array<T> &xpointing,  // shape (3,nsamp) or (3,ndet,nt)    where axis 0 = {y,x,alpha}
     const LocalPixelization &local_pixelization,
     Array<uint> &errflags,      // length nblocks, where nblocks is caller-supplied.
-    bool partial_pixelization)
+    bool partial_pixelization,
+    bool accum)
 {
     static constexpr int W = 4;
     
@@ -110,7 +117,8 @@ void launch_unplanned_map2tod(
 	 local_pixelization.ystride,                // long ystride
 	 local_pixelization.polstride,              // long polstride
 	 local_pixelization.periodic_xcoord,        // bool periodic_xcoord
-	 partial_pixelization);                     // bool partial_pixelization
+	 partial_pixelization,                      // bool partial_pixelization
+	 accum);                                    // bool accum
 
     CUDA_PEEK("unplanned_map2tod kernel launch");
     
@@ -126,7 +134,8 @@ void launch_unplanned_map2tod(
 	const Array<T> &xpointing, \
 	const LocalPixelization &local_pixelization, \
 	Array<uint> &errflags, \
-	bool partial_pixelization)
+	bool partial_pixelization, \
+	bool accum)
 
 INSTANTIATE(float);
 INSTANTIATE(double);
