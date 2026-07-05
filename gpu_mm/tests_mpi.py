@@ -18,9 +18,9 @@ def test_mpi_pixelization(niter=100):
     for _ in range(niter):
         nypix_global, nycells = tests.make_random_npix(32)
         nxpix_global, nxcells = tests.make_random_npix(32)
-        periodic_xcoord = False    # FIXME!!!!
+        periodic_xcoord = False
         dtype = np.float32         # placeholder for future expansion
-    
+
         t = nypix_global, nxpix_global, periodic_xcoord, nycells, nxcells
         nypix_global, nxpix_global, periodic_xcoord, nycells, nxcells = comm.bcast(t)   # bcast() not Bcast()!
         
@@ -37,12 +37,31 @@ def test_mpi_pixelization(niter=100):
         # FIXME improve this code and put it somewhere more general
         # FIXME test case where ncells_hit==0?
 
+        # The xpointing formula below places each sample at 64*cells_{y,x} + 0.5
+        # (cell corner + 1/2). In non-periodic mode pixel_locator::locate()
+        # requires xpix <= nxpix_global - 2 and ypix <= nypix_global - 1. When
+        # make_random_npix returned an npix at its tightest possible value
+        # (64*ncells - 63), the top-of-axis cell has no valid corner+0.5 sample,
+        # so we restrict cells_2d to the cells that do.
+        max_cx = nxcells - 1 if (64.0*(nxcells-1) + 0.5) <= (nxpix_global - 2) else nxcells - 2
+        max_cy = nycells - 1 if (64.0*(nycells-1) + 0.5) <= (nypix_global - 1) else nycells - 2
+
+        # Edge case: nxcells=1 (or nycells=1) with tightest npix leaves no cell
+        # that can host a valid corner+0.5 sample. All ranks reach the same
+        # verdict since nxcells / nycells / npix are bcast above, so skipping
+        # in unison is collective-safe.
+        if max_cx < 0 or max_cy < 0:
+            continue
+
         hit_prob = np.linspace(0.0, 1.0, nycells*nxcells)
         hit_prob = np.reshape(hit_prob, (nycells,nxcells))
         cells_2d = (np.random.uniform(size=(nycells,nxcells)) < hit_prob)
-        cells_2d[np.random.randint(0,nycells), np.random.randint(0,nxcells)] = True
+        cells_2d[max_cy+1:, :] = False
+        cells_2d[:, max_cx+1:] = False
+        # Force at least one hit cell, inside the valid region.
+        cells_2d[np.random.randint(0, max_cy+1), np.random.randint(0, max_cx+1)] = True
         if np.random.uniform() < 0.1/ntasks:
-            cells_2d[:,:] = True
+            cells_2d[:max_cy+1, :max_cx+1] = True
 
         cells_y, cells_x = np.where(cells_2d)
         ncells_hit = len(cells_y)
